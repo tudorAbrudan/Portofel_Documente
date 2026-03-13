@@ -1,0 +1,35 @@
+import { useState, useEffect, useCallback } from 'react';
+import type { CustomDocumentType } from '@/types';
+import * as customTypesService from '@/services/customTypes';
+
+export function useCustomTypes() {
+  const [customTypes, setCustomTypes] = useState<CustomDocumentType[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const types = await customTypesService.getCustomTypes();
+      setCustomTypes(types);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const createCustomType = useCallback(async (name: string) => {
+    const ct = await customTypesService.createCustomType(name);
+    setCustomTypes(prev => [...prev, ct]);
+    return ct;
+  }, []);
+
+  const deleteCustomType = useCallback(async (id: string) => {
+    await customTypesService.deleteCustomType(id);
+    setCustomTypes(prev => prev.filter(ct => ct.id !== id));
+  }, []);
+
+  return { customTypes, loading, refresh, createCustomType, deleteCustomType };
+}

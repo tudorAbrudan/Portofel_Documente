@@ -1,0 +1,195 @@
+import { useState } from 'react';
+import { StyleSheet, Pressable, Alert, KeyboardAvoidingView, Platform } from 'react-native';
+import { router, useLocalSearchParams } from 'expo-router';
+import { Text, View, ThemedTextInput } from '@/components/Themed';
+import { primary } from '@/theme/colors';
+import { useEntities } from '@/hooks/useEntities';
+import type { EntityType } from '@/types';
+
+const ENTITY_TYPES: { key: EntityType; label: string }[] = [
+  { key: 'person', label: 'Persoană' },
+  { key: 'property', label: 'Proprietate' },
+  { key: 'vehicle', label: 'Vehicul' },
+  { key: 'card', label: 'Card' },
+];
+
+export default function AddEntityScreen() {
+  const params = useLocalSearchParams<{ type?: string }>();
+  const [chosenType, setChosenType] = useState<EntityType | null>((params.type as EntityType) || null);
+  const type = chosenType || 'person';
+  const { createPerson, createProperty, createVehicle, createCard, refresh } = useEntities();
+
+  const [name, setName] = useState('');
+  const [nickname, setNickname] = useState('');
+  const [last4, setLast4] = useState('');
+  const [expiry, setExpiry] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  async function handleSubmit() {
+    if (type === 'card') {
+      if (!nickname.trim()) {
+        Alert.alert('Eroare', 'Introdu un nickname pentru card.');
+        return;
+      }
+    } else {
+      if (!name.trim()) {
+        Alert.alert('Eroare', 'Introdu un nume.');
+        return;
+      }
+    }
+
+    setLoading(true);
+    try {
+      if (type === 'person') await createPerson(name.trim());
+      else if (type === 'property') await createProperty(name.trim());
+      else if (type === 'vehicle') await createVehicle(name.trim());
+      else await createCard(nickname.trim(), last4.trim() || '****', expiry.trim() || undefined);
+      await refresh();
+      router.back();
+    } catch (e) {
+      Alert.alert('Eroare', e instanceof Error ? e.message : 'Nu s-a putut adăuga');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const isCard = type === 'card';
+
+  if (!chosenType) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.inner}>
+          <Text style={styles.label}>Wizard rapid</Text>
+          <Pressable
+            style={({ pressed }) => [styles.wizardButton, pressed && styles.buttonPressed]}
+            onPress={() => router.push('/(tabs)/entitati/wizard-masina')}>
+            <Text style={styles.wizardButtonText}>Adaugă mașină (wizard)</Text>
+          </Pressable>
+          <Pressable
+            style={({ pressed }) => [styles.wizardButton, pressed && styles.buttonPressed]}
+            onPress={() => router.push('/(tabs)/entitati/wizard-proprietate')}>
+            <Text style={styles.wizardButtonText}>Adaugă proprietate (wizard)</Text>
+          </Pressable>
+
+          <View style={styles.separator} />
+          <Text style={styles.label}>Sau adaugă manual</Text>
+          {ENTITY_TYPES.map(({ key, label }) => (
+            <Pressable
+              key={key}
+              style={({ pressed }) => [styles.typeButton, pressed && styles.buttonPressed]}
+              onPress={() => setChosenType(key)}>
+              <Text style={styles.typeButtonText}>{label}</Text>
+            </Pressable>
+          ))}
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <View style={styles.inner}>
+        {!isCard && (
+          <>
+            <Text style={styles.label}>Nume</Text>
+            <ThemedTextInput
+            style={styles.input}
+            placeholder={type === 'person' ? 'Nume persoană' : type === 'vehicle' ? 'Mașină (ex. Dacia Logan)' : 'Proprietate (ex. Apartament X)'}
+            placeholderTextColor="#999"
+            value={name}
+            onChangeText={setName}
+            editable={!loading}
+          />
+          </>
+        )}
+        {isCard && (
+          <>
+            <Text style={styles.label}>Nickname (ex. Card personal)</Text>
+            <ThemedTextInput
+              style={styles.input}
+              placeholder="Nickname"
+              placeholderTextColor="#999"
+              value={nickname}
+              onChangeText={setNickname}
+              editable={!loading}
+            />
+            <Text style={styles.label}>Ultimele 4 cifre (opțional)</Text>
+            <ThemedTextInput
+              style={styles.input}
+              placeholder="1234"
+              placeholderTextColor="#999"
+              value={last4}
+              onChangeText={(t) => setLast4(t.replace(/\D/g, '').slice(0, 4))}
+              keyboardType="number-pad"
+              editable={!loading}
+            />
+            <Text style={styles.label}>Expirare MM/AA (opțional)</Text>
+            <ThemedTextInput
+              style={styles.input}
+              placeholder="12/28"
+              placeholderTextColor="#999"
+              value={expiry}
+              onChangeText={setExpiry}
+              editable={!loading}
+            />
+          </>
+        )}
+
+        <Pressable
+          style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
+          onPress={handleSubmit}
+          disabled={loading}>
+          <Text style={styles.buttonText}>{loading ? 'Se salvează...' : 'Salvează'}</Text>
+        </Pressable>
+      </View>
+    </KeyboardAvoidingView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1 },
+  inner: { flex: 1, padding: 24 },
+  label: { fontSize: 14, marginBottom: 6, opacity: 0.9 },
+  input: {
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 16,
+    marginBottom: 20,
+  },
+  button: {
+    backgroundColor: primary,
+    borderRadius: 12,
+    paddingVertical: 16,
+    alignItems: 'center',
+    marginTop: 16,
+  },
+  buttonPressed: { opacity: 0.9 },
+  buttonText: { color: '#fff', fontSize: 17, fontWeight: '600' },
+  typeButton: {
+    borderWidth: 1,
+    borderColor: primary,
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    marginBottom: 12,
+    alignItems: 'center',
+  },
+  typeButtonText: { fontSize: 16, fontWeight: '500', color: primary },
+  wizardButton: {
+    backgroundColor: primary,
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    marginBottom: 12,
+    alignItems: 'center',
+  },
+  wizardButtonText: { fontSize: 16, fontWeight: '600', color: '#fff' },
+  separator: {
+    height: 1,
+    backgroundColor: '#e0e0e0',
+    marginVertical: 20,
+  },
+});
