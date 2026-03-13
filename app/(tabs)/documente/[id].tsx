@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { StyleSheet, ScrollView, Image, Alert, Pressable, ActivityIndicator, Modal, useWindowDimensions, StatusBar } from 'react-native';
+import { StyleSheet, ScrollView, Image, Alert, Pressable, ActivityIndicator, Modal, useWindowDimensions, StatusBar, Linking } from 'react-native';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useTheme } from '@react-navigation/native';
@@ -545,6 +545,16 @@ export default function DocumentDetailScreen() {
             <Text style={styles.ocrBtnText}>Extrage text (OCR)</Text>
           )}
         </Pressable>
+        {(doc.type === 'rca' || doc.type === 'itp') && (
+          <Pressable style={styles.asigraBtn} onPress={() => Linking.openURL('https://asigra.ro')}>
+            <Text style={styles.asigaBtnText}>🛡 RCA ieftină → asigra.ro</Text>
+          </Pressable>
+        )}
+        {doc.type === 'casco' && (
+          <Pressable style={styles.asigraBtn} onPress={() => Linking.openURL('https://asigra.ro')}>
+            <Text style={styles.asigaBtnText}>🛡 CASCO ieftine → asigra.ro</Text>
+          </Pressable>
+        )}
         <Pressable style={styles.deleteBtn} onPress={handleDelete}>
           <Text style={styles.deleteBtnText}>Șterge document</Text>
         </Pressable>
@@ -831,6 +841,16 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   shareBtnTextSecondary: { color: primary, fontSize: 16, fontWeight: '500' },
+  asigraBtn: {
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginBottom: 10,
+    backgroundColor: '#E8F5E9',
+    borderWidth: 1,
+    borderColor: '#9EB567',
+  },
+  asigaBtnText: { color: '#2E7D32', fontSize: 15, fontWeight: '600' },
   deleteBtn: {
     borderWidth: 1,
     borderColor: '#c00',

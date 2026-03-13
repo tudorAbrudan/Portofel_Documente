@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
 import { useDocuments } from '@/hooks/useDocuments';
@@ -28,11 +29,13 @@ const DOC_ICON: Record<DocumentType, IoniconName> = {
   talon: 'document-text',
   carte_auto: 'document',
   rca: 'shield-checkmark',
+  casco: 'shield-half',
   itp: 'checkmark-circle',
   vigneta: 'ribbon',
   act_proprietate: 'home',
   cadastru: 'map',
   factura: 'receipt',
+  bon_combustibil: 'flame',
   card: 'card',
   altul: 'document-outline',
   custom: 'document-outline',
@@ -45,11 +48,13 @@ const DOC_ICON_BG: Record<DocumentType, string> = {
   talon: '#E0F2F1',
   carte_auto: '#E0F2F1',
   rca: '#FCE4EC',
+  casco: '#FCE4EC',
   itp: '#F3E5F5',
   vigneta: '#FFF8E1',
   act_proprietate: '#E8F5E9',
   cadastru: '#E8F5E9',
   factura: '#FFF3E0',
+  bon_combustibil: '#FFF3E0',
   card: '#F3E5F5',
   altul: '#F5F5F5',
   custom: '#F5F5F5',
@@ -62,11 +67,13 @@ const DOC_ICON_COLOR: Record<DocumentType, string> = {
   talon: '#00695C',
   carte_auto: '#00897B',
   rca: '#C62828',
+  casco: '#AD1457',
   itp: '#6A1B9A',
   vigneta: '#F57F17',
   act_proprietate: '#2E7D32',
   cadastru: '#388E3C',
   factura: '#BF360C',
+  bon_combustibil: '#E65100',
   card: '#7B1FA2',
   altul: '#757575',
   custom: '#757575',
@@ -90,7 +97,13 @@ function getExpiryInfo(doc: Document): { label: string; bg: string; fg: string }
   if (daysLeft <= 30) {
     return { label: `${daysLeft}z`, bg: '#F57C00', fg: '#fff' };
   }
-  return { label: `${daysLeft}z`, bg: '#9EB56722', fg: '#9EB567' };
+  if (daysLeft <= 365) {
+    return { label: `${daysLeft}z`, bg: '#9EB56722', fg: '#9EB567' };
+  }
+  // Pentru date departe: afișează luna și anul
+  const date = new Date(doc.expiry_date);
+  const label = date.toLocaleDateString('ro-RO', { month: 'short', year: 'numeric' });
+  return { label, bg: '#9EB56722', fg: '#9EB567' };
 }
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
@@ -98,6 +111,7 @@ function getExpiryInfo(doc: Document): { label: string; bg: string; fg: string }
 export default function ExpirariScreen() {
   const scheme = (useColorScheme() ?? 'light') as 'light' | 'dark';
   const C = Colors[scheme];
+  const insets = useSafeAreaInsets();
 
   const { documents, loading, refresh } = useDocuments();
   const { persons, properties, vehicles, cards } = useEntities();
@@ -179,7 +193,7 @@ export default function ExpirariScreen() {
   return (
     <RNView style={[styles.container, { backgroundColor: C.background }]}>
       {/* ── Custom Header ── */}
-      <RNView style={[styles.header, { backgroundColor: C.background }]}>
+      <RNView style={[styles.header, { backgroundColor: C.background, paddingTop: insets.top + 8 }]}>
         <RNView style={styles.headerLeft}>
           <RNText style={[styles.headerTitle, { color: C.text }]}>Expirări</RNText>
           <RNText style={[styles.headerSub, { color: C.textSecondary }]}>{subtitleText}</RNText>

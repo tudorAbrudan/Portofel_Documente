@@ -7,17 +7,23 @@ import {
   Image,
   KeyboardAvoidingView,
   Platform,
+  Switch,
+  View as RNView,
+  Text as RNText,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { Text, View, ThemedTextInput } from '@/components/Themed';
+import { useColorScheme } from '@/components/useColorScheme';
+import Colors from '@/constants/Colors';
 import { primary } from '@/theme/colors';
 import { useDocuments } from '@/hooks/useDocuments';
 import { useEntities } from '@/hooks/useEntities';
 import { scheduleExpirationReminders } from '@/services/notifications';
-import { extractText, extractDocumentInfo, extractInvoiceInfo, extractPlateNumber } from '@/services/ocr';
+import { addExpiryCalendarEvent, isCalendarAvailable } from '@/services/calendar';
+import { extractText, extractDocumentInfo, extractInvoiceInfo, extractPlateNumber, extractFuelInfo } from '@/services/ocr';
 import { DOCUMENT_TYPE_LABELS } from '@/types';
 import type { DocumentType, EntityType } from '@/types';
 import { DOCUMENT_FIELDS } from '@/types/documentFields';
@@ -45,6 +51,9 @@ async function applyDocumentScan(uri: string): Promise<string> {
 }
 
 export default function AddDocumentScreen() {
+  const scheme = (useColorScheme() ?? 'light') as 'light' | 'dark';
+  const C = Colors[scheme];
+
   const params = useLocalSearchParams<{
     person_id?: string;
     property_id?: string;
@@ -58,6 +67,7 @@ export default function AddDocumentScreen() {
   const [type, setType] = useState<DocumentType>('buletin');
   const [customTypeId, setCustomTypeId] = useState<string | null>(null);
   const [metadata, setMetadata] = useState<Record<string, string>>({});
+  const [fullTank, setFullTank] = useState(true);
   const [issueDate, setIssueDate] = useState('');
   const [expiryDate, setExpiryDate] = useState('');
   const [note, setNote] = useState('');
@@ -132,6 +142,13 @@ export default function AddDocumentScreen() {
         if (invoiceInfo.invoice_number) ocrMetadata['invoice_number'] = invoiceInfo.invoice_number;
         if (invoiceInfo.amount) ocrMetadata['amount'] = invoiceInfo.amount;
         if (invoiceInfo.due_date) ocrMetadata['due_date'] = invoiceInfo.due_date;
+      }
+      if (type === 'bon_combustibil') {
+        const fuelInfo = extractFuelInfo(text);
+        if (fuelInfo.km) ocrMetadata['km'] = String(fuelInfo.km);
+        if (fuelInfo.liters) ocrMetadata['liters'] = String(fuelInfo.liters);
+        if (fuelInfo.price) ocrMetadata['total_amount'] = String(fuelInfo.price);
+        if (fuelInfo.date && !issueDate) setIssueDate(fuelInfo.date);
       }
       if (['rca', 'itp', 'vigneta', 'talon', 'carte_auto'].includes(type)) {
         const plate = extractPlateNumber(text);
@@ -277,7 +294,10 @@ export default function AddDocumentScreen() {
         property_id: propertyId ?? selectedPropertyId ?? undefined,
         vehicle_id: vehicleId ?? selectedVehicleId ?? undefined,
         card_id: cardId ?? selectedCardId ?? undefined,
-        metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
+        metadata: {
+          ...metadata,
+          ...(type === 'bon_combustibil' ? { is_full_tank: fullTank ? '1' : '0' } : {}),
+        },
       });
       const { addDocumentPage } = await import('@/services/documents');
       for (let i = 1; i < pages.length; i++) {
@@ -285,6 +305,33 @@ export default function AddDocumentScreen() {
       }
       await refresh();
       scheduleExpirationReminders().catch(() => {});
+
+      const finalExpiry = expiryDate.trim();
+      if (finalExpiry && isCalendarAvailable()) {
+        const entityName =
+          (personId && persons.find(p => p.id === personId)?.name) ||
+          (vehicleId && vehicles.find(v => v.id === vehicleId)?.name) ||
+          (propertyId && properties.find(p => p.id === propertyId)?.name) ||
+          undefined;
+        setLoading(false);
+        Alert.alert(
+          'Adaugă în calendar?',
+          `Vrei să adaugi un reminder în calendar pentru expirarea pe ${finalExpiry}?`,
+          [
+            { text: 'Nu', style: 'cancel', onPress: () => router.back() },
+            {
+              text: 'Adaugă',
+              onPress: async () => {
+                const id = await addExpiryCalendarEvent({ docType: type, expiryDate: finalExpiry, entityName });
+                if (!id) Alert.alert('Eroare', 'Nu s-a putut accesa calendarul. Verifică permisiunile în Setări.');
+                router.back();
+              },
+            },
+          ]
+        );
+        return;
+      }
+
       router.back();
     } catch (e) {
       Alert.alert('Eroare', e instanceof Error ? e.message : 'Nu s-a putut salva');
@@ -335,10 +382,10 @@ export default function AddDocumentScreen() {
 
   return (
     <KeyboardAvoidingView
-      style={styles.container}
+      style={[styles.container, { backgroundColor: C.background }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+      <ScrollView style={[styles.scroll, { backgroundColor: C.background }]} contentContainerStyle={styles.scrollContent}>
         {linkedName && <Text style={styles.linked}>Legat de: {linkedName}</Text>}
 
         <Text style={styles.label}>Tip document</Text>
@@ -390,6 +437,26 @@ export default function AddDocumentScreen() {
             />
           </View>
         ))}
+
+        {/* ── Plin complet (bon combustibil) ── */}
+        {type === 'bon_combustibil' && (
+          <RNView style={[styles.switchRow, { backgroundColor: C.card, borderColor: C.border }]}>
+            <RNView style={styles.switchLabel}>
+              <RNText style={[styles.switchTitle, { color: C.text }]}>Plin complet</RNText>
+              <RNText style={[styles.switchSub, { color: C.textSecondary }]}>
+                {fullTank
+                  ? 'Calculez consumul față de alimentarea anterioară'
+                  : 'Nu calculez consumul (rezervor parțial)'}
+              </RNText>
+            </RNView>
+            <Switch
+              value={fullTank}
+              onValueChange={setFullTank}
+              trackColor={{ false: C.border, true: '#9EB567' }}
+              thumbColor="#fff"
+            />
+          </RNView>
+        )}
 
         <Text style={styles.label}>Data emisiune (opțional)</Text>
         <ThemedTextInput
@@ -457,7 +524,7 @@ export default function AddDocumentScreen() {
             </Text>
 
             {/* Category tabs */}
-            <View style={styles.categoryRow}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryRow} contentContainerStyle={styles.categoryRowContent}>
               {ENTITY_CATEGORIES.map(({ key, label }) => (
                 <Pressable
                   key={key}
@@ -474,7 +541,7 @@ export default function AddDocumentScreen() {
                   </Text>
                 </Pressable>
               ))}
-            </View>
+            </ScrollView>
 
             {/* Entity list for selected category */}
             {pickerEntities.length === 0 ? (
@@ -585,11 +652,12 @@ const styles = StyleSheet.create({
   },
   photoBtnText: { color: primary, fontWeight: '500' },
   // Entity picker
-  categoryRow: { flexDirection: 'row', gap: 8, marginBottom: 12, marginTop: 8 },
+  categoryRow: { marginBottom: 12, marginTop: 8 },
+  categoryRowContent: { flexDirection: 'row', gap: 8 },
   categoryTab: {
-    flex: 1,
     paddingVertical: 8,
-    borderRadius: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: '#ccc',
     alignItems: 'center',
@@ -611,6 +679,19 @@ const styles = StyleSheet.create({
   entityItemTextActive: { color: '#fff', fontWeight: '500' },
   pickerEmpty: { opacity: 0.6, fontSize: 14, marginBottom: 20 },
   ocrHint: { fontSize: 12, opacity: 0.6, textAlign: 'center', marginTop: 4 },
+  switchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    marginBottom: 20,
+  },
+  switchLabel: { flex: 1, marginRight: 12 },
+  switchTitle: { fontSize: 15, fontWeight: '500' },
+  switchSub: { fontSize: 12, marginTop: 2 },
   // Submit
   button: {
     backgroundColor: primary,

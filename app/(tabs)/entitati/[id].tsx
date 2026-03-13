@@ -1,31 +1,38 @@
 import { useEffect, useState, useCallback } from 'react';
-import { StyleSheet, ScrollView, Pressable, RefreshControl, Alert, Modal, KeyboardAvoidingView, Platform } from 'react-native';
+import {
+  StyleSheet,
+  ScrollView,
+  Pressable,
+  RefreshControl,
+  Alert,
+  Modal,
+  KeyboardAvoidingView,
+  Platform,
+  View as RNView,
+  Text as RNText,
+} from 'react-native';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
-import { useTheme } from '@react-navigation/native';
-import { Text, View, ThemedTextInput } from '@/components/Themed';
-import { primary } from '@/theme/colors';
+import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ThemedTextInput } from '@/components/Themed';
+import { useColorScheme } from '@/components/useColorScheme';
+import Colors from '@/constants/Colors';
 import { useEntities } from '@/hooks/useEntities';
 import { useDocuments } from '@/hooks/useDocuments';
 import { DOCUMENT_TYPE_LABELS } from '@/types';
-import type { Document as DocType, DocumentType } from '@/types';
+import type { Document as DocType } from '@/types';
 
 export default function EntityDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { colors } = useTheme();
+  const scheme = (useColorScheme() ?? 'light') as 'light' | 'dark';
+  const C = Colors[scheme];
+  const insets = useSafeAreaInsets();
+
   const {
-    persons,
-    properties,
-    vehicles,
-    cards,
+    persons, properties, vehicles, cards,
     refresh: refreshEntities,
-    deletePerson,
-    deleteProperty,
-    deleteVehicle,
-    deleteCard,
-    updatePerson,
-    updateProperty,
-    updateVehicle,
-    updateCard,
+    deletePerson, deleteProperty, deleteVehicle, deleteCard,
+    updatePerson, updateProperty, updateVehicle, updateCard,
   } = useEntities();
   const { getDocumentsByEntity } = useDocuments();
 
@@ -34,7 +41,6 @@ export default function EntityDetailScreen() {
   const [entityName, setEntityName] = useState('');
   const [entityKind, setEntityKind] = useState<'person_id' | 'property_id' | 'vehicle_id' | 'card_id'>('person_id');
 
-  // Edit modal state
   const [editVisible, setEditVisible] = useState(false);
   const [editLoading, setEditLoading] = useState(false);
   const [editName, setEditName] = useState('');
@@ -44,23 +50,14 @@ export default function EntityDetailScreen() {
 
   useEffect(() => {
     if (!id) return;
-    const person = persons.find((p) => p.id === id);
-    const property = properties.find((p) => p.id === id);
-    const vehicle = vehicles.find((v) => v.id === id);
-    const card = cards.find((c) => c.id === id);
-    if (person) {
-      setEntityName(person.name);
-      setEntityKind('person_id');
-    } else if (property) {
-      setEntityName(property.name);
-      setEntityKind('property_id');
-    } else if (vehicle) {
-      setEntityName(vehicle.name);
-      setEntityKind('vehicle_id');
-    } else if (card) {
-      setEntityName(card.nickname || 'Card');
-      setEntityKind('card_id');
-    }
+    const person = persons.find(p => p.id === id);
+    const property = properties.find(p => p.id === id);
+    const vehicle = vehicles.find(v => v.id === id);
+    const card = cards.find(c => c.id === id);
+    if (person) { setEntityName(person.name); setEntityKind('person_id'); }
+    else if (property) { setEntityName(property.name); setEntityKind('property_id'); }
+    else if (vehicle) { setEntityName(vehicle.name); setEntityKind('vehicle_id'); }
+    else if (card) { setEntityName(card.nickname || 'Card'); setEntityKind('card_id'); }
   }, [id, persons, properties, vehicles, cards]);
 
   async function loadDocs(kind: typeof entityKind, entityId: string) {
@@ -92,8 +89,7 @@ export default function EntityDetailScreen() {
     Alert.alert('Ștergere', `Ștergi „${entityName}"? Documentele legate nu vor fi șterse.`, [
       { text: 'Anulare', style: 'cancel' },
       {
-        text: 'Șterge',
-        style: 'destructive',
+        text: 'Șterge', style: 'destructive',
         onPress: async () => {
           try {
             if (entityKind === 'person_id') await deletePerson(id!);
@@ -111,7 +107,7 @@ export default function EntityDetailScreen() {
 
   const openEditModal = () => {
     if (entityKind === 'card_id') {
-      const card = cards.find((c) => c.id === id);
+      const card = cards.find(c => c.id === id);
       setEditNickname(card?.nickname ?? '');
       setEditLast4(card?.last4 ?? '');
       setEditExpiry(card?.expiry ?? '');
@@ -123,17 +119,10 @@ export default function EntityDetailScreen() {
 
   const handleSaveEdit = async () => {
     if (entityKind === 'card_id') {
-      if (!editNickname.trim()) {
-        Alert.alert('Eroare', 'Introdu un nickname pentru card.');
-        return;
-      }
+      if (!editNickname.trim()) { Alert.alert('Eroare', 'Introdu un nickname.'); return; }
     } else {
-      if (!editName.trim()) {
-        Alert.alert('Eroare', 'Introdu un nume.');
-        return;
-      }
+      if (!editName.trim()) { Alert.alert('Eroare', 'Introdu un nume.'); return; }
     }
-
     setEditLoading(true);
     try {
       if (entityKind === 'person_id') await updatePerson(id!, editName.trim());
@@ -149,110 +138,119 @@ export default function EntityDetailScreen() {
     }
   };
 
+  const isVehicle = entityKind === 'vehicle_id';
   const isCard = entityKind === 'card_id';
 
   return (
-    <View style={styles.container}>
-      <View style={styles.titleRow}>
-        <Text style={styles.title}>{entityName || '...'}</Text>
-        <Pressable
-          style={({ pressed }) => [styles.editBtn, pressed && styles.editBtnPressed]}
-          onPress={openEditModal}>
-          <Text style={styles.editBtnText}>Editează</Text>
-        </Pressable>
-      </View>
+    <RNView style={[styles.container, { backgroundColor: C.background }]}>
 
+      {/* ── Header ── */}
+      <RNView style={[styles.header, { backgroundColor: C.background, paddingTop: insets.top + 8 }]}>
+        <Pressable style={styles.backBtn} onPress={() => router.back()}>
+          <Ionicons name="chevron-back" size={24} color={C.primary} />
+        </Pressable>
+        <RNText style={[styles.headerTitle, { color: C.text }]} numberOfLines={1}>
+          {entityName || '...'}
+        </RNText>
+        <Pressable
+          style={[styles.editBtn, { borderColor: C.primary }]}
+          onPress={openEditModal}
+        >
+          <RNText style={[styles.editBtnText, { color: C.primary }]}>Editează</RNText>
+        </Pressable>
+      </RNView>
+
+      {/* ── Document list ── */}
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
-        refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} />}>
-        <Text style={styles.sectionTitle}>Documente legate</Text>
+        refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} tintColor={C.primary} />}
+        showsVerticalScrollIndicator={false}
+      >
+        <RNText style={[styles.sectionTitle, { color: C.textSecondary }]}>DOCUMENTE LEGATE</RNText>
+
         {documents.length === 0 && !loading && (
-          <Text style={styles.empty}>Niciun document. Adaugă unul de mai jos.</Text>
+          <RNText style={[styles.empty, { color: C.textSecondary }]}>
+            Niciun document. Adaugă unul mai jos.
+          </RNText>
         )}
-        {documents.map((doc) => (
+
+        {documents.map(doc => (
           <Pressable
             key={doc.id}
             style={({ pressed }) => [
               styles.docRow,
-              { backgroundColor: colors.card },
+              { backgroundColor: C.card, shadowColor: C.cardShadow },
               pressed && styles.docRowPressed,
             ]}
-            onPress={() =>
-              router.push({ pathname: '/(tabs)/documente/[id]', params: { id: doc.id } })
-            }>
-            <View style={styles.docRowInner}>
-              <View style={styles.docRowText}>
-                <Text style={styles.docType}>{DOCUMENT_TYPE_LABELS[doc.type]}</Text>
-                {doc.issue_date && (
-                  <Text style={styles.docMeta}>Emis: {doc.issue_date}</Text>
-                )}
-                {doc.expiry_date && (
-                  <Text style={styles.docMeta}>Expiră: {doc.expiry_date}</Text>
-                )}
-              </View>
-              <Text style={styles.docChevron}>›</Text>
-            </View>
+            onPress={() => router.push({ pathname: '/(tabs)/documente/[id]', params: { id: doc.id } })}
+          >
+            <RNView style={styles.docRowText}>
+              <RNText style={[styles.docType, { color: C.text }]}>
+                {DOCUMENT_TYPE_LABELS[doc.type] ?? doc.type}
+              </RNText>
+              {doc.issue_date && (
+                <RNText style={[styles.docMeta, { color: C.textSecondary }]}>Emis: {doc.issue_date}</RNText>
+              )}
+              {doc.expiry_date && (
+                <RNText style={[styles.docMeta, { color: C.textSecondary }]}>Expiră: {doc.expiry_date}</RNText>
+              )}
+            </RNView>
+            <Ionicons name="chevron-forward" size={16} color={C.textSecondary} />
           </Pressable>
         ))}
       </ScrollView>
 
-      {entityKind === 'vehicle_id' && (
+      {/* ── Bottom actions ── */}
+      <RNView style={[styles.bottomBar, { borderTopColor: C.border, backgroundColor: C.background, paddingBottom: insets.bottom + 12 }]}>
+
+        {/* Vehicle-specific actions */}
+        {isVehicle && (
+          <RNView style={styles.vehicleActions}>
+            <Pressable
+              style={({ pressed }) => [styles.actionBtn, { borderColor: C.primary }, pressed && styles.btnPressed]}
+              onPress={() => router.push(`/(tabs)/entitati/fuel?vehicleId=${id}&vehicleName=${encodeURIComponent(entityName)}`)}
+            >
+              <Ionicons name="flame-outline" size={16} color={C.primary} style={styles.actionIcon} />
+              <RNText style={[styles.actionBtnText, { color: C.primary }]}>Carburant</RNText>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [styles.actionBtn, { borderColor: C.primary }, pressed && styles.btnPressed]}
+              onPress={() => router.push({ pathname: '/(tabs)/entitati/vigneta', params: { vehicleId: id } })}
+            >
+              <Ionicons name="globe-outline" size={16} color={C.primary} style={styles.actionIcon} />
+              <RNText style={[styles.actionBtnText, { color: C.primary }]}>Vignetă</RNText>
+            </Pressable>
+          </RNView>
+        )}
+
+        {/* Add document */}
         <Pressable
-          style={({ pressed }) => [styles.fuelBtn, pressed && styles.vignetaBtnPressed]}
-          onPress={() =>
-            router.push(
-              `/(tabs)/entitati/fuel?vehicleId=${id}&vehicleName=${encodeURIComponent(entityName)}`
-            )
-          }>
-          <Text style={styles.fuelBtnText}>{'⛽ Carburant & Revizii'}</Text>
+          style={({ pressed }) => [styles.primaryBtn, pressed && styles.btnPressed]}
+          onPress={() => router.push({ pathname: '/(tabs)/documente/add', params: { [entityKind]: id } })}
+        >
+          <Ionicons name="add" size={20} color="#fff" style={styles.actionIcon} />
+          <RNText style={styles.primaryBtnText}>Adaugă document</RNText>
         </Pressable>
-      )}
 
-      {entityKind === 'vehicle_id' && (
-        <Pressable
-          style={({ pressed }) => [styles.vignetaBtn, pressed && styles.vignetaBtnPressed]}
-          onPress={() =>
-            router.push({
-              pathname: '/(tabs)/entitati/vigneta',
-              params: { vehicleId: id },
-            })
-          }>
-          <Text style={styles.vignetaBtnText}>🌍 Vignetă la graniță</Text>
+        {/* Delete */}
+        <Pressable style={styles.deleteBtn} onPress={handleDelete}>
+          <RNText style={styles.deleteBtnText}>Șterge entitate</RNText>
         </Pressable>
-      )}
+      </RNView>
 
-      <Pressable
-        style={styles.deleteBtn}
-        onPress={handleDelete}>
-        <Text style={styles.deleteBtnText}>Șterge entitate</Text>
-      </Pressable>
-
-      <Pressable
-        style={styles.fab}
-        onPress={() =>
-          router.push({
-            pathname: '/(tabs)/documente/add',
-            params: { [entityKind]: id },
-          })
-        }>
-        <Text style={styles.fabText}>+ Adaugă document</Text>
-      </Pressable>
-
-      <Modal
-        visible={editVisible}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setEditVisible(false)}>
+      {/* ── Edit modal ── */}
+      <Modal visible={editVisible} animationType="slide" transparent onRequestClose={() => setEditVisible(false)}>
         <KeyboardAvoidingView
           style={styles.modalOverlay}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Editează entitate</Text>
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <RNView style={[styles.modalContent, { backgroundColor: C.card }]}>
+            <RNText style={[styles.modalTitle, { color: C.text }]}>Editează entitate</RNText>
 
             {!isCard && (
               <>
-                <Text style={styles.modalLabel}>Nume</Text>
+                <RNText style={[styles.modalLabel, { color: C.textSecondary }]}>Nume</RNText>
                 <ThemedTextInput
                   style={styles.modalInput}
                   placeholder="Nume"
@@ -265,189 +263,110 @@ export default function EntityDetailScreen() {
 
             {isCard && (
               <>
-                <Text style={styles.modalLabel}>Nickname</Text>
-                <ThemedTextInput
-                  style={styles.modalInput}
-                  placeholder="Nickname card"
-                  value={editNickname}
-                  onChangeText={setEditNickname}
-                  editable={!editLoading}
-                />
-                <Text style={styles.modalLabel}>Ultimele 4 cifre</Text>
-                <ThemedTextInput
-                  style={styles.modalInput}
-                  placeholder="1234"
-                  value={editLast4}
-                  onChangeText={(t) => setEditLast4(t.replace(/\D/g, '').slice(0, 4))}
-                  keyboardType="number-pad"
-                  editable={!editLoading}
-                />
-                <Text style={styles.modalLabel}>Expirare MM/AA (opțional)</Text>
-                <ThemedTextInput
-                  style={styles.modalInput}
-                  placeholder="12/28"
-                  value={editExpiry}
-                  onChangeText={setEditExpiry}
-                  editable={!editLoading}
-                />
+                <RNText style={[styles.modalLabel, { color: C.textSecondary }]}>Nickname</RNText>
+                <ThemedTextInput style={styles.modalInput} placeholder="Nickname card" value={editNickname} onChangeText={setEditNickname} editable={!editLoading} />
+                <RNText style={[styles.modalLabel, { color: C.textSecondary }]}>Ultimele 4 cifre</RNText>
+                <ThemedTextInput style={styles.modalInput} placeholder="1234" value={editLast4} onChangeText={t => setEditLast4(t.replace(/\D/g, '').slice(0, 4))} keyboardType="number-pad" editable={!editLoading} />
+                <RNText style={[styles.modalLabel, { color: C.textSecondary }]}>Expirare MM/AA (opțional)</RNText>
+                <ThemedTextInput style={styles.modalInput} placeholder="12/28" value={editExpiry} onChangeText={setEditExpiry} editable={!editLoading} />
               </>
             )}
 
-            <View style={styles.modalButtons}>
-              <Pressable
-                style={({ pressed }) => [styles.modalCancelBtn, pressed && styles.buttonPressed]}
-                onPress={() => setEditVisible(false)}
-                disabled={editLoading}>
-                <Text style={styles.modalCancelText}>Anulare</Text>
+            <RNView style={styles.modalButtons}>
+              <Pressable style={[styles.modalCancelBtn, { borderColor: C.border }]} onPress={() => setEditVisible(false)} disabled={editLoading}>
+                <RNText style={[styles.modalCancelText, { color: C.text }]}>Anulare</RNText>
               </Pressable>
-              <Pressable
-                style={({ pressed }) => [styles.modalSaveBtn, pressed && styles.buttonPressed]}
-                onPress={handleSaveEdit}
-                disabled={editLoading}>
-                <Text style={styles.modalSaveText}>{editLoading ? 'Se salvează...' : 'Salvează'}</Text>
+              <Pressable style={styles.modalSaveBtn} onPress={handleSaveEdit} disabled={editLoading}>
+                <RNText style={styles.modalSaveText}>{editLoading ? 'Se salvează...' : 'Salvează'}</RNText>
               </Pressable>
-            </View>
-          </View>
+            </RNView>
+          </RNView>
         </KeyboardAvoidingView>
       </Modal>
-    </View>
+    </RNView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 20 },
-  titleRow: {
+  container: { flex: 1 },
+
+  // Header
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 16,
+    paddingHorizontal: 12,
+    paddingBottom: 12,
+    gap: 8,
   },
-  title: { fontSize: 22, fontWeight: 'bold', flex: 1, marginRight: 12 },
-  editBtn: {
-    borderWidth: 1,
-    borderColor: primary,
-    borderRadius: 10,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-  },
-  editBtnPressed: { opacity: 0.7 },
-  editBtnText: { color: primary, fontSize: 15, fontWeight: '500' },
-  sectionTitle: { fontSize: 16, fontWeight: '600', marginBottom: 12 },
+  backBtn: { padding: 4 },
+  headerTitle: { flex: 1, fontSize: 20, fontWeight: '700', letterSpacing: -0.3 },
+  editBtn: { borderWidth: 1, borderRadius: 10, paddingVertical: 7, paddingHorizontal: 14 },
+  editBtnText: { fontSize: 14, fontWeight: '500' },
+
+  // Scroll
   scroll: { flex: 1 },
-  scrollContent: { paddingBottom: 236 },
-  empty: { opacity: 0.7, marginBottom: 16 },
+  scrollContent: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 16 },
+  sectionTitle: { fontSize: 12, fontWeight: '600', letterSpacing: 0.6, marginBottom: 10 },
+  empty: { fontSize: 14, marginBottom: 16, opacity: 0.7 },
+
+  // Doc row
   docRow: {
-    borderRadius: 12,
-    marginBottom: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 4,
-    elevation: 1,
-  },
-  docRowPressed: { opacity: 0.75 },
-  docRowInner: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    borderRadius: 12,
     padding: 14,
+    marginBottom: 10,
+    ...Platform.select({
+      ios: { shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 4 },
+      android: { elevation: 2 },
+    }),
   },
+  docRowPressed: { opacity: 0.8, transform: [{ scale: 0.99 }] },
   docRowText: { flex: 1 },
   docType: { fontSize: 15, fontWeight: '500' },
-  docMeta: { fontSize: 13, opacity: 0.7, marginTop: 3 },
-  docChevron: { fontSize: 20, opacity: 0.4, marginLeft: 8 },
-  fuelBtn: {
-    position: 'absolute',
-    bottom: 192,
-    left: 20,
-    right: 20,
-    borderWidth: 1,
-    borderColor: primary,
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  fuelBtnText: { color: primary, fontSize: 16, fontWeight: '500' },
-  vignetaBtn: {
-    position: 'absolute',
-    bottom: 136,
-    left: 20,
-    right: 20,
-    borderWidth: 1,
-    borderColor: primary,
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  vignetaBtnPressed: { opacity: 0.7 },
-  vignetaBtnText: { color: primary, fontSize: 16, fontWeight: '500' },
-  deleteBtn: {
-    position: 'absolute',
-    bottom: 80,
-    left: 20,
-    right: 20,
-    borderWidth: 1,
-    borderColor: '#c00',
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  deleteBtnText: { color: '#c00', fontSize: 16 },
-  fab: {
-    position: 'absolute',
-    bottom: 24,
-    left: 20,
-    right: 20,
-    backgroundColor: primary,
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  fabText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  modalOverlay: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.4)',
-  },
-  modalContent: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 24,
-    paddingBottom: 40,
-  },
-  modalTitle: { fontSize: 18, fontWeight: '700', marginBottom: 20 },
-  modalLabel: { fontSize: 14, marginBottom: 6, opacity: 0.9 },
-  modalInput: {
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    borderRadius: 12,
+  docMeta: { fontSize: 13, marginTop: 3 },
+
+  // Bottom bar
+  bottomBar: {
+    paddingTop: 12,
     paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 16,
-    marginBottom: 16,
+    borderTopWidth: 1,
+    gap: 8,
   },
-  modalButtons: {
+  vehicleActions: { flexDirection: 'row', gap: 8 },
+  actionBtn: {
+    flex: 1,
     flexDirection: 'row',
-    gap: 12,
-    marginTop: 8,
-    backgroundColor: 'transparent',
-  },
-  modalCancelBtn: {
-    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#ccc',
+    borderRadius: 12,
+    paddingVertical: 11,
+  },
+  actionIcon: { marginRight: 6 },
+  actionBtnText: { fontSize: 14, fontWeight: '500' },
+  primaryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#9EB567',
     borderRadius: 12,
     paddingVertical: 14,
-    alignItems: 'center',
   },
+  primaryBtnText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  btnPressed: { opacity: 0.85, transform: [{ scale: 0.99 }] },
+  deleteBtn: { alignItems: 'center', paddingVertical: 8 },
+  deleteBtnText: { color: '#E53935', fontSize: 14 },
+
+  // Modal
+  modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
+  modalContent: { borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, paddingBottom: 40 },
+  modalTitle: { fontSize: 18, fontWeight: '700', marginBottom: 20 },
+  modalLabel: { fontSize: 14, marginBottom: 6 },
+  modalInput: { borderWidth: 1, borderColor: '#e0e0e0', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14, fontSize: 16, marginBottom: 16 },
+  modalButtons: { flexDirection: 'row', gap: 12, marginTop: 8 },
+  modalCancelBtn: { flex: 1, borderWidth: 1, borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
   modalCancelText: { fontSize: 16, opacity: 0.8 },
-  modalSaveBtn: {
-    flex: 1,
-    backgroundColor: primary,
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
+  modalSaveBtn: { flex: 1, backgroundColor: '#9EB567', borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
   modalSaveText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  buttonPressed: { opacity: 0.85 },
 });

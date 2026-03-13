@@ -59,6 +59,13 @@ export const DOCUMENT_FIELDS: Partial<Record<DocumentType, FieldDef[]>> = {
     { key: 'amount', label: 'Sumă (RON)', placeholder: '250.00', keyboardType: 'decimal-pad', ocrKey: 'amount' },
     { key: 'due_date', label: 'Scadentă', placeholder: 'AAAA-LL-ZZ' },
   ],
+  bon_combustibil: [
+    { key: 'km', label: 'Kilometraj (km)', placeholder: '125430', keyboardType: 'numeric', ocrKey: 'km' },
+    { key: 'liters', label: 'Litri alimentați', placeholder: '45.23', keyboardType: 'decimal-pad', ocrKey: 'liters' },
+    { key: 'price_per_liter', label: 'Preț/litru (RON)', placeholder: '7.45', keyboardType: 'decimal-pad' },
+    { key: 'total_amount', label: 'Total (RON)', placeholder: '335.81', keyboardType: 'decimal-pad', ocrKey: 'price' },
+    { key: 'station', label: 'Stație', placeholder: 'Rompetrol, OMV...' },
+  ],
   card: [
     { key: 'last4', label: 'Ultimele 4 cifre', placeholder: '1234', keyboardType: 'numeric', ocrKey: 'last4' },
     { key: 'bank', label: 'Bancă', placeholder: 'BRD, BCR, ING...' },

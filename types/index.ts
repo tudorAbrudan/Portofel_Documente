@@ -5,11 +5,13 @@ export type DocumentType =
   | 'talon'
   | 'carte_auto'
   | 'rca'
+  | 'casco'
   | 'itp'
   | 'vigneta'
   | 'act_proprietate'
   | 'cadastru'
   | 'factura'
+  | 'bon_combustibil'
   | 'card'
   | 'altul'
   | 'custom';
@@ -80,11 +82,13 @@ export const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
   talon: 'Talon',
   carte_auto: 'Carte auto',
   rca: 'RCA',
+  casco: 'CASCO',
   itp: 'ITP',
   vigneta: 'Vignetă',
   act_proprietate: 'Act proprietate',
   cadastru: 'Cadastru',
   factura: 'Factură',
+  bon_combustibil: 'Bon combustibil',
   card: 'Card',
   altul: 'Altele',
   custom: 'Tip personalizat',

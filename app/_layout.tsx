@@ -2,7 +2,9 @@ import { ThemeProvider } from '@react-navigation/native';
 import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
+import * as Notifications from 'expo-notifications';
+import { useEffect, useRef } from 'react';
+import { Linking } from 'react-native';
 import 'react-native-reanimated';
 
 import AppLockScreen from '@/components/AppLockScreen';
@@ -43,6 +45,17 @@ export default function RootLayout() {
 function RootLayoutNav() {
   const colorScheme = useColorScheme();
   const appLock = useAppLock();
+  const notifListener = useRef<Notifications.EventSubscription | null>(null);
+
+  useEffect(() => {
+    notifListener.current = Notifications.addNotificationResponseReceivedListener(response => {
+      const data = response.notification.request.content.data as Record<string, unknown>;
+      if (typeof data?.url === 'string') {
+        Linking.openURL(data.url);
+      }
+    });
+    return () => { notifListener.current?.remove(); };
+  }, []);
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? AppDarkTheme : AppLightTheme}>

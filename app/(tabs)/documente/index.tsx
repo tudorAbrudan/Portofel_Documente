@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
 import { useDocuments } from '@/hooks/useDocuments';
@@ -44,11 +45,13 @@ const DOC_ICON: Record<DocumentType, IoniconName> = {
   talon: 'document-text',
   carte_auto: 'document',
   rca: 'shield-checkmark',
+  casco: 'shield-half',
   itp: 'checkmark-circle',
   vigneta: 'ribbon',
   act_proprietate: 'home',
   cadastru: 'map',
   factura: 'receipt',
+  bon_combustibil: 'flame',
   card: 'card',
   altul: 'document-outline',
   custom: 'document-outline',
@@ -61,11 +64,13 @@ const DOC_ICON_BG: Record<DocumentType, string> = {
   talon: '#E0F2F1',
   carte_auto: '#E0F2F1',
   rca: '#FCE4EC',
+  casco: '#FCE4EC',
   itp: '#F3E5F5',
   vigneta: '#FFF8E1',
   act_proprietate: '#E8F5E9',
   cadastru: '#E8F5E9',
   factura: '#FFF3E0',
+  bon_combustibil: '#FFF3E0',
   card: '#F3E5F5',
   altul: '#F5F5F5',
   custom: '#F5F5F5',
@@ -78,11 +83,13 @@ const DOC_ICON_COLOR: Record<DocumentType, string> = {
   talon: '#00695C',
   carte_auto: '#00897B',
   rca: '#C62828',
+  casco: '#AD1457',
   itp: '#6A1B9A',
   vigneta: '#F57F17',
   act_proprietate: '#2E7D32',
   cadastru: '#388E3C',
   factura: '#BF360C',
+  bon_combustibil: '#E65100',
   card: '#7B1FA2',
   altul: '#757575',
   custom: '#757575',
@@ -363,6 +370,7 @@ const emptyStyles = StyleSheet.create({
 export default function DocumenteListScreen() {
   const scheme = (useColorScheme() ?? 'light') as 'light' | 'dark';
   const C = Colors[scheme];
+  const insets = useSafeAreaInsets();
 
   const { documents, loading, error, refresh, deleteDocument } = useDocuments();
   const { persons, properties, vehicles, cards } = useEntities();
@@ -483,7 +491,7 @@ export default function DocumenteListScreen() {
     <RNView style={[styles.container, { backgroundColor: C.background }]}>
 
       {/* ── Custom Header ── */}
-      <RNView style={[styles.header, { backgroundColor: C.background }]}>
+      <RNView style={[styles.header, { backgroundColor: C.background, paddingTop: insets.top + 8 }]}>
         <RNView style={styles.headerLeft}>
           <RNText style={[styles.headerTitle, { color: C.text }]}>Documente</RNText>
           <RNText style={[styles.headerSub, { color: C.textSecondary }]}>
@@ -509,11 +517,11 @@ export default function DocumenteListScreen() {
       </RNView>
 
       {/* ── Type filter chips ── */}
+      <RNView style={styles.chipsRow}>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.chipsContent}
-        style={styles.chipsRow}
       >
         {/* "Expiră curând" chip */}
         <Pressable
@@ -566,14 +574,15 @@ export default function DocumenteListScreen() {
           );
         })}
       </ScrollView>
+      </RNView>
 
       {/* ── Entity filter chips ── */}
       {entityOptions.length > 0 && (
+        <RNView style={styles.chipsRow}>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.chipsContent}
-          style={styles.chipsRow}
         >
           <Pressable
             style={[
@@ -628,6 +637,7 @@ export default function DocumenteListScreen() {
             );
           })}
         </ScrollView>
+        </RNView>
       )}
 
       {/* ── Error banner ── */}
@@ -736,6 +746,7 @@ const styles = StyleSheet.create({
   chipsRow: {
     height: 44,
     flexShrink: 0,
+    overflow: 'hidden',
   },
   chipsContent: {
     paddingHorizontal: 12,

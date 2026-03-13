@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
 import * as settings from '@/services/settings';
@@ -179,6 +180,7 @@ function LegalModal({ visible, title, content, onClose, scheme }: LegalModalProp
 export default function SetariScreen() {
   const scheme = (useColorScheme() ?? 'light') as 'light' | 'dark';
   const C = Colors[scheme];
+  const insets = useSafeAreaInsets();
 
   const { customTypes, createCustomType, deleteCustomType } = useCustomTypes();
   const [newTypeName, setNewTypeName] = useState('');
@@ -357,7 +359,7 @@ export default function SetariScreen() {
   return (
     <RNView style={[styles.container, { backgroundColor: C.background }]}>
       {/* ── Header ── */}
-      <RNView style={[styles.header, { backgroundColor: C.background }]}>
+      <RNView style={[styles.header, { backgroundColor: C.background, paddingTop: insets.top + 8 }]}>
         <RNText style={[styles.headerTitle, { color: C.text }]}>Setări</RNText>
       </RNView>
 

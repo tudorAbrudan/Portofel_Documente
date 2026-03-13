@@ -41,7 +41,13 @@
       ],
       "expo-sharing",
       "expo-secure-store",
-      "expo-sqlite"
+      "expo-sqlite",
+      [
+        "expo-calendar",
+        {
+          "calendarPermission": "Aplicația are nevoie de acces la calendar pentru a adăuga remindere de expirare documente."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

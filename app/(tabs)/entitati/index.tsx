@@ -12,15 +12,19 @@ import {
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
 import { useEntities } from '@/hooks/useEntities';
 import type { EntityType, Person, Property, Vehicle, Card } from '@/types';
 
 type AnyEntity = Person | Property | Vehicle | Card;
+type EntityTab = EntityType | 'all';
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
+type TypedEntity = { item: AnyEntity; entityType: EntityType };
 
-const TABS: { key: EntityType; label: string; icon: IoniconName }[] = [
+const TABS: { key: EntityTab; label: string; icon: IoniconName }[] = [
+  { key: 'all', label: 'Toate', icon: 'apps-outline' },
   { key: 'person', label: 'Persoane', icon: 'person-outline' },
   { key: 'property', label: 'Proprietăți', icon: 'home-outline' },
   { key: 'vehicle', label: 'Vehicule', icon: 'car-outline' },
@@ -51,8 +55,9 @@ const ENTITY_ICON_COLOR: Record<EntityType, string> = {
 export default function EntitatiListScreen() {
   const scheme = (useColorScheme() ?? 'light') as 'light' | 'dark';
   const C = Colors[scheme];
+  const insets = useSafeAreaInsets();
 
-  const [tab, setTab] = useState<EntityType>('person');
+  const [tab, setTab] = useState<EntityTab>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const {
     persons,
@@ -74,31 +79,34 @@ export default function EntitatiListScreen() {
     }, [])
   );
 
-  const rawList: AnyEntity[] = useMemo(
-    () =>
-      tab === 'person'
-        ? persons
-        : tab === 'property'
-          ? properties
-          : tab === 'vehicle'
-            ? vehicles
-            : cards,
-    [tab, persons, properties, vehicles, cards]
+  const allTyped: TypedEntity[] = useMemo(
+    () => [
+      ...persons.map(e => ({ item: e as AnyEntity, entityType: 'person' as EntityType })),
+      ...properties.map(e => ({ item: e as AnyEntity, entityType: 'property' as EntityType })),
+      ...vehicles.map(e => ({ item: e as AnyEntity, entityType: 'vehicle' as EntityType })),
+      ...cards.map(e => ({ item: e as AnyEntity, entityType: 'card' as EntityType })),
+    ],
+    [persons, properties, vehicles, cards]
   );
 
-  const list: AnyEntity[] = useMemo(() => {
-    if (!searchQuery.trim()) return rawList;
+  const rawTyped: TypedEntity[] = useMemo(
+    () => (tab === 'all' ? allTyped : allTyped.filter(e => e.entityType === tab)),
+    [tab, allTyped]
+  );
+
+  const typedList: TypedEntity[] = useMemo(() => {
+    if (!searchQuery.trim()) return rawTyped;
     const q = searchQuery.trim().toLowerCase();
-    return rawList.filter(
-      item =>
+    return rawTyped.filter(
+      ({ item }) =>
         ('name' in item && typeof item.name === 'string' && item.name.toLowerCase().includes(q)) ||
         ('nickname' in item &&
           typeof item.nickname === 'string' &&
           item.nickname.toLowerCase().includes(q))
     );
-  }, [rawList, searchQuery]);
+  }, [rawTyped, searchQuery]);
 
-  const deleteEntity = (id: string, name: string) => {
+  const deleteEntity = (id: string, name: string, entityType: EntityType) => {
     Alert.alert('Ștergere', `Ștergi „${name}"?`, [
       { text: 'Anulare', style: 'cancel' },
       {
@@ -106,9 +114,9 @@ export default function EntitatiListScreen() {
         style: 'destructive',
         onPress: async () => {
           try {
-            if (tab === 'person') await deletePerson(id);
-            else if (tab === 'property') await deleteProperty(id);
-            else if (tab === 'vehicle') await deleteVehicle(id);
+            if (entityType === 'person') await deletePerson(id);
+            else if (entityType === 'property') await deleteProperty(id);
+            else if (entityType === 'vehicle') await deleteVehicle(id);
             else await deleteCard(id);
             refresh();
           } catch (e) {
@@ -125,19 +133,32 @@ export default function EntitatiListScreen() {
     return '—';
   };
 
-  const getSubtitle = (item: AnyEntity): string | null => {
-    if (tab === 'card' && 'last4' in item && item.last4) return `•••• ${item.last4}`;
-    if (tab === 'vehicle' && 'type' in item && item.type) return item.type as string;
+  const getSubtitle = (item: AnyEntity, entityType: EntityType): string | null => {
+    if (entityType === 'card' && 'last4' in item && item.last4) return `•••• ${item.last4}`;
+    if (entityType === 'vehicle' && 'type' in item && item.type) return item.type as string;
     return null;
   };
 
-  const tabCount = rawList.length;
-  const subtitleText = `${tabCount} ${tab === 'person' ? 'persoane' : tab === 'property' ? 'proprietăți' : tab === 'vehicle' ? 'vehicule' : 'carduri'}`;
+  const tabCount = rawTyped.length;
+  const subtitleText = `${tabCount} ${
+    tab === 'all'
+      ? 'entități'
+      : tab === 'person'
+        ? 'persoane'
+        : tab === 'property'
+          ? 'proprietăți'
+          : tab === 'vehicle'
+            ? 'vehicule'
+            : 'carduri'
+  }`;
+
+  const emptyIconName: IoniconName =
+    tab === 'all' ? 'people-outline' : ENTITY_ICON[tab as EntityType];
 
   return (
     <RNView style={[styles.container, { backgroundColor: C.background }]}>
       {/* ── Custom Header ── */}
-      <RNView style={[styles.header, { backgroundColor: C.background }]}>
+      <RNView style={[styles.header, { backgroundColor: C.background, paddingTop: insets.top + 8 }]}>
         <RNView style={styles.headerLeft}>
           <RNText style={[styles.headerTitle, { color: C.text }]}>Entități</RNText>
           <RNText style={[styles.headerSub, { color: C.textSecondary }]}>{subtitleText}</RNText>
@@ -159,11 +180,11 @@ export default function EntitatiListScreen() {
       </RNView>
 
       {/* ── Tabs as chips ── */}
+      <RNView style={styles.chipsRow}>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.chipsContent}
-        style={styles.chipsRow}
       >
         {TABS.map(({ key, label, icon }) => {
           const isActive = tab === key;
@@ -196,6 +217,7 @@ export default function EntitatiListScreen() {
           );
         })}
       </ScrollView>
+      </RNView>
 
       {/* ── Error banner ── */}
       {error ? (
@@ -210,7 +232,7 @@ export default function EntitatiListScreen() {
         style={styles.scroll}
         contentContainerStyle={[
           styles.scrollContent,
-          list.length === 0 && styles.scrollContentEmpty,
+          typedList.length === 0 && styles.scrollContentEmpty,
         ]}
         refreshControl={
           <RefreshControl refreshing={loading} onRefresh={refresh} tintColor={C.primary} />
@@ -219,10 +241,10 @@ export default function EntitatiListScreen() {
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
       >
-        {!error && list.length === 0 && !loading ? (
+        {!error && typedList.length === 0 && !loading ? (
           <RNView style={styles.emptyWrap}>
             <Ionicons
-              name={ENTITY_ICON[tab]}
+              name={emptyIconName}
               size={64}
               color={C.textSecondary}
               style={styles.emptyIcon}
@@ -237,12 +259,12 @@ export default function EntitatiListScreen() {
             </RNText>
           </RNView>
         ) : (
-          list.map(item => {
+          typedList.map(({ item, entityType }) => {
             const title = getTitle(item);
-            const subtitle = getSubtitle(item);
-            const iconBg = ENTITY_ICON_BG[tab];
-            const iconColor = ENTITY_ICON_COLOR[tab];
-            const iconName = ENTITY_ICON[tab];
+            const subtitle = getSubtitle(item, entityType);
+            const iconBg = ENTITY_ICON_BG[entityType];
+            const iconColor = ENTITY_ICON_COLOR[entityType];
+            const iconName = ENTITY_ICON[entityType];
             return (
               <Pressable
                 key={item.id}
@@ -252,15 +274,12 @@ export default function EntitatiListScreen() {
                   pressed && styles.cardPressed,
                 ]}
                 onPress={() => router.push(`/(tabs)/entitati/${item.id}`)}
-                onLongPress={() => deleteEntity(item.id, title)}
+                onLongPress={() => deleteEntity(item.id, title, entityType)}
                 android_ripple={{ color: 'rgba(0,0,0,0.05)', borderless: false }}
               >
-                {/* Left icon */}
                 <RNView style={[styles.iconWrap, { backgroundColor: iconBg }]}>
                   <Ionicons name={iconName} size={22} color={iconColor} />
                 </RNView>
-
-                {/* Content */}
                 <RNView style={styles.cardContent}>
                   <RNText style={[styles.cardTitle, { color: C.text }]} numberOfLines={1}>
                     {title}
@@ -274,8 +293,6 @@ export default function EntitatiListScreen() {
                     </RNText>
                   )}
                 </RNView>
-
-                {/* Chevron */}
                 <Ionicons name="chevron-forward" size={16} color={C.textSecondary} />
               </Pressable>
             );
@@ -328,11 +345,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginHorizontal: 12,
-    marginTop: 10,
-    marginBottom: 4,
+    marginTop: 6,
+    marginBottom: 2,
     borderRadius: 12,
     borderWidth: 1,
-    height: 48,
+    height: 44,
     paddingHorizontal: 12,
     ...Platform.select({
       ios: {
@@ -353,12 +370,13 @@ const styles = StyleSheet.create({
 
   // Chips
   chipsRow: {
-    height: 44,
+    height: 40,
     flexShrink: 0,
+    overflow: 'hidden',
   },
   chipsContent: {
     paddingHorizontal: 12,
-    paddingVertical: 5,
+    paddingVertical: 4,
     gap: 7,
     flexDirection: 'row',
     alignItems: 'center',
@@ -366,7 +384,7 @@ const styles = StyleSheet.create({
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 6,
+    paddingVertical: 5,
     paddingHorizontal: 13,
     borderRadius: 20,
     borderWidth: 1,
@@ -392,7 +410,7 @@ const styles = StyleSheet.create({
   scroll: { flex: 1 },
   scrollContent: {
     paddingHorizontal: 12,
-    paddingTop: 8,
+    paddingTop: 4,
     paddingBottom: 96,
   },
   scrollContentEmpty: { flexGrow: 1 },

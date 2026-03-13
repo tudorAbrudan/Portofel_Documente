@@ -68,14 +68,27 @@ export async function scheduleExpirationReminders(): Promise<void> {
 
     if (reminderDate.getTime() < now.getTime()) continue;
 
-    const title = 'Document expiră curând';
-    const body = `${DOCUMENT_TYPE_LABELS[doc.type]} expiră pe ${doc.expiry_date}`;
+    const asigraUrls: Partial<Record<string, string>> = {
+      rca: 'https://asigra.ro',
+      casco: 'https://asigra.ro',
+    };
+    const asigraUrl = asigraUrls[doc.type];
+    const isInsurance = !!asigraUrl;
+
+    const title = isInsurance ? 'Asigurarea expiră curând' : 'Document expiră curând';
+    const body = isInsurance
+      ? `${DOCUMENT_TYPE_LABELS[doc.type]} expiră pe ${doc.expiry_date}. Compară prețuri pe asigra.ro`
+      : `${DOCUMENT_TYPE_LABELS[doc.type]} expiră pe ${doc.expiry_date}`;
 
     await Notifications.scheduleNotificationAsync({
       content: {
         title,
         body,
-        data: { documentId: doc.id, screen: 'documente' },
+        data: {
+          documentId: doc.id,
+          screen: 'documente',
+          ...(asigraUrl ? { url: asigraUrl } : {}),
+        },
       },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.DATE,
