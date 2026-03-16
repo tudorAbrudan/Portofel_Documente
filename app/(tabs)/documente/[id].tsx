@@ -461,6 +461,24 @@ export default function DocumentDetailScreen() {
     }
   };
 
+  const handleCalendar = async () => {
+    if (!doc) return;
+    if (!isCalendarAvailable()) {
+      Alert.alert('Calendar indisponibil', 'Calendarul necesită un build nativ (expo run:ios).');
+      return;
+    }
+    if (doc.type === 'bilet' && doc.metadata?.event_date) {
+      const title = [doc.metadata?.categorie, doc.metadata?.venue].filter(Boolean).join(' – ') || 'Eveniment';
+      const calId = await addEventToCalendar({ title, eventDate: doc.metadata!.event_date, venue: doc.metadata?.venue, note: doc.note, documentId: doc.id });
+      if (!calId) Alert.alert('Eroare', 'Nu s-a putut accesa calendarul. Verifică permisiunile în Setări.');
+      else Alert.alert('Calendar', 'Reminder adăugat! Vei fi notificat cu 1 zi și 2 ore înainte.');
+    } else if (doc.expiry_date) {
+      const calId = await addExpiryCalendarEvent({ docType: doc.type, expiryDate: doc.expiry_date, entityName: undefined, documentId: doc.id, note: doc.note });
+      if (!calId) Alert.alert('Eroare', 'Nu s-a putut accesa calendarul. Verifică permisiunile în Setări.');
+      else Alert.alert('Calendar', 'Evenimentul a fost adăugat în calendar.');
+    }
+  };
+
   const handleDelete = () => {
     if (!doc) return;
     Alert.alert('Ștergere', `Ștergi documentul „${getDocumentLabel(doc, customTypes)}"?`, [
@@ -591,31 +609,31 @@ export default function DocumentDetailScreen() {
 
       const html = `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><style>
-  @page { size: A4 portrait; margin: 12mm; }
+  @page { size: A4 portrait; margin: 0; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, Helvetica, Arial, sans-serif; background: #fff; color: #1e2318; }
 
-  /* Pagini cu imagini — exact o pagina A4 (297 - 12*2 = 273mm) */
+  /* 100vw/100vh = dimensiunea exacta a paginii din printToFileAsync (A4: 595x842pt) */
+  /* Fara page-break explicit — inaltimea 100vh asigura ca elementul urmator incepe pe pagina noua */
   .img-page {
-    width: 186mm;
-    height: 273mm;
-    page-break-after: always;
-    break-after: page;
+    width: 100vw;
+    height: 100vh;
+    padding: 12mm;
     overflow: hidden;
     display: flex;
     align-items: center;
     justify-content: center;
   }
   .img-page img {
-    max-width: 186mm;
-    max-height: 273mm;
+    max-width: 100%;
+    max-height: 100%;
     width: auto;
     height: auto;
     display: block;
   }
 
   /* Pagina de meta */
-  .meta-page { page-break-inside: avoid; }
+  .meta-page { padding: 12mm; page-break-inside: avoid; }
   .meta-header {
     display: flex; align-items: flex-start; justify-content: space-between;
     padding-bottom: 4mm;
@@ -673,7 +691,7 @@ export default function DocumentDetailScreen() {
   </div>
 
 </body></html>`;
-      const { uri } = await Print.printToFileAsync({ html });
+      const { uri } = await Print.printToFileAsync({ html, width: 595, height: 842 }); // A4 in points
       const available = await Sharing.isAvailableAsync();
       if (available)
         await Sharing.shareAsync(uri, {
@@ -783,26 +801,11 @@ export default function DocumentDetailScreen() {
               <Text style={styles.label}>Data expirare</Text>
               <Text style={styles.value}>{doc.expiry_date}</Text>
               <Pressable
-                style={styles.calendarBtn}
-                onPress={async () => {
-                  if (!isCalendarAvailable()) {
-                    Alert.alert('Calendar indisponibil', 'Calendarul necesită un build nativ (expo run:ios). Nu funcționează în Expo Go.');
-                    return;
-                  }
-                  const calId = await addExpiryCalendarEvent({
-                    docType: doc.type,
-                    expiryDate: doc.expiry_date!,
-                    entityName: undefined,
-                    documentId: doc.id,
-                    note: doc.note,
-                  });
-                  if (!calId)
-                    Alert.alert('Eroare', 'Nu s-a putut accesa calendarul. Verifică permisiunile în Setări.');
-                  else
-                    Alert.alert('Calendar', 'Evenimentul a fost adăugat în calendar.');
-                }}
+                style={[styles.calendarBtn, { borderColor: colors.border, backgroundColor: colors.card }]}
+                onPress={handleCalendar}
               >
-                <Text style={styles.calendarBtnText}>📅 Adaugă reminder în calendar</Text>
+                <Text style={styles.actionItemIcon}>📅</Text>
+                <Text style={[styles.actionItemLabel, { color: primary }]}>Adaugă reminder în calendar</Text>
               </Pressable>
             </>
           )}
@@ -830,51 +833,46 @@ export default function DocumentDetailScreen() {
           })}
           {doc.type === 'bilet' && doc.metadata?.event_date && (
             <Pressable
-              style={styles.calendarBtn}
-              onPress={async () => {
-                if (!isCalendarAvailable()) {
-                  Alert.alert('Calendar indisponibil', 'Calendarul necesită un build nativ (expo run:ios).');
-                  return;
-                }
-                const title = [doc.metadata?.categorie, doc.metadata?.venue].filter(Boolean).join(' – ') || 'Eveniment';
-                const calId = await addEventToCalendar({
-                  title,
-                  eventDate: doc.metadata!.event_date,
-                  venue: doc.metadata?.venue,
-                  note: doc.note,
-                  documentId: doc.id,
-                });
-                if (!calId)
-                  Alert.alert('Eroare', 'Nu s-a putut accesa calendarul. Verifică permisiunile în Setări.');
-                else
-                  Alert.alert('Calendar', 'Reminder adăugat! Vei fi notificat cu 1 zi și 2 ore înainte.');
-              }}
+              style={[styles.calendarBtn, { borderColor: colors.border, backgroundColor: colors.card }]}
+              onPress={handleCalendar}
             >
-              <Text style={styles.calendarBtnText}>📅 Reminder eveniment în calendar</Text>
+              <Text style={styles.actionItemIcon}>📅</Text>
+              <Text style={[styles.actionItemLabel, { color: primary }]}>Reminder eveniment în calendar</Text>
             </Pressable>
           )}
         </View>
 
-        <Pressable style={styles.editBtn} onPress={openEditModal}>
-          <Text style={styles.editBtnText}>Editează</Text>
-        </Pressable>
-
-        <Pressable
-          style={[styles.shareBtn, pdfLoading && styles.btnDisabled]}
-          onPress={handleExportPdf}
-          disabled={pdfLoading}
-        >
-          {pdfLoading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.shareBtnText}>Exportă ca PDF (apoi partajează)</Text>
-          )}
-        </Pressable>
-        <Pressable style={styles.shareBtnSecondary} onPress={handleShare}>
-          <Text style={styles.shareBtnTextSecondary}>
-            Distribuie imaginea (Email, WhatsApp, etc.)
-          </Text>
-        </Pressable>
+        {/* Butoane acțiuni — grid 2×2 compact */}
+        <View style={[styles.actionBar, { borderColor: colors.border, backgroundColor: colors.card }]}>
+          <Pressable
+            style={[styles.actionItem, { borderRightWidth: 1, borderBottomWidth: 1, borderColor: colors.border }, pdfLoading && styles.btnDisabled]}
+            onPress={handleExportPdf}
+            disabled={pdfLoading}
+          >
+            {pdfLoading
+              ? <ActivityIndicator color={primary} size="small" />
+              : <Text style={styles.actionItemIcon}>📄</Text>}
+            <Text style={[styles.actionItemLabel, { color: primary }]}>Distribuie PDF</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.actionItem, { borderBottomWidth: 1, borderColor: colors.border }]}
+            onPress={handleShare}
+          >
+            <Text style={styles.actionItemIcon}>📤</Text>
+            <Text style={[styles.actionItemLabel, { color: colors.text }]}>Distribuie</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.actionItem, { borderRightWidth: 1, borderColor: colors.border }]}
+            onPress={openEditModal}
+          >
+            <Text style={styles.actionItemIcon}>✏️</Text>
+            <Text style={[styles.actionItemLabel, { color: primary }]}>Editează</Text>
+          </Pressable>
+          <Pressable style={styles.actionItem} onPress={handleDelete}>
+            <Text style={styles.actionItemIcon}>🗑️</Text>
+            <Text style={[styles.actionItemLabel, styles.actionItemDanger]}>Șterge</Text>
+          </Pressable>
+        </View>
         {(doc.type === 'rca' || doc.type === 'itp') && (
           <Pressable style={styles.asigraBtn} onPress={() => Linking.openURL('https://asigra.ro')}>
             <Text style={styles.asigaBtnText}>🛡 RCA ieftină → asigra.ro</Text>
@@ -890,9 +888,6 @@ export default function DocumentDetailScreen() {
             <Text style={styles.asigaBtnText}>🏠 PAD ieftină → asigra.ro</Text>
           </Pressable>
         )}
-        <Pressable style={styles.deleteBtn} onPress={handleDelete}>
-          <Text style={styles.deleteBtnText}>Șterge document</Text>
-        </Pressable>
       </ScrollView>
 
       <Modal visible={!!fullscreenUri} transparent animationType="fade" statusBarTranslucent>
@@ -1180,19 +1175,15 @@ const styles = StyleSheet.create({
   label: { fontSize: 12, opacity: 0.7, marginTop: 12, marginBottom: 2 },
   value: { fontSize: 16 },
   calendarBtn: {
-    marginTop: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    backgroundColor: '#E8F5E9',
+    marginTop: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 8,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#9EB567',
-    alignSelf: 'flex-start',
-  },
-  calendarBtnText: {
-    fontSize: 13,
-    color: '#2E7D32',
-    fontWeight: '500',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
   },
   typeToggleRow: {
     flexDirection: 'row',
@@ -1215,52 +1206,45 @@ const styles = StyleSheet.create({
     color: '#9EB567',
     fontWeight: '500',
   },
-  editBtn: {
+  actionBar: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     borderWidth: 1,
-    borderColor: primary,
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginBottom: 12,
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginBottom: 16,
   },
-  editBtnText: { color: primary, fontSize: 16, fontWeight: '500' },
-  shareBtn: {
-    backgroundColor: primary,
-    borderRadius: 12,
+  actionItem: {
+    width: '50%',
     paddingVertical: 14,
+    paddingHorizontal: 8,
     alignItems: 'center',
-    marginBottom: 10,
+    justifyContent: 'center',
+    gap: 5,
   },
+  actionItemFull: {
+    width: '100%',
+    paddingVertical: 14,
+    paddingHorizontal: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  actionItemIcon: { fontSize: 20 },
+  actionItemLabel: { fontSize: 12, fontWeight: '600' },
+  actionItemDanger: { color: '#c00' },
   btnDisabled: { opacity: 0.7 },
-  shareBtnText: { color: '#fff', fontSize: 16, fontWeight: '500' },
-  shareBtnSecondary: {
-    borderWidth: 1,
-    borderColor: primary,
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  shareBtnTextSecondary: { color: primary, fontSize: 16, fontWeight: '500' },
   asigraBtn: {
     borderRadius: 12,
-    paddingVertical: 14,
+    paddingVertical: 12,
     alignItems: 'center',
     marginBottom: 10,
     backgroundColor: '#E8F5E9',
     borderWidth: 1,
     borderColor: '#9EB567',
   },
-  asigaBtnText: { color: '#2E7D32', fontSize: 15, fontWeight: '600' },
-  deleteBtn: {
-    borderWidth: 1,
-    borderColor: '#c00',
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  deleteBtnText: { color: '#c00', fontSize: 16 },
+  asigaBtnText: { color: '#2E7D32', fontSize: 14, fontWeight: '600' },
   // Edit overlay
   overlay: {
     position: 'absolute',
