@@ -220,7 +220,11 @@ export default function DocumentDetailScreen() {
       const dir = `${FileSystem.documentDirectory}documents`;
       await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
       const dest = `${dir}/${filename}`;
-      await FileSystem.copyAsync({ from: uri, to: dest });
+      // Normalizează EXIF (bake-in rotația) înainte de salvare
+      const normalized = await ImageManipulator.manipulateAsync(
+        uri, [], { compress: 0.92, format: ImageManipulator.SaveFormat.JPEG }
+      );
+      await FileSystem.copyAsync({ from: normalized.uri, to: dest });
       if (!doc.file_path) {
         await updateDocument(doc.id, {
           type: doc.type,
@@ -245,7 +249,28 @@ export default function DocumentDetailScreen() {
   async function runOcrOnNewPage(localPath: string, currentDoc: DocType) {
     try {
       const fileUri = localPath.startsWith('file://') ? localPath : `file://${localPath}`;
-      const { text } = await extractText(fileUri);
+
+      // Auto-rotație: dacă OCR găsește puțin text, încearcă alte orientări
+      let { text } = await extractText(fileUri);
+      let savedPath = localPath;
+
+      if (text.trim().length < 30) {
+        for (const deg of [90, 270, 180]) {
+          const rotated = await ImageManipulator.manipulateAsync(
+            fileUri, [{ rotate: deg }], { compress: 0.92, format: ImageManipulator.SaveFormat.JPEG }
+          );
+          const { text: rotText } = await extractText(rotated.uri);
+          if (rotText.trim().length > text.trim().length) {
+            text = rotText;
+            // Suprascrie fișierul cu versiunea rotită
+            const destPath = localPath.startsWith('file://') ? localPath.slice(7) : localPath;
+            await FileSystem.copyAsync({ from: rotated.uri, to: destPath });
+            savedPath = destPath;
+          }
+          if (text.trim().length >= 30) break;
+        }
+      }
+
       if (!text.trim()) return;
 
       const detectedType = detectDocumentType(text);
@@ -258,12 +283,13 @@ export default function DocumentDetailScreen() {
         issue_date: info.issue_date ?? currentDoc.issue_date,
         expiry_date: info.expiry_date ?? currentDoc.expiry_date,
         note: (!currentDoc.note && summary) ? summary : currentDoc.note,
-        file_path: currentDoc.file_path,
+        file_path: savedPath,
         auto_delete: currentDoc.auto_delete,
       };
       await updateDocument(currentDoc.id, updates);
       const updated = await getDocumentById(currentDoc.id);
       setDoc(updated);
+      setRotatedUris({});
     } catch {
       // OCR opțional
     }
@@ -349,31 +375,72 @@ export default function DocumentDetailScreen() {
   };
 
   const handleOcr = async () => {
-    const firstPage = allPages[0];
-    if (!firstPage) {
-      Alert.alert('Fără imagine', 'Nu există o imagine atașată acestui document.');
+    if (allPages.length === 0) {
+      Alert.alert('Fără imagini', 'Nu există imagini atașate acestui document.');
       return;
     }
-    const currentImageUri = firstPage.file_path.startsWith('file://')
-      ? firstPage.file_path
-      : `file://${firstPage.file_path}`;
     setOcrLoading(true);
     try {
-      const { text } = await extractText(currentImageUri);
-      if (!text.trim()) {
-        Alert.alert('OCR', 'Nu s-a putut extrage text din imagine.');
+      // Scanează TOATE paginile și combină textul
+      const texts: string[] = [];
+      for (const page of allPages) {
+        const uri = page.file_path.startsWith('file://') ? page.file_path : `file://${page.file_path}`;
+        try {
+          const { text } = await extractText(uri);
+          if (text.trim()) texts.push(text);
+        } catch { /* pagina nu a putut fi scanată */ }
+      }
+
+      const combinedText = texts.join('\n');
+      if (!combinedText.trim()) {
+        Alert.alert('OCR', 'Nu s-a putut extrage text din imagini.');
         return;
       }
-      Alert.alert('Text extras', text.slice(0, 500) + (text.length > 500 ? '...' : ''), [
-        { text: 'Închide', style: 'cancel' },
-        {
-          text: 'Copiază în notă',
-          onPress: () => {
-            openEditModal();
-            setEditNote(text.slice(0, 500));
-          },
-        },
-      ]);
+
+      const info = extractDocumentInfo(combinedText);
+      const summary = formatOcrSummary(combinedText, info);
+
+      const found: string[] = [];
+      if (info.expiry_date) found.push(`📅 Expiră: ${info.expiry_date}`);
+      if (info.issue_date) found.push(`📅 Emis: ${info.issue_date}`);
+      if (info.name) found.push(`👤 Nume: ${info.name}`);
+      if (info.cnp) found.push(`🔢 CNP: ${info.cnp}`);
+      if (info.series) found.push(`🔠 Seria: ${info.series}`);
+
+      const pageLabel = `${allPages.length} ${allPages.length === 1 ? 'pagină' : 'pagini'}`;
+      const message = found.length > 0
+        ? `Găsit din ${pageLabel}:\n\n${found.join('\n')}`
+        : `Text extras din ${pageLabel}:\n\n${combinedText.slice(0, 400)}${combinedText.length > 400 ? '…' : ''}`;
+
+      Alert.alert(
+        'Procesare OCR',
+        message,
+        [
+          { text: 'Închide', style: 'cancel' },
+          found.length > 0
+            ? {
+                text: 'Aplică pe document',
+                onPress: async () => {
+                  await updateDocument(doc!.id, {
+                    type: doc!.type,
+                    issue_date: info.issue_date ?? doc!.issue_date,
+                    expiry_date: info.expiry_date ?? doc!.expiry_date,
+                    note: (!doc!.note && summary) ? summary : doc!.note,
+                    file_path: doc!.file_path,
+                    auto_delete: doc!.auto_delete,
+                    metadata: doc!.metadata,
+                  });
+                  const updated = await getDocumentById(doc!.id);
+                  setDoc(updated);
+                  Alert.alert('Salvat', 'Datele OCR au fost aplicate.');
+                },
+              }
+            : {
+                text: 'Copiază în notă',
+                onPress: () => { openEditModal(); setEditNote(combinedText.slice(0, 500)); },
+              },
+        ]
+      );
     } catch (e) {
       Alert.alert('Eroare OCR', e instanceof Error ? e.message : 'Eroare la procesare');
     } finally {
@@ -592,6 +659,21 @@ export default function DocumentDetailScreen() {
             {allPages.length === 0 ? '+ Adaugă poză / pagină' : '+ Adaugă pagină'}
           </Text>
         </Pressable>
+        {allPages.length > 0 && (
+          <Pressable
+            style={[styles.ocrBtn, ocrLoading && styles.btnDisabled]}
+            onPress={handleOcr}
+            disabled={ocrLoading}
+          >
+            {ocrLoading ? (
+              <ActivityIndicator color={primary} />
+            ) : (
+              <Text style={styles.ocrBtnText}>
+                🔍 Procesare OCR {allPages.length > 1 ? `(${allPages.length} pagini)` : ''}
+              </Text>
+            )}
+          </Pressable>
+        )}
         <View style={styles.meta}>
           <Text style={styles.label}>Tip</Text>
           <Text style={styles.value}>{getDocumentLabel(doc, customTypes)}</Text>
@@ -697,17 +779,6 @@ export default function DocumentDetailScreen() {
           <Text style={styles.shareBtnTextSecondary}>
             Distribuie imaginea (Email, WhatsApp, etc.)
           </Text>
-        </Pressable>
-        <Pressable
-          style={[styles.ocrBtn, (ocrLoading || allPages.length === 0) && styles.btnDisabled]}
-          onPress={handleOcr}
-          disabled={ocrLoading || allPages.length === 0}
-        >
-          {ocrLoading ? (
-            <ActivityIndicator color={primary} />
-          ) : (
-            <Text style={styles.ocrBtnText}>Extrage text (OCR)</Text>
-          )}
         </Pressable>
         {(doc.type === 'rca' || doc.type === 'itp') && (
           <Pressable style={styles.asigraBtn} onPress={() => Linking.openURL('https://asigra.ro')}>
