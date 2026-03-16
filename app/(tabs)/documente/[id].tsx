@@ -560,37 +560,125 @@ export default function DocumentDetailScreen() {
       if (imgTags.length === 0 && allPages.length > 0) {
         Alert.alert('Atenție', 'Imaginile nu au putut fi incluse în PDF. Va conține doar textul documentului.');
       }
-      const lines: string[] = [`<p><strong>${getDocumentLabel(doc, customTypes)}</strong></p>`];
-      if (doc.issue_date) lines.push(`<p>Emis: ${doc.issue_date}</p>`);
-      if (doc.expiry_date) lines.push(`<p>Expiră: ${doc.expiry_date}</p>`);
-      if (doc.note) lines.push(`<p>${escapeHtml(doc.note)}</p>`);
-      const html = `
-        <!DOCTYPE html>
-        <html><head><meta charset="utf-8"><style>
-          @page { margin: 10mm; size: A4 portrait; }
-          * { box-sizing: border-box; margin: 0; padding: 0; }
-          body { font-family: sans-serif; }
-          .img-page {
-            width: 100%;
-            height: 277mm;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            page-break-after: always;
-            page-break-inside: avoid;
-          }
-          .img-page img {
-            max-width: 100%;
-            max-height: 277mm;
-            object-fit: contain;
-          }
-          .meta { padding: 16px; }
-          .meta p { margin: 4px 0; font-size: 13px; line-height: 1.5; }
-        </style></head><body>
-          ${imgTags.join('\n')}
-          ${lines.length > 0 ? `<div class="meta">${lines.join('')}</div>` : ''}
-        </body></html>
-      `;
+
+      const docLabel = escapeHtml(getDocumentLabel(doc, customTypes));
+      const generatedDate = new Date().toLocaleDateString('ro-RO', { day: '2-digit', month: 'long', year: 'numeric' });
+
+      // Câmpuri metadata
+      const metaFields: string[] = [];
+      if (doc.issue_date) metaFields.push(`
+        <div class="field">
+          <div class="field-label">Data emisiunii</div>
+          <div class="field-value">${escapeHtml(doc.issue_date)}</div>
+        </div>`);
+      if (doc.expiry_date) metaFields.push(`
+        <div class="field">
+          <div class="field-label">Data expirării</div>
+          <div class="field-value">${escapeHtml(doc.expiry_date)}</div>
+        </div>`);
+      if (doc.metadata) {
+        const { DOCUMENT_FIELDS } = require('@/types/documentFields');
+        const fields = DOCUMENT_FIELDS[doc.type] ?? [];
+        for (const f of fields) {
+          const val = doc.metadata[f.key];
+          if (val) metaFields.push(`
+            <div class="field">
+              <div class="field-label">${escapeHtml(f.label)}</div>
+              <div class="field-value">${escapeHtml(val)}</div>
+            </div>`);
+        }
+      }
+
+      const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+  @page { size: A4 portrait; margin: 12mm 12mm 20mm 12mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, Helvetica, Arial, sans-serif; background: #fff; color: #1e2318; }
+
+  /* Footer fix pe fiecare pagină */
+  .footer {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    height: 10mm;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 2mm;
+    font-size: 8px; color: #bbb;
+    border-top: 0.5px solid #e8eee0;
+    background: #fff;
+  }
+  .footer-brand { color: #9EB567; font-weight: 700; letter-spacing: 0.03em; }
+
+  /* Pagini cu imagini */
+  .img-page {
+    width: 186mm;
+    height: 253mm; /* 297 - 12top - 20bottom - 12buffer */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    page-break-after: always;
+    page-break-inside: avoid;
+  }
+  .img-page img {
+    max-width: 186mm;
+    max-height: 253mm;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    display: block;
+  }
+
+  /* Pagina de meta */
+  .meta-page { page-break-inside: avoid; padding-top: 4mm; }
+  .meta-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding-bottom: 4mm;
+    border-bottom: 2px solid #9EB567;
+    margin-bottom: 6mm;
+  }
+  .meta-brand { font-size: 16px; font-weight: 800; color: #9EB567; }
+  .meta-brand-sub { font-size: 9px; color: #aaa; margin-top: 1px; }
+  .meta-doc-type { font-size: 24px; font-weight: 700; margin-bottom: 6mm; }
+  .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 3mm; margin-bottom: 4mm; }
+  .field {
+    background: #f8faf4; border: 1px solid #e2ebd4;
+    border-radius: 6px; padding: 3mm 4mm;
+  }
+  .field-label {
+    font-size: 8px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.06em; color: #9EB567; margin-bottom: 1.5mm;
+  }
+  .field-value { font-size: 13px; font-weight: 500; }
+  .note-box {
+    background: #f8faf4; border: 1px solid #e2ebd4;
+    border-left: 3px solid #9EB567;
+    border-radius: 0 6px 6px 0; padding: 3mm 4mm;
+  }
+  .note-label {
+    font-size: 8px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.06em; color: #9EB567; margin-bottom: 1.5mm;
+  }
+  .note-value { font-size: 12px; color: #444; line-height: 1.6; }
+</style></head><body>
+
+  <div class="footer">
+    <span class="footer-brand">Portofel Acte</span>
+    <span>Generat pe ${generatedDate}</span>
+  </div>
+
+  ${imgTags.join('\n')}
+
+  <div class="meta-page">
+    <div class="meta-header">
+      <div>
+        <div class="meta-brand">Portofel Acte</div>
+        <div class="meta-brand-sub">Aplicație de gestionare documente personale</div>
+      </div>
+    </div>
+    <div class="meta-doc-type">${docLabel}</div>
+    ${metaFields.length > 0 ? `<div class="fields">${metaFields.join('')}</div>` : ''}
+    ${doc.note ? `<div class="note-box"><div class="note-label">Notă</div><div class="note-value">${escapeHtml(doc.note)}</div></div>` : ''}
+  </div>
+
+</body></html>`;
       const { uri } = await Print.printToFileAsync({ html });
       const available = await Sharing.isAvailableAsync();
       if (available)
