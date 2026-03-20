@@ -1,7 +1,8 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -12,10 +13,13 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { useColorScheme } from '@/components/useColorScheme';
 import { light as lightColors, dark as darkColors } from '@/theme/colors';
 import { sendMessage, type ChatMessage } from '@/services/chatbot';
+
+const AI_CONSENT_KEY = 'ai_assistant_consent_accepted';
 
 const WELCOME_MESSAGE: ChatMessage = {
   role: 'assistant',
@@ -100,17 +104,90 @@ function MessageBubble({ message, onIdPress, colors }: MessageBubbleProps) {
   );
 }
 
+interface ConsentModalProps {
+  visible: boolean;
+  colors: typeof lightColors;
+  onAccept: () => void;
+  onDecline: () => void;
+}
+
+function ConsentModal({ visible, colors, onAccept, onDecline }: ConsentModalProps) {
+  return (
+    <Modal visible={visible} transparent animationType="fade">
+      <View style={styles.consentOverlay}>
+        <View style={[styles.consentBox, { backgroundColor: colors.surface }]}>
+          <Text style={[styles.consentTitle, { color: colors.text }]}>
+            Asistent AI – Informații despre confidențialitate
+          </Text>
+          <Text style={[styles.consentBody, { color: colors.text }]}>
+            Pentru a răspunde la întrebările tale, asistentul trimite datele din aplicație (nume
+            persoane, tipuri de documente, date de expirare, note) către{' '}
+            <Text style={{ fontWeight: '700' }}>Mistral AI</Text> (mistral.ai), un serviciu extern
+            de inteligență artificială.
+          </Text>
+          <Text style={[styles.consentBody, { color: colors.text }]}>
+            <Text style={{ fontWeight: '700' }}>Ce date sunt trimise:</Text> numele entităților
+            (persoane, vehicule, proprietăți, carduri), tipurile documentelor, datele de expirare și
+            emitere, notele atașate documentelor.
+          </Text>
+          <Text style={[styles.consentBody, { color: colors.text }]}>
+            <Text style={{ fontWeight: '700' }}>Ce NU este trimis:</Text> fotografiile documentelor,
+            numărul CVV, PIN-ul aplicației.
+          </Text>
+          <Text style={[styles.consentNote, { color: colors.textSecondary }]}>
+            Dacă nu dorești să partajezi aceste date cu un serviciu extern, apasă „Nu accept".
+          </Text>
+          <View style={styles.consentButtons}>
+            <Pressable
+              style={[styles.consentBtn, styles.consentBtnDecline, { borderColor: colors.border }]}
+              onPress={onDecline}>
+              <Text style={[styles.consentBtnText, { color: colors.text }]}>Nu accept</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.consentBtn, styles.consentBtnAccept, { backgroundColor: colors.primary }]}
+              onPress={onAccept}>
+              <Text style={[styles.consentBtnText, { color: '#ffffff' }]}>Accept</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 export default function ChatScreen() {
   const colorScheme = useColorScheme();
   const colors = colorScheme === 'dark' ? darkColors : lightColors;
   const router = useRouter();
-
   const insets = useSafeAreaInsets();
 
+  const [consentChecked, setConsentChecked] = useState(false);
+  const [showConsent, setShowConsent] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME_MESSAGE]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
+
+  useEffect(() => {
+    AsyncStorage.getItem(AI_CONSENT_KEY).then((value) => {
+      if (value === 'true') {
+        setConsentChecked(true);
+      } else {
+        setShowConsent(true);
+      }
+    });
+  }, []);
+
+  function handleAccept() {
+    AsyncStorage.setItem(AI_CONSENT_KEY, 'true');
+    setShowConsent(false);
+    setConsentChecked(true);
+  }
+
+  function handleDecline() {
+    setShowConsent(false);
+    router.back();
+  }
 
   async function handleSend() {
     const text = input.trim();
@@ -145,60 +222,79 @@ export default function ChatScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={90}>
-      <ScrollView
-        ref={scrollRef}
-        style={styles.messageList}
-        contentContainerStyle={styles.messageListContent}
-        onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: false })}>
-        {messages.map((msg, index) => (
-          <MessageBubble
-            key={index}
-            message={msg}
-            onIdPress={handleIdPress}
-            colors={colors}
-          />
-        ))}
-        {loading && (
-          <View style={[styles.bubble, styles.assistantBubble, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <ActivityIndicator size="small" color={colors.primary} />
-          </View>
-        )}
-      </ScrollView>
+    <>
+      <ConsentModal
+        visible={showConsent}
+        colors={colors}
+        onAccept={handleAccept}
+        onDecline={handleDecline}
+      />
+      {consentChecked && (
+        <KeyboardAvoidingView
+          style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top }]}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={90}>
+          <ScrollView
+            ref={scrollRef}
+            style={styles.messageList}
+            contentContainerStyle={styles.messageListContent}
+            onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: false })}>
+            {messages.map((msg, index) => (
+              <MessageBubble
+                key={index}
+                message={msg}
+                onIdPress={handleIdPress}
+                colors={colors}
+              />
+            ))}
+            {loading && (
+              <View
+                style={[
+                  styles.bubble,
+                  styles.assistantBubble,
+                  { backgroundColor: colors.surface, borderColor: colors.border },
+                ]}>
+                <ActivityIndicator size="small" color={colors.primary} />
+              </View>
+            )}
+          </ScrollView>
 
-      <View style={[styles.inputRow, { backgroundColor: colors.surface, borderTopColor: colors.border }]}>
-        <TextInput
-          style={[
-            styles.textInput,
-            {
-              backgroundColor: colors.background,
-              color: colors.text,
-              borderColor: colors.border,
-            },
-          ]}
-          placeholder="Scrie un mesaj..."
-          placeholderTextColor={colors.textSecondary}
-          value={input}
-          onChangeText={setInput}
-          onSubmitEditing={handleSend}
-          returnKeyType="send"
-          editable={!loading}
-          multiline
-        />
-        <Pressable
-          style={({ pressed }) => [
-            styles.sendButton,
-            { backgroundColor: colors.primary, opacity: pressed || !input.trim() ? 0.6 : 1 },
-          ]}
-          onPress={handleSend}
-          disabled={loading || !input.trim()}>
-          <Text style={styles.sendButtonText}>Trimite</Text>
-        </Pressable>
-      </View>
-    </KeyboardAvoidingView>
+          <View
+            style={[
+              styles.inputRow,
+              { backgroundColor: colors.surface, borderTopColor: colors.border },
+            ]}>
+            <TextInput
+              style={[
+                styles.textInput,
+                {
+                  backgroundColor: colors.background,
+                  color: colors.text,
+                  borderColor: colors.border,
+                },
+              ]}
+              placeholder="Scrie un mesaj..."
+              placeholderTextColor={colors.textSecondary}
+              value={input}
+              onChangeText={setInput}
+              onSubmitEditing={handleSend}
+              returnKeyType="send"
+              editable={!loading}
+              multiline
+            />
+            <Pressable
+              style={({ pressed }) => [
+                styles.sendButton,
+                { backgroundColor: colors.primary, opacity: pressed || !input.trim() ? 0.6 : 1 },
+              ]}
+              onPress={handleSend}
+              disabled={loading || !input.trim()}>
+              <Text style={styles.sendButtonText}>Trimite</Text>
+            </Pressable>
+          </View>
+        </KeyboardAvoidingView>
+      )}
+    </>
   );
 }
 
@@ -262,5 +358,53 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontWeight: '600',
     fontSize: 15,
+  },
+  // Consent modal
+  consentOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  consentBox: {
+    borderRadius: 16,
+    padding: 24,
+    width: '100%',
+    maxWidth: 420,
+    gap: 12,
+  },
+  consentTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  consentBody: {
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  consentNote: {
+    fontSize: 13,
+    lineHeight: 19,
+    fontStyle: 'italic',
+  },
+  consentButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 8,
+  },
+  consentBtn: {
+    flex: 1,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  consentBtnDecline: {
+    borderWidth: 1,
+  },
+  consentBtnAccept: {},
+  consentBtnText: {
+    fontSize: 15,
+    fontWeight: '600',
   },
 });

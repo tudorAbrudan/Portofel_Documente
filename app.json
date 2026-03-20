@@ -15,12 +15,14 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.ax.documente",
-      "buildNumber": "3",
+      "buildNumber": "4",
       "deploymentTarget": "16.0",
       "infoPlist": {
         "NSCalendarsUsageDescription": "Aplicația adaugă remindere de expirare documente în calendarul tău.",
         "NSCalendarsFullAccessUsageDescription": "Aplicația adaugă remindere de expirare documente în calendarul tău.",
-        "NSRemindersUsageDescription": "Aplicația poate adăuga remindere pentru expirarea documentelor."
+        "NSRemindersUsageDescription": "Aplicația poate adăuga remindere pentru expirarea documentelor.",
+        "NSCameraUsageDescription": "Aplicația folosește camera pentru a fotografia documente (buletin, talon, asigurare etc.) și a le salva direct în portofelul tău de acte. Exemplu: fotografiezi polița RCA și o atașezi mașinii tale.",
+        "NSPhotoLibraryUsageDescription": "Aplicația accesează galeria foto pentru a importa imagini ale documentelor tale (buletin, talon, asigurare etc.) și a le salva în portofelul tău de acte. Exemplu: selectezi o fotografie a cărții de identitate pentru a o adăuga profilului tău."
       }
     },
     "android": {
@@ -49,6 +51,13 @@
       "expo-sharing",
       "expo-secure-store",
       "expo-sqlite",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Aplicația accesează galeria foto pentru a importa imagini ale documentelor tale (buletin, talon, asigurare etc.) și a le salva în portofelul tău de acte. Exemplu: selectezi o fotografie a cărții de identitate pentru a o adăuga profilului tău.",
+          "cameraPermission": "Aplicația folosește camera pentru a fotografia documente (buletin, talon, asigurare etc.) și a le salva direct în portofelul tău de acte. Exemplu: fotografiezi polița RCA și o atașezi mașinii tale."
+        }
+      ],
       [
         "expo-calendar",
         {

@@ -12,7 +12,8 @@
     "type-check": "tsc --noEmit",
     "format": "prettier --write \"**/*.{ts,tsx,js,json}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,json}\"",
-    "prebuild": "expo prebuild --clean"
+    "prebuild": "expo prebuild --clean",
+    "postprebuild": "node -e \"const fs=require('fs'),p='ios/Podfile.properties.json',j=JSON.parse(fs.readFileSync(p));j['ios.deploymentTarget']='16.0';fs.writeFileSync(p,JSON.stringify(j,null,2)+'\\n');console.log('✔ Podfile.properties.json patched: ios.deploymentTarget=16.0');\""
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",

@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Suport – Portofel Acte</title>
+  <meta name="description" content="Pagina de suport pentru aplicația Portofel Acte – întrebări frecvente, contact și informații despre confidențialitate." />
+  <style>
+    :root {
+      --primary: #9EB567;
+      --primary-dark: #7a9248;
+      --primary-light: #c4d89a;
+      --bg: #f8faf4;
+      --text: #1e2318;
+      --text-muted: #6b7560;
+      --card-bg: #ffffff;
+      --border: #e2ebd4;
+      --shadow: 0 4px 24px rgba(0,0,0,0.08);
+      --radius: 16px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+    }
+
+    /* ── NAV ── */
+    nav {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 16px 40px;
+      background: rgba(248,250,244,0.92);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+    }
+    .nav-logo {
+      display: flex; align-items: center; gap: 10px;
+      font-weight: 700; font-size: 1.1rem;
+      color: var(--text); text-decoration: none;
+    }
+    .nav-logo-icon {
+      width: 32px; height: 32px; background: var(--primary);
+      border-radius: 9px; display: flex; align-items: center;
+      justify-content: center; font-size: 17px;
+    }
+    .nav-back {
+      color: var(--primary-dark); text-decoration: none;
+      font-size: .9rem; font-weight: 600;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .nav-back:hover { text-decoration: underline; }
+
+    /* ── PAGE HEADER ── */
+    .page-header {
+      padding: 120px 40px 60px;
+      text-align: center;
+      background: linear-gradient(180deg, rgba(158,181,103,0.08) 0%, transparent 100%);
+      border-bottom: 1px solid var(--border);
+    }
+    .tag {
+      display: inline-block;
+      background: rgba(158,181,103,0.12); color: var(--primary-dark);
+      font-size: .75rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .09em;
+      padding: 5px 14px; border-radius: 100px; margin-bottom: 16px;
+    }
+    h1 {
+      font-size: clamp(1.8rem, 4vw, 2.8rem);
+      font-weight: 800; letter-spacing: -.03em;
+      margin-bottom: 14px;
+    }
+    .page-sub {
+      color: var(--text-muted); font-size: 1.05rem;
+      max-width: 520px; margin: 0 auto;
+    }
+
+    /* ── CONTENT ── */
+    .content {
+      max-width: 760px; margin: 0 auto;
+      padding: 60px 40px 100px;
+    }
+
+    /* ── SECTION TITLE ── */
+    .section-title {
+      font-size: 1.25rem; font-weight: 800;
+      margin-bottom: 20px; margin-top: 48px;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .section-title:first-child { margin-top: 0; }
+    .section-icon {
+      width: 36px; height: 36px; border-radius: 10px;
+      background: rgba(158,181,103,0.12);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px; flex-shrink: 0;
+    }
+
+    /* ── FAQ ── */
+    .faq-list { display: flex; flex-direction: column; gap: 12px; }
+    .faq-item {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .faq-q {
+      width: 100%; text-align: left; background: none; border: none;
+      padding: 18px 20px;
+      font-size: .98rem; font-weight: 600; color: var(--text);
+      cursor: pointer;
+      display: flex; justify-content: space-between; align-items: center;
+      gap: 12px;
+    }
+    .faq-q:hover { background: rgba(158,181,103,0.04); }
+    .faq-arrow {
+      font-size: .75rem; color: var(--primary-dark);
+      transition: transform .25s; flex-shrink: 0;
+    }
+    .faq-item.open .faq-arrow { transform: rotate(180deg); }
+    .faq-a {
+      display: none;
+      padding: 0 20px 18px;
+      font-size: .92rem; color: var(--text-muted); line-height: 1.7;
+      border-top: 1px solid var(--border);
+      padding-top: 16px;
+    }
+    .faq-item.open .faq-a { display: block; }
+
+    /* ── CONTACT BOX ── */
+    .contact-box {
+      background: var(--text);
+      border-radius: 20px;
+      padding: 40px;
+      color: #fff;
+      margin-top: 48px;
+      display: flex; align-items: center; gap: 36px;
+    }
+    .contact-icon { font-size: 48px; flex-shrink: 0; }
+    .contact-text h3 { font-size: 1.15rem; font-weight: 700; margin-bottom: 8px; }
+    .contact-text p { font-size: .9rem; color: rgba(255,255,255,.6); line-height: 1.6; margin-bottom: 16px; }
+    .contact-btn {
+      display: inline-block;
+      background: var(--primary); color: #fff;
+      padding: 11px 24px; border-radius: 100px;
+      font-weight: 700; font-size: .9rem; text-decoration: none;
+      transition: background .2s;
+    }
+    .contact-btn:hover { background: var(--primary-dark); }
+
+    /* ── INFO CARDS ── */
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 14px;
+    }
+    .info-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 22px;
+    }
+    .info-card-icon { font-size: 22px; margin-bottom: 10px; }
+    .info-card-title { font-size: .9rem; font-weight: 700; margin-bottom: 6px; }
+    .info-card-desc { font-size: .83rem; color: var(--text-muted); line-height: 1.55; }
+
+    /* ── PRIVACY NOTICE ── */
+    .privacy-notice {
+      background: rgba(158,181,103,0.08);
+      border: 1px solid rgba(158,181,103,0.3);
+      border-radius: var(--radius);
+      padding: 22px 24px;
+      font-size: .88rem;
+      color: var(--text-muted);
+      line-height: 1.65;
+      margin-top: 48px;
+    }
+    .privacy-notice strong { color: var(--primary-dark); }
+
+    /* ── FOOTER ── */
+    footer {
+      text-align: center; padding: 32px 40px;
+      border-top: 1px solid var(--border);
+      color: var(--text-muted); font-size: .84rem;
+    }
+    footer a { color: var(--primary); text-decoration: none; }
+
+    /* ── RESPONSIVE ── */
+    @media (max-width: 640px) {
+      nav { padding: 14px 20px; }
+      .page-header { padding: 100px 20px 50px; }
+      .content { padding: 40px 20px 80px; }
+      .contact-box { flex-direction: column; gap: 20px; padding: 30px 24px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <a href="index.html" class="nav-logo">
+    <span class="nav-logo-icon">📂</span>
+    Portofel Acte
+  </a>
+  <a href="index.html" class="nav-back">← Înapoi</a>
+</nav>
+
+<!-- HEADER -->
+<div class="page-header">
+  <span class="tag">Suport</span>
+  <h1>Cum te putem ajuta?</h1>
+  <p class="page-sub">Găsești mai jos răspunsuri la întrebările frecvente. Dacă nu găsești ce cauți, scrie-ne.</p>
+</div>
+
+<!-- CONTENT -->
+<div class="content">
+
+  <!-- INFO GRID -->
+  <div class="info-grid">
+    <div class="info-card">
+      <div class="info-card-icon">📱</div>
+      <div class="info-card-title">Versiune curentă</div>
+      <div class="info-card-desc">1.3 · iOS 16.0+<br/>iPad și iPhone suportate</div>
+    </div>
+    <div class="info-card">
+      <div class="info-card-icon">🌐</div>
+      <div class="info-card-title">Disponibilitate</div>
+      <div class="info-card-desc">App Store (România și internațional)<br/>Android — în curând</div>
+    </div>
+    <div class="info-card">
+      <div class="info-card-icon">🔒</div>
+      <div class="info-card-title">Date & Confidențialitate</div>
+      <div class="info-card-desc">Local-first. Datele rămân pe device-ul tău. Fără cont obligatoriu.</div>
+    </div>
+  </div>
+
+  <!-- FAQ -->
+  <div class="section-title" style="margin-top: 48px;">
+    <span class="section-icon">❓</span>
+    Întrebări frecvente
+  </div>
+
+  <div class="faq-list">
+
+    <div class="faq-item">
+      <button class="faq-q" onclick="toggle(this)">
+        Unde sunt stocate datele mele?
+        <span class="faq-arrow">▼</span>
+      </button>
+      <div class="faq-a">
+        Toate datele (documente, entități, fișiere) sunt stocate exclusiv pe device-ul tău, într-o bază de date SQLite locală. Nu există niciun server al aplicației care să primească sau să stocheze informațiile tale.
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <button class="faq-q" onclick="toggle(this)">
+        Asistentul AI trimite datele mele undeva?
+        <span class="faq-arrow">▼</span>
+      </button>
+      <div class="faq-a">
+        Da — dacă alegi să folosești asistentul AI, înainte de prima utilizare vei fi informat și ți se va cere acordul explicit. Datele trimise (nume entități, tipuri documente, date de expirare, note) sunt procesate de <strong>Mistral AI</strong> (mistral.ai). Fotografiile documentelor, CVV-ul și PIN-ul aplicației <strong>nu sunt niciodată trimise</strong>. Poți refuza fără a afecta restul funcționalităților aplicației.
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <button class="faq-q" onclick="toggle(this)">
+        Cum fac backup la documente?
+        <span class="faq-arrow">▼</span>
+      </button>
+      <div class="faq-a">
+        Din ecranul <strong>Setări → Backup & Restore</strong> poți exporta toate datele și fișierele într-un arhivă JSON. Aceasta poate fi salvată în iCloud Drive (iOS) și restaurată ulterior pe același device sau pe un device nou.
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <button class="faq-q" onclick="toggle(this)">
+        Am pierdut PIN-ul aplicației. Ce fac?
+        <span class="faq-arrow">▼</span>
+      </button>
+      <div class="faq-a">
+        Dacă ai activat Face ID / Touch ID, poți debloca aplicația biometric. Dacă ai uitat PIN-ul și nu ai biometrie configurată, dezinstalează și reinstalează aplicația — aceasta va șterge toate datele locale. Asigură-te că ai un backup înainte.
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <button class="faq-q" onclick="toggle(this)">
+        Nu primesc notificări de expirare. Ce e de făcut?
+        <span class="faq-arrow">▼</span>
+      </button>
+      <div class="faq-a">
+        Verifică că ai acordat permisiunea de notificări din <strong>Setări iOS → Portofel Acte → Notificări</strong>. În aplicație, documentul trebuie să aibă o dată de expirare setată și opțiunea de reminder activată.
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <button class="faq-q" onclick="toggle(this)">
+        Pot șterge toate datele din aplicație?
+        <span class="faq-arrow">▼</span>
+      </button>
+      <div class="faq-a">
+        Da. Din <strong>Setări → Ștergere date</strong> poți elimina toate entitățile, documentele și fișierele. Alternativ, dezinstalarea aplicației șterge automat toate datele locale.
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <button class="faq-q" onclick="toggle(this)">
+        Aplicația funcționează fără internet?
+        <span class="faq-arrow">▼</span>
+      </button>
+      <div class="faq-a">
+        Da, 100% offline — cu excepția asistentului AI, care necesită conexiune la internet pentru a comunica cu serviciul Mistral AI. Toate celelalte funcționalități (adăugare documente, notificări, backup) funcționează fără internet.
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <button class="faq-q" onclick="toggle(this)">
+        Este disponibilă o versiune Android?
+        <span class="faq-arrow">▼</span>
+      </button>
+      <div class="faq-a">
+        Momentan aplicația este disponibilă exclusiv pe iOS (iPhone și iPad). O versiune Android este planificată pentru o versiune viitoare.
+      </div>
+    </div>
+
+  </div>
+
+  <!-- PRIVACY NOTICE -->
+  <div class="privacy-notice">
+    <strong>Politica de confidențialitate:</strong> Portofel Acte nu colectează date cu caracter personal prin niciun server propriu. Singura situație în care date sunt transmise unui terț este utilizarea voluntară a asistentului AI (Mistral AI), cu consimțământul explicit al utilizatorului. Nu vindem, nu partajăm și nu stocăm datele tale pe servere proprii.
+  </div>
+
+  <!-- CONTACT -->
+  <div class="contact-box">
+    <div class="contact-icon">✉️</div>
+    <div class="contact-text">
+      <h3>Nu ai găsit răspunsul?</h3>
+      <p>Scrie-ne un email și îți răspundem în cel mai scurt timp. Includem versiunea aplicației (din Setări → Despre) și descrierea problemei.</p>
+      <a href="mailto:apps.tudor@gmail.com" class="contact-btn">Trimite un email</a>
+    </div>
+  </div>
+
+</div>
+
+<!-- FOOTER -->
+<footer>
+  <p>© 2025 Portofel Acte · <a href="index.html">Pagina principală</a></p>
+</footer>
+
+<script>
+  function toggle(btn) {
+    const item = btn.closest('.faq-item');
+    item.classList.toggle('open');
+  }
+</script>
+</body>
+</html>
