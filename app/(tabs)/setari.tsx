@@ -485,7 +485,7 @@ export default function SetariScreen() {
         <RNText style={[styles.sectionLabel, { color: C.textSecondary }]}>BACKUP ȘI RESTAURARE</RNText>
         <RNView style={[styles.card, { backgroundColor: C.card, shadowColor: C.cardShadow }]}>
           <RNText style={[styles.hint, { color: C.textSecondary }]}>
-            Exportă datele ca fișier JSON și salvează-l în iCloud Drive sau Files. La schimbarea telefonului, importă fișierul pentru a restaura datele.
+            Exportă toate datele și pozele ca fișier JSON și salvează-l în iCloud Drive sau Files. La schimbarea telefonului, importă fișierul pentru a restaura complet datele și pozele.
           </RNText>
           <Pressable
             style={({ pressed }) => [styles.btn, { opacity: pressed ? 0.85 : 1 }]}

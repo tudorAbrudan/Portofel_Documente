@@ -239,6 +239,31 @@ export async function updateDocument(id: string, input: UpdateDocumentInput): Pr
   );
 }
 
+export async function linkDocumentToEntity(
+  id: string,
+  entity: {
+    person_id?: string;
+    property_id?: string;
+    vehicle_id?: string;
+    card_id?: string;
+    animal_id?: string;
+    company_id?: string;
+  }
+): Promise<void> {
+  await db.runAsync(
+    'UPDATE documents SET person_id=?, property_id=?, vehicle_id=?, card_id=?, animal_id=?, company_id=? WHERE id=?',
+    [
+      entity.person_id ?? null,
+      entity.property_id ?? null,
+      entity.vehicle_id ?? null,
+      entity.card_id ?? null,
+      entity.animal_id ?? null,
+      entity.company_id ?? null,
+      id,
+    ]
+  );
+}
+
 export async function addDocumentPage(documentId: string, filePath: string): Promise<void> {
   const maxOrder = await db.getFirstAsync<{ max: number | null }>(
     'SELECT MAX(page_order) as max FROM document_pages WHERE document_id = ?',

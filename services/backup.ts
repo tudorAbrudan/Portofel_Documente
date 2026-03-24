@@ -4,6 +4,19 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as entities from './entities';
 import * as docs from './documents';
 import { getCustomTypes, createCustomType } from './customTypes';
+import { toFileUri, toRelativePath } from './fileUtils';
+
+/**
+ * Citește un fișier ca base64. Returnează null dacă nu există sau nu poate fi citit.
+ */
+async function readFileBase64(storedPath: string): Promise<string | null> {
+  try {
+    const uri = toFileUri(storedPath);
+    return await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+  } catch {
+    return null;
+  }
+}
 
 export async function exportBackup(): Promise<void> {
   const [persons, properties, vehicles, cards, animals, companies, documents, allPages, customTypes] =
@@ -19,8 +32,28 @@ export async function exportBackup(): Promise<void> {
       getCustomTypes(),
     ]);
 
+  // Colectează toate imaginile ca base64 (cheie = path relativ stocat în DB)
+  const images: Record<string, string> = {};
+
+  for (const doc of documents) {
+    if (doc.file_path) {
+      const b64 = await readFileBase64(doc.file_path);
+      if (b64) {
+        images[toRelativePath(doc.file_path)] = b64;
+      }
+    }
+  }
+  for (const page of allPages) {
+    if (page.file_path) {
+      const b64 = await readFileBase64(page.file_path);
+      if (b64) {
+        images[toRelativePath(page.file_path)] = b64;
+      }
+    }
+  }
+
   const payload = {
-    version: 2,
+    version: 3,
     exportDate: new Date().toISOString(),
     persons,
     properties,
@@ -31,6 +64,7 @@ export async function exportBackup(): Promise<void> {
     customTypes,
     documents,
     documentPages: allPages,
+    images,
   };
 
   const json = JSON.stringify(payload, null, 2);
@@ -65,6 +99,20 @@ export async function importBackup(): Promise<ImportResult> {
   const json = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.UTF8 });
   const payload = JSON.parse(json);
 
+  // Pasul 1: Restaurare imagini (version 3+)
+  if (payload.images && typeof payload.images === 'object') {
+    const dir = `${FileSystem.documentDirectory}documents`;
+    await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+    for (const [relativePath, base64] of Object.entries(payload.images as Record<string, string>)) {
+      try {
+        const dest = `${FileSystem.documentDirectory}${relativePath}`;
+        await FileSystem.writeAsStringAsync(dest, base64, { encoding: FileSystem.EncodingType.Base64 });
+      } catch {
+        // Skip imagini care nu pot fi restaurate
+      }
+    }
+  }
+
   let imported = 0;
   const errors: string[] = [];
 
@@ -75,6 +123,7 @@ export async function importBackup(): Promise<ImportResult> {
   const animalMap = new Map<string, string>();
   const companyMap = new Map<string, string>();
   const customTypeMap = new Map<string, string>();
+  const docIdMap = new Map<string, string>(); // old ID → new ID
 
   for (const p of payload.persons ?? []) {
     try {
@@ -148,13 +197,16 @@ export async function importBackup(): Promise<ImportResult> {
 
   for (const d of payload.documents ?? []) {
     try {
-      await docs.createDocument({
+      // Normalizează file_path la relativ (pentru backupuri vechi cu path-uri absolute)
+      const filePath = d.file_path ? toRelativePath(d.file_path) : undefined;
+      const created = await docs.createDocument({
         type: d.type,
         custom_type_id: d.custom_type_id ? (customTypeMap.get(d.custom_type_id) ?? undefined) : undefined,
         issue_date: d.issue_date || undefined,
         expiry_date: d.expiry_date || undefined,
         note: d.note || undefined,
-        file_path: d.file_path || undefined,
+        file_path: filePath || undefined,
+        ocr_text: d.ocr_text || undefined,
         metadata: d.metadata || undefined,
         person_id: d.person_id ? personMap.get(d.person_id) : undefined,
         property_id: d.property_id ? propertyMap.get(d.property_id) : undefined,
@@ -163,9 +215,24 @@ export async function importBackup(): Promise<ImportResult> {
         animal_id: d.animal_id ? animalMap.get(d.animal_id) : undefined,
         company_id: d.company_id ? companyMap.get(d.company_id) : undefined,
       });
+      if (d.id) docIdMap.set(d.id, created.id);
       imported++;
     } catch (e) {
       errors.push(`Document "${d.type}": ${e instanceof Error ? e.message : 'eroare'}`);
+    }
+  }
+
+  // Restaurare pagini suplimentare (document_pages)
+  for (const page of payload.documentPages ?? []) {
+    try {
+      if (!page.document_id || !page.file_path) continue;
+      const newDocId = docIdMap.get(page.document_id);
+      if (!newDocId) continue;
+      const filePath = toRelativePath(page.file_path);
+      await docs.addDocumentPage(newDocId, filePath);
+      imported++;
+    } catch (e) {
+      errors.push(`Pagina document: ${e instanceof Error ? e.message : 'eroare'}`);
     }
   }
 

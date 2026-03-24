@@ -19,6 +19,7 @@ import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
 import { useEntities } from '@/hooks/useEntities';
 import { useDocuments } from '@/hooks/useDocuments';
+import { getDocuments, linkDocumentToEntity } from '@/services/documents';
 import { DOCUMENT_TYPE_LABELS } from '@/types';
 import type { Document as DocType, Company } from '@/types';
 
@@ -50,6 +51,8 @@ export default function EntityDetailScreen() {
   const [editSpecies, setEditSpecies] = useState('');
   const [editCui, setEditCui] = useState('');
   const [editRegCom, setEditRegCom] = useState('');
+  const [linkDocVisible, setLinkDocVisible] = useState(false);
+  const [unlinkedDocs, setUnlinkedDocs] = useState<DocType[]>([]);
 
   useEffect(() => {
     if (!id) return;
@@ -91,6 +94,21 @@ export default function EntityDetailScreen() {
     refreshEntities();
     if (id && entityName) loadDocs(entityKind, id);
   };
+
+  async function openLinkDoc() {
+    const all = await getDocuments();
+    setUnlinkedDocs(all.filter(d =>
+      !d.person_id && !d.property_id && !d.vehicle_id &&
+      !d.card_id && !d.animal_id && !d.company_id
+    ));
+    setLinkDocVisible(true);
+  }
+
+  async function handleLinkDoc(docId: string) {
+    await linkDocumentToEntity(docId, { [entityKind]: id as string });
+    setLinkDocVisible(false);
+    loadDocs(entityKind, id as string);
+  }
 
   const handleDelete = () => {
     Alert.alert('Ștergere', `Ștergi „${entityName}"? Documentele legate nu vor fi șterse.`, [
@@ -252,7 +270,15 @@ export default function EntityDetailScreen() {
           onPress={() => router.push({ pathname: '/(tabs)/documente/add', params: { [entityKind]: id } })}
         >
           <Ionicons name="add" size={20} color="#fff" style={styles.actionIcon} />
-          <RNText style={styles.primaryBtnText}>Adaugă document</RNText>
+          <RNText style={styles.primaryBtnText}>Adaugă document nou</RNText>
+        </Pressable>
+
+        <Pressable
+          style={({ pressed }) => [styles.secondaryBtn, pressed && styles.btnPressed]}
+          onPress={openLinkDoc}
+        >
+          <Ionicons name="link-outline" size={18} color={C.primary} style={styles.actionIcon} />
+          <RNText style={[styles.secondaryBtnText, { color: C.primary }]}>Asociază document existent</RNText>
         </Pressable>
 
         {/* Delete */}
@@ -260,6 +286,47 @@ export default function EntityDetailScreen() {
           <RNText style={styles.deleteBtnText}>Șterge entitate</RNText>
         </Pressable>
       </RNView>
+
+      {/* ── Link existing document modal ── */}
+      <Modal visible={linkDocVisible} animationType="slide" transparent onRequestClose={() => setLinkDocVisible(false)}>
+        <RNView style={styles.modalOverlay}>
+          <RNView style={[styles.modalContent, { backgroundColor: C.card }]}>
+            <RNText style={[styles.modalTitle, { color: C.text }]}>Asociază document existent</RNText>
+            {unlinkedDocs.length === 0 ? (
+              <RNText style={[styles.modalLabel, { color: C.textSecondary, marginBottom: 16 }]}>
+                Nu există documente nelegate disponibile.
+              </RNText>
+            ) : (
+              <ScrollView style={{ maxHeight: 380 }} showsVerticalScrollIndicator={false}>
+                {unlinkedDocs.map(d => (
+                  <Pressable
+                    key={d.id}
+                    style={[styles.linkDocRow, { borderBottomColor: C.border }]}
+                    onPress={() => handleLinkDoc(d.id)}
+                  >
+                    <RNText style={[styles.linkDocType, { color: C.primary }]}>
+                      {DOCUMENT_TYPE_LABELS[d.type] ?? d.type}
+                    </RNText>
+                    {d.note ? (
+                      <RNText style={[styles.linkDocNote, { color: C.textSecondary }]} numberOfLines={1}>
+                        {d.note}
+                      </RNText>
+                    ) : null}
+                    {d.expiry_date ? (
+                      <RNText style={[styles.linkDocNote, { color: C.textSecondary }]}>
+                        Expiră: {d.expiry_date}
+                      </RNText>
+                    ) : null}
+                  </Pressable>
+                ))}
+              </ScrollView>
+            )}
+            <Pressable style={[styles.modalCancelBtn, { borderColor: C.border, marginTop: 12 }]} onPress={() => setLinkDocVisible(false)}>
+              <RNText style={[styles.modalCancelText, { color: C.text }]}>Anulare</RNText>
+            </Pressable>
+          </RNView>
+        </RNView>
+      </Modal>
 
       {/* ── Edit modal ── */}
       <Modal visible={editVisible} animationType="slide" transparent onRequestClose={() => setEditVisible(false)}>
@@ -398,8 +465,22 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
   },
   primaryBtnText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  secondaryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#9EB567',
+    borderRadius: 12,
+    paddingVertical: 13,
+    marginTop: 10,
+  },
+  secondaryBtnText: { fontSize: 15, fontWeight: '500' },
   btnPressed: { opacity: 0.85, transform: [{ scale: 0.99 }] },
   deleteBtn: { alignItems: 'center', paddingVertical: 8 },
+  linkDocRow: { paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth },
+  linkDocType: { fontSize: 15, fontWeight: '600' },
+  linkDocNote: { fontSize: 13, marginTop: 2 },
   deleteBtnText: { color: '#E53935', fontSize: 14 },
 
   // Modal

@@ -143,6 +143,133 @@ export function extractPlateNumber(text: string): string | undefined {
   return undefined;
 }
 
+export interface TalonInfo {
+  plate?: string;
+  vin?: string;
+  marca?: string;
+  model?: string;
+  an_fabricatie?: string;
+  data_prima_inmatriculare?: string;
+  combustibil?: string;
+  capacitate_cilindrica?: string;
+  putere_kw?: string;
+  culoare?: string;
+  nr_locuri?: string;
+  masa_totala?: string;
+  norma_euro?: string;
+  proprietar?: string;
+  itp_expiry_date?: string;  // format MM/YYYY, din ștampila RAR
+  itp_expiry_iso?: string;   // format YYYY-MM-DD pentru câmpul expiry_date
+}
+
+/**
+ * Extrage câmpuri specifice din textul OCR al unui talon auto românesc.
+ * Talonul RO are coduri standardizate: E=VIN, P.1=cilindree, P.2=kW, P.3=combustibil,
+ * R=culoare, S.1=locuri, F.2=masă, D.1=marcă, B=prima înmatriculare, C.1.1/C.2.1=proprietar.
+ * Data expirare ITP apare ca ștampilă RAR în format MM/YYYY sau MM.YYYY.
+ */
+export function extractTalonInfo(text: string): TalonInfo {
+  const r: TalonInfo = {};
+
+  // Nr. înmatriculare
+  r.plate = extractPlateNumber(text);
+
+  // VIN: 17 caractere alfanumerice (fără I, O, Q — dar OCR poate introduce erori)
+  const vinMatch = text.match(/\b([A-HJ-NPR-Z0-9]{17})\b/)
+    ?? text.match(/\bE\s*[:\s]\s*([A-Z0-9]{17})\b/i);
+  if (vinMatch) r.vin = vinMatch[1];
+
+  // Marcă și model — câmp D.1 conține "MARCA / TIP" sau doar marca
+  const d1Match = text.match(/D\.?1\s*[:\s]*\n?\s*([A-Z][A-Z\s\-\/]{1,40})/im);
+  if (d1Match) {
+    const parts = d1Match[1].trim().split(/\s*\/\s*/);
+    r.marca = parts[0]?.trim();
+    if (parts[1]) r.model = parts[1].trim();
+  }
+  // Fallback model din J.2
+  if (!r.model) {
+    const j2Match = text.match(/J\.?2\s*[:\s]*\n?\s*([A-Z0-9][A-Z0-9\s\-]{1,20})/im);
+    if (j2Match) r.model = j2Match[1].trim();
+  }
+
+  // Capacitate cilindrică — câmp P.1 (cm³)
+  const ccMatch = text.match(/P\.?1\s*[:\s]\s*(\d{3,5})/i)
+    ?? text.match(/(\d{3,5})\s*cm.?3/i);
+  if (ccMatch) r.capacitate_cilindrica = ccMatch[1];
+
+  // Putere maximă — câmp P.2 (kW)
+  const kwMatch = text.match(/P\.?2\s*[:\s]\s*(\d{2,4})/i)
+    ?? text.match(/(\d{2,4})\s*kW/i);
+  if (kwMatch) r.putere_kw = kwMatch[1];
+
+  // Combustibil — câmp P.3
+  const fuelMatch = text.match(/P\.?3\s*[:\s]*\n?\s*(BENZIN[AĂÃ]?|DIESEL|ELECTRIC|HYBRID|GPL|GNC|CNG|LPG|MOTORIN[AĂÃ]?)/i)
+    ?? text.match(/\b(BENZIN[AĂÃ]?|DIESEL|ELECTRIC|HYBRID|GPL|GNC|MOTORIN[AĂÃ]?)\b/i);
+  if (fuelMatch) {
+    const f = fuelMatch[1].toUpperCase();
+    r.combustibil = f.startsWith('BENZIN') ? 'Benzină'
+      : f.startsWith('MOTORIN') || f === 'DIESEL' ? 'Diesel'
+      : f === 'ELECTRIC' ? 'Electric'
+      : f === 'HYBRID' ? 'Hybrid'
+      : f;
+  }
+
+  // Culoare — câmp R
+  const colorMatch = text.match(/\bR\s+([A-ZĂÂÎȘȚ][A-ZĂÂÎȘȚ\s]{2,20})(?:\r?\n|$)/m);
+  if (colorMatch) r.culoare = colorMatch[1].trim();
+
+  // Nr. locuri șezut — câmp S.1
+  const seatsMatch = text.match(/S\.?1\s*[:\s]\s*(\d{1,2})/i);
+  if (seatsMatch) r.nr_locuri = seatsMatch[1];
+
+  // Masă maximă autorizată — câmp F.2 (kg)
+  const weightMatch = text.match(/F\.?2\s*[:\s]\s*(\d{3,5})/i);
+  if (weightMatch) r.masa_totala = weightMatch[1];
+
+  // Normă Euro — câmp V.7 sau text "EURO N"
+  const euroMatch = text.match(/V\.?7\s*[:\s]*\n?\s*(EURO\s*[0-9IVX]+)/i)
+    ?? text.match(/\b(EURO\s*[0-9IVX]+)\b/i);
+  if (euroMatch) r.norma_euro = euroMatch[1].replace(/\s+/, ' ');
+
+  // Data primei înmatriculări — câmp B (DD.MM.YYYY)
+  const firstRegMatch = text.match(/\bB\s*[:\s]\s*(\d{2}[.\/\-]\d{2}[.\/\-]\d{4})/i);
+  if (firstRegMatch) {
+    r.data_prima_inmatriculare = firstRegMatch[1];
+    const yearMatch = firstRegMatch[1].match(/\d{4}/);
+    if (yearMatch) r.an_fabricatie = yearMatch[0];
+  }
+
+  // Proprietar — câmp C.1.1 (persoană fizică) sau C.2.1 (persoană juridică)
+  const ownerMatch = text.match(/C\.?1\.?1\s*[:\s]*\n?\s*([A-ZĂÂÎȘȚ][A-ZĂÂÎȘȚ\s\-]{2,50})/im)
+    ?? text.match(/C\.?2\.?1\s*[:\s]*\n?\s*([A-ZĂÂÎȘȚ][A-ZĂÂÎȘȚ\s\-]{2,50})/im);
+  if (ownerMatch) r.proprietar = ownerMatch[1].trim();
+
+  // Data expirare ITP — ștampila RAR, format MM/YYYY sau MM.YYYY
+  // Căutare lângă cuvinte cheie: ITP, INSPECȚIE, RAR
+  const itpKwMatch = text.match(
+    /(?:ITP|INSPEC[TȚ]IE|RAR)[^\n]*\n?\s*(0[1-9]|1[0-2])\s*[.\/\s]\s*(20\d{2})/i
+  ) ?? text.match(
+    /(0[1-9]|1[0-2])\s*[.\/\s]\s*(20\d{2})\s*(?:ITP|INSPEC[TȚ]IE|RAR)/i
+  );
+  if (itpKwMatch) {
+    r.itp_expiry_date = `${itpKwMatch[1]}/${itpKwMatch[2]}`;
+  } else {
+    // Fallback: format MM/YYYY sau MM.YYYY standalone (nu parte dintr-o dată completă)
+    // Evităm DD.MM.YYYY prin negative lookbehind
+    const mmYyyyMatch = text.match(/(?<!\d\.)(0[1-9]|1[0-2])[.\/](20[2-9]\d)(?!\d)/);
+    if (mmYyyyMatch) r.itp_expiry_date = `${mmYyyyMatch[1]}/${mmYyyyMatch[2]}`;
+  }
+
+  // Convertim itp_expiry_date (MM/YYYY) → YYYY-MM-DD (ultima zi a lunii)
+  if (r.itp_expiry_date) {
+    const [mm, yyyy] = r.itp_expiry_date.split('/');
+    const lastDay = new Date(parseInt(yyyy), parseInt(mm), 0).getDate();
+    r.itp_expiry_iso = `${yyyy}-${mm}-${String(lastDay).padStart(2, '0')}`;
+  }
+
+  return r;
+}
+
 export interface DocumentInfo {
   cnp?: string;          // 13 cifre
   expiry_date?: string;  // format AAAA-LL-ZZ
@@ -321,8 +448,8 @@ export function detectDocumentType(text: string): DocumentType | null {
   if (/\bcasco\b/.test(t)) return 'casco';
   if (/inspec[tț]ie tehnic[aă]|inspec[tț]ie periodic[aă]|\bitp\b/.test(t)) return 'itp';
   if (/vignet[aă]|rovinieta/.test(t)) return 'vigneta';
-  if (/talon.*[înmatriculare]|certificat de [înmatriculare]/.test(t)) return 'talon';
-  if (/carte.*auto|certificat de înregistrare/.test(t)) return 'carte_auto';
+  if (/\btalon\b|certificat de [îi]nmatriculare/.test(t)) return 'talon';
+  if (/carte de identitate a vehiculului|\bciv\b/.test(t)) return 'carte_auto';
   if (/act de proprietate|contract de v[âa]nzare[\-\s]cump[aă]rare/.test(t)) return 'act_proprietate';
   if (/num[aă]r cadastral|extras de carte funciar[aă]/.test(t)) return 'cadastru';
   if (/asigurare.*dezastre|politi[aă] pad|\bpad\b/.test(t)) return 'pad';

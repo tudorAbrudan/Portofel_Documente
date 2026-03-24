@@ -23,7 +23,9 @@ import { useDocuments } from '@/hooks/useDocuments';
 import { useEntities } from '@/hooks/useEntities';
 import { scheduleExpirationReminders } from '@/services/notifications';
 import { addExpiryCalendarEvent, addEventToCalendar, isCalendarAvailable } from '@/services/calendar';
-import { extractText, extractDocumentInfo, extractInvoiceInfo, extractPlateNumber, detectDocumentType, formatOcrSummary } from '@/services/ocr';
+import { extractText, extractDocumentInfo, detectDocumentType, formatOcrSummary } from '@/services/ocr';
+import { extractFieldsForType } from '@/services/ocrExtractors';
+import { toRelativePath } from '@/services/fileUtils';
 import { DOCUMENT_TYPE_LABELS, ENTITY_DOCUMENT_TYPES } from '@/types';
 import type { DocumentType, EntityType } from '@/types';
 import { DatePickerField } from '@/components/DatePickerField';
@@ -161,35 +163,30 @@ export default function AddDocumentScreen() {
 
       const info = extractDocumentInfo(text);
 
-      if (info.expiry_date && !expiryDateRef.current) {
+      // Extracție structurată per tip de document
+      const docType = detectedType ?? type;
+      const extracted = extractFieldsForType(docType, text);
+
+      // Metadate: valorile din extractor nu suprascriu ce a completat deja utilizatorul
+      if (Object.keys(extracted.metadata).length > 0) {
+        setMetadata(prev => ({ ...extracted.metadata, ...prev }));
+      }
+
+      // Date emitere / expirare din extractor (prioritate față de extractDocumentInfo generic)
+      // Excepție: dacă extractDocumentInfo a găsit deja o dată și extractorul nu are una mai bună
+      if (extracted.expiry_date) {
+        setExpiryDate(extracted.expiry_date);
+        expiryDateRef.current = extracted.expiry_date;
+      } else if (info.expiry_date && !expiryDateRef.current) {
         setExpiryDate(info.expiry_date);
         expiryDateRef.current = info.expiry_date;
       }
-      if (info.issue_date && !issueDateRef.current) {
+      if (extracted.issue_date) {
+        setIssueDate(extracted.issue_date);
+        issueDateRef.current = extracted.issue_date;
+      } else if (info.issue_date && !issueDateRef.current) {
         setIssueDate(info.issue_date);
         issueDateRef.current = info.issue_date;
-      }
-
-      // Pre-populare câmpuri metadata
-      const fields = DOCUMENT_FIELDS[detectedType ?? type] ?? [];
-      const ocrMetadata: Record<string, string> = {};
-      for (const field of fields) {
-        if (!field.ocrKey) continue;
-        const ocrValue = (info as Record<string, string | undefined>)[field.ocrKey];
-        if (ocrValue) ocrMetadata[field.key] = ocrValue;
-      }
-      if (['factura'].includes(detectedType ?? type)) {
-        const invoiceInfo = extractInvoiceInfo(text);
-        if (invoiceInfo.invoice_number) ocrMetadata['invoice_number'] = invoiceInfo.invoice_number;
-        if (invoiceInfo.amount) ocrMetadata['amount'] = invoiceInfo.amount;
-        if (invoiceInfo.due_date) ocrMetadata['due_date'] = invoiceInfo.due_date;
-      }
-      if (['rca', 'itp', 'vigneta', 'talon', 'carte_auto'].includes(detectedType ?? type)) {
-        const plate = extractPlateNumber(text);
-        if (plate) ocrMetadata['plate'] = plate;
-      }
-      if (Object.keys(ocrMetadata).length > 0) {
-        setMetadata(prev => ({ ...ocrMetadata, ...prev }));
       }
 
       // Completează nota cu sumarul OCR
@@ -316,7 +313,7 @@ export default function AddDocumentScreen() {
         issue_date: issueDateRef.current.trim() || undefined,
         expiry_date: expiryDateRef.current.trim() || undefined,
         note: note.trim() || undefined,
-        file_path: pages[0]?.localPath || undefined,
+        file_path: pages[0]?.localPath ? toRelativePath(pages[0].localPath) : undefined,
         person_id: personId ?? selectedPersonId ?? undefined,
         property_id: propertyId ?? selectedPropertyId ?? undefined,
         vehicle_id: vehicleId ?? selectedVehicleId ?? undefined,
@@ -329,7 +326,7 @@ export default function AddDocumentScreen() {
       });
       const { addDocumentPage } = await import('@/services/documents');
       for (let i = 1; i < pages.length; i++) {
-        await addDocumentPage(newDoc.id, pages[i].localPath);
+        await addDocumentPage(newDoc.id, toRelativePath(pages[i].localPath));
       }
       await refresh();
       scheduleExpirationReminders().catch(() => {});

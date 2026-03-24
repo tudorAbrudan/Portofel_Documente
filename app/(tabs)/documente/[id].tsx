@@ -17,10 +17,13 @@ import {
   addDocumentPage,
   removeDocumentPage,
   setDocumentOcrText,
+  linkDocumentToEntity,
 } from '@/services/documents';
 import { scheduleExpirationReminders } from '@/services/notifications';
 import { addExpiryCalendarEvent, addEventToCalendar, isCalendarAvailable } from '@/services/calendar';
 import { extractText, extractDocumentInfo, detectDocumentType, formatOcrSummary } from '@/services/ocr';
+import { extractFieldsForType } from '@/services/ocrExtractors';
+import { toFileUri, toRelativePath } from '@/services/fileUtils';
 import { DOCUMENT_TYPE_LABELS, getDocumentLabel } from '@/types';
 import type { Document as DocType, DocumentType } from '@/types';
 import { useCustomTypes } from '@/hooks/useCustomTypes';
@@ -55,6 +58,7 @@ export default function DocumentDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [ocrLoading, setOcrLoading] = useState(false);
+  const [ocrExpanded, setOcrExpanded] = useState(false);
 
   // Rotire imagini (per pagina, cheie = file_path)
   const [rotatedUris, setRotatedUris] = useState<Record<string, string>>({});
@@ -73,6 +77,7 @@ export default function DocumentDetailScreen() {
   const [saving, setSaving] = useState(false);
   const [fullscreenUri, setFullscreenUri] = useState<string | null>(null);
   const [typePickerVisible, setTypePickerVisible] = useState(false);
+  const [linkEntityVisible, setLinkEntityVisible] = useState(false);
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
 
   useEffect(() => {
@@ -95,7 +100,7 @@ export default function DocumentDetailScreen() {
     setEditNote(doc.note ?? '');
     setEditMetadata(doc.metadata ?? {});
     const fp = doc.file_path;
-    setEditImageUri(fp ? (fp.startsWith('file://') ? fp : `file://${fp}`) : null);
+    setEditImageUri(fp ? toFileUri(fp) : null);
     setEditLocalPath(fp ?? null);
     setEditAutoDelete(doc.auto_delete ?? null);
     setEditVisible(true);
@@ -113,13 +118,13 @@ export default function DocumentDetailScreen() {
     });
     if (!result.canceled && result.assets[0]) {
       const uri = result.assets[0].uri;
-      setEditImageUri(uri);
       const filename = `doc_${Date.now()}.jpg`;
-      const dir = `${FileSystem.documentDirectory}documents`;
-      await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
-      const dest = `${dir}/${filename}`;
+      const relativePath = `documents/${filename}`;
+      const dest = `${FileSystem.documentDirectory}${relativePath}`;
+      await FileSystem.makeDirectoryAsync(`${FileSystem.documentDirectory}documents`, { intermediates: true });
       await FileSystem.copyAsync({ from: uri, to: dest });
-      setEditLocalPath(dest);
+      setEditImageUri(dest);
+      setEditLocalPath(relativePath);
     }
   }
 
@@ -143,13 +148,13 @@ export default function DocumentDetailScreen() {
     });
     if (!result.canceled && result.assets[0]) {
       const uri = result.assets[0].uri;
-      setEditImageUri(uri);
       const filename = `doc_${Date.now()}.jpg`;
-      const dir = `${FileSystem.documentDirectory}documents`;
-      await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
-      const dest = `${dir}/${filename}`;
+      const relativePath = `documents/${filename}`;
+      const dest = `${FileSystem.documentDirectory}${relativePath}`;
+      await FileSystem.makeDirectoryAsync(`${FileSystem.documentDirectory}documents`, { intermediates: true });
       await FileSystem.copyAsync({ from: uri, to: dest });
-      setEditLocalPath(dest);
+      setEditImageUri(dest);
+      setEditLocalPath(relativePath);
     }
   }
 
@@ -161,9 +166,7 @@ export default function DocumentDetailScreen() {
   }, [doc]);
 
   function getDisplayUri(filePath: string): string {
-    return (
-      rotatedUris[filePath] ?? (filePath.startsWith('file://') ? filePath : `file://${filePath}`)
-    );
+    return rotatedUris[filePath] ?? toFileUri(filePath);
   }
 
   async function handleRotate(filePath: string, degrees: number) {
@@ -174,11 +177,27 @@ export default function DocumentDetailScreen() {
         format: ImageManipulator.SaveFormat.JPEG,
       });
       setRotatedUris(prev => ({ ...prev, [filePath]: result.uri }));
-      const dest = filePath.startsWith('file://') ? filePath.slice(7) : filePath;
+      const absoluteUri = toFileUri(filePath);
+      const dest = absoluteUri.startsWith('file://') ? absoluteUri.slice(7) : absoluteUri;
       await FileSystem.copyAsync({ from: result.uri, to: dest });
     } catch {
       Alert.alert('Eroare', 'Nu s-a putut roti imaginea.');
     }
+  }
+
+  async function handleLinkEntity(entity: {
+    person_id?: string;
+    property_id?: string;
+    vehicle_id?: string;
+    card_id?: string;
+    animal_id?: string;
+    company_id?: string;
+  }) {
+    if (!doc) return;
+    await linkDocumentToEntity(doc.id, entity);
+    const updated = await getDocumentById(doc.id);
+    if (updated) setDoc(updated);
+    setLinkEntityVisible(false);
   }
 
   async function handleDeletePage(pageId: string, filePath: string) {
@@ -220,9 +239,9 @@ export default function DocumentDetailScreen() {
     if (!doc) return;
     try {
       const filename = `doc_${Date.now()}.jpg`;
-      const dir = `${FileSystem.documentDirectory}documents`;
-      await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
-      const dest = `${dir}/${filename}`;
+      const relativePath = `documents/${filename}`;
+      const dest = `${FileSystem.documentDirectory}${relativePath}`;
+      await FileSystem.makeDirectoryAsync(`${FileSystem.documentDirectory}documents`, { intermediates: true });
       // Normalizează EXIF (bake-in rotația) înainte de salvare
       const normalized = await ImageManipulator.manipulateAsync(
         uri, [], { compress: 0.92, format: ImageManipulator.SaveFormat.JPEG }
@@ -234,16 +253,16 @@ export default function DocumentDetailScreen() {
           issue_date: doc.issue_date,
           expiry_date: doc.expiry_date,
           note: doc.note,
-          file_path: dest,
+          file_path: relativePath,
           auto_delete: doc.auto_delete,
         });
       } else {
-        await addDocumentPage(doc.id, dest);
+        await addDocumentPage(doc.id, relativePath);
       }
       const updated = await getDocumentById(doc.id);
       setDoc(updated);
       // Pasăm documentul actualizat la OCR ca să nu folosim closure-ul stale
-      if (updated) runOcrOnNewPage(dest, updated);
+      if (updated) runOcrOnNewPage(relativePath, updated);
     } catch (e) {
       Alert.alert('Eroare', e instanceof Error ? e.message : 'Nu s-a putut adăuga pagina');
     }
@@ -253,7 +272,7 @@ export default function DocumentDetailScreen() {
   // Dacă textul inițial e prea scurt, testează 90°/270°/180° și salvează versiunea cea mai bună.
   // Returnează textul extras și dacă imaginea a fost rotită.
   async function ocrWithAutoRotate(storedPath: string): Promise<{ text: string; rotated: boolean }> {
-    const fileUri = storedPath.startsWith('file://') ? storedPath : `file://${storedPath}`;
+    const fileUri = toFileUri(storedPath);
     let { text } = await extractText(fileUri);
 
     if (text.trim().length >= 30) return { text, rotated: false };
@@ -275,7 +294,8 @@ export default function DocumentDetailScreen() {
 
     const wasRotated = bestUri !== fileUri;
     if (wasRotated) {
-      const destPath = storedPath.startsWith('file://') ? storedPath.slice(7) : storedPath;
+      const absoluteUri = toFileUri(storedPath);
+      const destPath = absoluteUri.startsWith('file://') ? absoluteUri.slice(7) : absoluteUri;
       await FileSystem.copyAsync({ from: bestUri, to: destPath });
     }
 
@@ -420,12 +440,26 @@ export default function DocumentDetailScreen() {
       const info = extractDocumentInfo(combinedText);
       const summary = formatOcrSummary(combinedText, info);
 
+      // Extracție structurată per tip document
+      const extracted = doc ? extractFieldsForType(doc.type, combinedText) : { metadata: {} };
+      const newExpiry = extracted.expiry_date ?? info.expiry_date;
+      const newIssue = extracted.issue_date ?? info.issue_date;
+
+      // Rezumat câmpuri găsite pentru alert
       const found: string[] = [];
-      if (info.expiry_date) found.push(`📅 Expiră: ${info.expiry_date}`);
-      if (info.issue_date) found.push(`📅 Emis: ${info.issue_date}`);
-      if (info.name) found.push(`👤 Nume: ${info.name}`);
-      if (info.cnp) found.push(`🔢 CNP: ${info.cnp}`);
-      if (info.series) found.push(`🔠 Seria: ${info.series}`);
+      const metaEntries = Object.entries(extracted.metadata);
+      if (metaEntries.length > 0) {
+        // Afișăm primele 5 câmpuri găsite
+        metaEntries.slice(0, 5).forEach(([, v]) => found.push(`• ${v}`));
+        if (metaEntries.length > 5) found.push(`… și ${metaEntries.length - 5} mai multe`);
+      }
+      if (newExpiry && !found.some(f => f.includes(newExpiry))) found.push(`📅 Expiră: ${newExpiry}`);
+      if (newIssue && !found.some(f => f.includes(newIssue))) found.push(`📅 Emis: ${newIssue}`);
+      if (!found.length) {
+        if (info.name) found.push(`👤 ${info.name}`);
+        if (info.cnp) found.push(`🔢 CNP: ${info.cnp}`);
+        if (info.series) found.push(`🔠 ${info.series}`);
+      }
 
       const pageLabel = `${allPages.length} ${allPages.length === 1 ? 'pagină' : 'pagini'}`;
       const message = found.length > 0
@@ -441,14 +475,15 @@ export default function DocumentDetailScreen() {
             ? {
                 text: 'Aplică pe document',
                 onPress: async () => {
+                  const mergedMeta = { ...(doc!.metadata ?? {}), ...extracted.metadata };
                   await updateDocument(doc!.id, {
                     type: doc!.type,
-                    issue_date: info.issue_date ?? doc!.issue_date,
-                    expiry_date: info.expiry_date ?? doc!.expiry_date,
+                    issue_date: newIssue ?? doc!.issue_date,
+                    expiry_date: newExpiry ?? doc!.expiry_date,
                     note: (!doc!.note && summary) ? summary : doc!.note,
                     file_path: doc!.file_path,
                     auto_delete: doc!.auto_delete,
-                    metadata: doc!.metadata,
+                    metadata: mergedMeta,
                   });
                   await setDocumentOcrText(doc!.id, combinedText);
                   const updated = await getDocumentById(doc!.id);
@@ -512,9 +547,7 @@ export default function DocumentDetailScreen() {
   const shareImageAtIndex = async (pageIndex: number) => {
     const page = allPages[pageIndex];
     if (!page) return;
-    const fileUri = page.file_path.startsWith('file://')
-      ? page.file_path
-      : `file://${page.file_path}`;
+    const fileUri = toFileUri(page.file_path);
     try {
       const available = await Sharing.isAvailableAsync();
       if (available) {
@@ -569,9 +602,7 @@ export default function DocumentDetailScreen() {
     try {
       const imgTags: string[] = [];
       for (const page of allPages) {
-        const fileUri = page.file_path.startsWith('file://')
-          ? page.file_path
-          : `file://${page.file_path}`;
+        const fileUri = toFileUri(page.file_path);
         try {
           // Comprimă imaginea la max 1400px și calitate 75% — reduce dimensiunea de ~10x
           const compressed = await ImageManipulator.manipulateAsync(
@@ -844,11 +875,15 @@ export default function DocumentDetailScreen() {
               entityName = c ? `${c.nickname ?? ''} ····${c.last4}`.trim() : null;
             } else if (doc.animal_id) entityName = animals.find(a => a.id === doc.animal_id)?.name ?? null;
             else if (doc.company_id) entityName = companies.find(c => c.id === doc.company_id)?.name ?? null;
-            if (!entityName) return null;
             return (
               <>
                 <Text style={styles.label}>Legat de</Text>
-                <Text style={styles.value}>{entityName}</Text>
+                <Pressable style={styles.entityRow} onPress={() => setLinkEntityVisible(true)}>
+                  <Text style={[styles.value, !entityName && styles.entityPlaceholder]}>
+                    {entityName ?? 'Nelegat'}
+                  </Text>
+                  <Text style={styles.entityEditHint}>Schimbă</Text>
+                </Pressable>
               </>
             );
           })()}
@@ -885,14 +920,24 @@ export default function DocumentDetailScreen() {
           )}
           {(DOCUMENT_FIELDS[doc.type] ?? []).map((field: FieldDef) => {
             const val = doc.metadata?.[field.key];
-            if (!val) return null;
             return (
               <View key={field.key}>
                 <Text style={styles.label}>{field.label}</Text>
-                <Text style={styles.value}>{val}</Text>
+                <Text style={[styles.value, !val && styles.emptyValue]}>{val || '—'}</Text>
               </View>
             );
           })}
+          {doc.ocr_text && (
+            <View style={{ marginTop: 12 }}>
+              <Pressable onPress={() => setOcrExpanded(v => !v)} style={styles.ocrToggleRow}>
+                <Text style={styles.label}>Text complet extras (OCR)</Text>
+                <Text style={[styles.label, { color: primary }]}>{ocrExpanded ? '▲ Ascunde' : '▼ Arată'}</Text>
+              </Pressable>
+              {ocrExpanded && (
+                <Text style={styles.ocrText} selectable>{doc.ocr_text}</Text>
+              )}
+            </View>
+          )}
           {doc.type === 'bilet' && doc.metadata?.event_date && (
             <Pressable
               style={[styles.calendarBtn, { borderColor: colors.border, backgroundColor: colors.card }]}
@@ -978,6 +1023,90 @@ export default function DocumentDetailScreen() {
           </Pressable>
         </View>
       </Modal>
+
+      {linkEntityVisible && (
+        <View style={styles.overlay}>
+          <View style={[styles.overlayBox, { backgroundColor: colors.card }]}>
+            <Text style={styles.overlayTitle}>Asociază cu o entitate</Text>
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 420 }}>
+              {persons.length > 0 && (
+                <>
+                  <Text style={styles.entityGroupLabel}>Persoane</Text>
+                  {persons.map(p => (
+                    <Pressable key={p.id} style={[styles.entityPickerRow, { borderBottomColor: colors.border }]}
+                      onPress={() => handleLinkEntity({ person_id: p.id })}>
+                      <Text style={styles.value}>{p.name}</Text>
+                    </Pressable>
+                  ))}
+                </>
+              )}
+              {vehicles.length > 0 && (
+                <>
+                  <Text style={styles.entityGroupLabel}>Vehicule</Text>
+                  {vehicles.map(v => (
+                    <Pressable key={v.id} style={[styles.entityPickerRow, { borderBottomColor: colors.border }]}
+                      onPress={() => handleLinkEntity({ vehicle_id: v.id })}>
+                      <Text style={styles.value}>{v.name}</Text>
+                    </Pressable>
+                  ))}
+                </>
+              )}
+              {properties.length > 0 && (
+                <>
+                  <Text style={styles.entityGroupLabel}>Proprietăți</Text>
+                  {properties.map(p => (
+                    <Pressable key={p.id} style={[styles.entityPickerRow, { borderBottomColor: colors.border }]}
+                      onPress={() => handleLinkEntity({ property_id: p.id })}>
+                      <Text style={styles.value}>{p.name}</Text>
+                    </Pressable>
+                  ))}
+                </>
+              )}
+              {cards.length > 0 && (
+                <>
+                  <Text style={styles.entityGroupLabel}>Carduri</Text>
+                  {cards.map(c => (
+                    <Pressable key={c.id} style={[styles.entityPickerRow, { borderBottomColor: colors.border }]}
+                      onPress={() => handleLinkEntity({ card_id: c.id })}>
+                      <Text style={styles.value}>{c.nickname ?? ''} ····{c.last4}</Text>
+                    </Pressable>
+                  ))}
+                </>
+              )}
+              {animals.length > 0 && (
+                <>
+                  <Text style={styles.entityGroupLabel}>Animale</Text>
+                  {animals.map(a => (
+                    <Pressable key={a.id} style={[styles.entityPickerRow, { borderBottomColor: colors.border }]}
+                      onPress={() => handleLinkEntity({ animal_id: a.id })}>
+                      <Text style={styles.value}>{a.name}</Text>
+                    </Pressable>
+                  ))}
+                </>
+              )}
+              {companies.length > 0 && (
+                <>
+                  <Text style={styles.entityGroupLabel}>Firme</Text>
+                  {companies.map(c => (
+                    <Pressable key={c.id} style={[styles.entityPickerRow, { borderBottomColor: colors.border }]}
+                      onPress={() => handleLinkEntity({ company_id: c.id })}>
+                      <Text style={styles.value}>{c.name}</Text>
+                    </Pressable>
+                  ))}
+                </>
+              )}
+              <Pressable style={styles.entityPickerRowDanger}
+                onPress={() => handleLinkEntity({})}>
+                <Text style={styles.entityPickerDangerText}>Elimină legătura</Text>
+              </Pressable>
+            </ScrollView>
+            <Pressable style={[styles.overlayBtn, styles.overlayBtnOutline, { marginTop: 12 }]}
+              onPress={() => setLinkEntityVisible(false)}>
+              <Text style={styles.overlayBtnOutlineText}>Anulare</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
 
       {editVisible && (
         <View style={styles.overlay}>
@@ -1236,6 +1365,16 @@ const styles = StyleSheet.create({
   meta: { marginBottom: 24 },
   label: { fontSize: 12, opacity: 0.7, marginTop: 12, marginBottom: 2 },
   value: { fontSize: 16 },
+  entityRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  entityPlaceholder: { opacity: 0.4 },
+  emptyValue: { opacity: 0.3 },
+  ocrToggleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  ocrText: { fontSize: 13, opacity: 0.7, lineHeight: 20, marginTop: 6 },
+  entityEditHint: { fontSize: 13, color: primary, fontWeight: '500' },
+  entityGroupLabel: { fontSize: 11, fontWeight: '600', opacity: 0.5, marginTop: 14, marginBottom: 2, textTransform: 'uppercase' },
+  entityPickerRow: { paddingVertical: 13, borderBottomWidth: StyleSheet.hairlineWidth },
+  entityPickerRowDanger: { paddingVertical: 14, marginTop: 8 },
+  entityPickerDangerText: { color: '#c00', fontSize: 15 },
   calendarBtn: {
     marginTop: 10,
     paddingVertical: 14,
