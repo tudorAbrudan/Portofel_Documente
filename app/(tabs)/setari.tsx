@@ -17,6 +17,9 @@ import Constants from 'expo-constants';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
+import { PRIVACY_URL, SUPPORT_URL } from '@/constants/AppLinks';
+import AppLockPinModal from '@/components/AppLockPinModal';
+import { primary } from '@/theme/colors';
 import * as settings from '@/services/settings';
 import { scheduleExpirationReminders } from '@/services/notifications';
 import { exportBackup, importBackup } from '@/services/backup';
@@ -24,7 +27,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { db } from '@/services/db';
 import { useCustomTypes } from '@/hooks/useCustomTypes';
 import { useVisibilitySettings } from '@/hooks/useVisibilitySettings';
-import { ALL_ENTITY_TYPES, STANDARD_DOC_TYPES, ENTITY_DOCUMENT_TYPES, DOCUMENT_TYPE_LABELS } from '@/types';
+import {
+  ALL_ENTITY_TYPES,
+  STANDARD_DOC_TYPES,
+  ENTITY_DOCUMENT_TYPES,
+  DOCUMENT_TYPE_LABELS,
+} from '@/types';
 import type { EntityType, DocumentType } from '@/types';
 
 const ENTITY_LABELS: Record<EntityType, string> = {
@@ -48,8 +56,6 @@ const ENTITY_ICONS: Record<EntityType, string> = {
 // ─── Constante contact ────────────────────────────────────────────────────────
 // TODO: înlocuiește cu datele reale înainte de publish
 const CONTACT_EMAIL = 'apps.tudor@gmail.com';
-const SUPPORT_URL = 'https://tudorabrudan.github.io/Dosar/docs/support.html';
-const PRIVACY_URL = 'https://tudorabrudan.github.io/Dosar/legal/privacy_ro.html';
 
 const APP_VERSION = Constants.expoConfig?.version ?? '1.0.0';
 const APP_NAME = Constants.expoConfig?.name ?? 'Documente';
@@ -188,9 +194,16 @@ interface LegalModalProps {
 function LegalModal({ visible, title, content, onClose, scheme }: LegalModalProps) {
   const C = Colors[scheme];
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={onClose}
+    >
       <RNView style={[styles.legalContainer, { backgroundColor: C.background }]}>
-        <RNView style={[styles.legalHeader, { backgroundColor: C.card, borderBottomColor: C.border }]}>
+        <RNView
+          style={[styles.legalHeader, { backgroundColor: C.card, borderBottomColor: C.border }]}
+        >
           <RNText style={[styles.legalTitle, { color: C.text }]}>{title}</RNText>
           <Pressable onPress={onClose} hitSlop={12} style={styles.legalClose}>
             <Ionicons name="close" size={22} color={C.textSecondary} />
@@ -216,14 +229,13 @@ export default function SetariScreen() {
   const insets = useSafeAreaInsets();
 
   const { customTypes, createCustomType, deleteCustomType } = useCustomTypes();
-  const { visibleEntityTypes, visibleDocTypes, updateVisibleEntityTypes, updateVisibleDocTypes } = useVisibilitySettings();
+  const { visibleEntityTypes, visibleDocTypes, updateVisibleEntityTypes, updateVisibleDocTypes } =
+    useVisibilitySettings();
   const [newTypeName, setNewTypeName] = useState('');
   const [notifDays, setNotifDays] = useState(7);
   const [pushEnabled, setPushEnabled] = useState(true);
   const [appLockEnabled, setAppLockEnabled] = useState(false);
   const [appLockPinModal, setAppLockPinModal] = useState(false);
-  const [appLockPin1, setAppLockPin1] = useState('');
-  const [appLockPin2, setAppLockPin2] = useState('');
   const [termsVisible, setTermsVisible] = useState(false);
   const [privacyVisible, setPrivacyVisible] = useState(false);
   const [aiConsentGiven, setAiConsentGiven] = useState(false);
@@ -232,41 +244,19 @@ export default function SetariScreen() {
     settings.getNotificationDays().then(setNotifDays);
     settings.getPushEnabled().then(setPushEnabled);
     settings.getAppLockEnabled().then(setAppLockEnabled);
-    AsyncStorage.getItem('ai_assistant_consent_accepted').then((v) => setAiConsentGiven(v === 'true'));
+    AsyncStorage.getItem('ai_assistant_consent_accepted').then(v =>
+      setAiConsentGiven(v === 'true')
+    );
   }, []);
 
   // ── App lock ─────────────────────────────────────────────────────────────────
   const handleAppLockToggle = (value: boolean) => {
     if (value) {
-      setAppLockPin1('');
-      setAppLockPin2('');
       setAppLockPinModal(true);
     } else {
       settings.setAppLockEnabled(false);
       settings.clearAppLockPin();
       setAppLockEnabled(false);
-    }
-  };
-
-  const handleAppLockPinSubmit = async () => {
-    if (appLockPin1.length < 4) {
-      Alert.alert('Eroare', 'PIN-ul trebuie să aibă cel puțin 4 cifre.');
-      return;
-    }
-    if (appLockPin1 !== appLockPin2) {
-      Alert.alert('Eroare', 'PIN-urile nu coincid.');
-      return;
-    }
-    try {
-      await settings.setAppLockPin(appLockPin1);
-      await settings.setAppLockEnabled(true);
-      setAppLockEnabled(true);
-      setAppLockPinModal(false);
-      setAppLockPin1('');
-      setAppLockPin2('');
-      Alert.alert('Activ', 'Aplicația va fi blocată la ieșire sau la redeschidere. Poți folosi Face ID / Touch ID sau PIN.');
-    } catch (e) {
-      Alert.alert('Eroare', e instanceof Error ? e.message : 'Nu s-a putut seta');
     }
   };
 
@@ -308,7 +298,10 @@ export default function SetariScreen() {
             try {
               const { imported, errors } = await importBackup();
               if (errors.length > 0) {
-                Alert.alert('Import parțial', `${imported} înregistrări importate.\n\nErori:\n${errors.slice(0, 5).join('\n')}`);
+                Alert.alert(
+                  'Import parțial',
+                  `${imported} înregistrări importate.\n\nErori:\n${errors.slice(0, 5).join('\n')}`
+                );
               } else {
                 Alert.alert('Succes', `${imported} înregistrări importate cu succes.`);
               }
@@ -335,14 +328,18 @@ export default function SetariScreen() {
   };
 
   const handleDeleteCustomType = (id: string, name: string) => {
-    Alert.alert('Șterge tip', `Ștergi tipul „${name}"? Documentele existente vor apărea ca „Tip personalizat".`, [
-      { text: 'Anulare', style: 'cancel' },
-      {
-        text: 'Șterge',
-        style: 'destructive',
-        onPress: () => deleteCustomType(id).catch(() => {}),
-      },
-    ]);
+    Alert.alert(
+      'Șterge tip',
+      `Ștergi tipul „${name}"? Documentele existente vor apărea ca „Tip personalizat".`,
+      [
+        { text: 'Anulare', style: 'cancel' },
+        {
+          text: 'Șterge',
+          style: 'destructive',
+          onPress: () => deleteCustomType(id).catch(() => {}),
+        },
+      ]
+    );
   };
 
   const handleToggleEntityType = (entityType: EntityType) => {
@@ -371,29 +368,25 @@ export default function SetariScreen() {
 
   // ── GDPR ─────────────────────────────────────────────────────────────────────
   const handleDeleteAllData = () => {
-    Alert.alert(
-      'Atenție',
-      'Vrei să ștergi TOATE datele? Aceasta este ireversibilă.',
-      [
-        { text: 'Anulare', style: 'cancel' },
-        {
-          text: 'Șterge',
-          style: 'destructive',
-          onPress: () => {
-            try {
-              db.runAsync('DELETE FROM documents');
-              db.runAsync('DELETE FROM persons');
-              db.runAsync('DELETE FROM properties');
-              db.runAsync('DELETE FROM vehicles');
-              db.runAsync('DELETE FROM cards');
-              Alert.alert('Date șterse', 'Toate datele au fost șterse.');
-            } catch (e) {
-              Alert.alert('Eroare', e instanceof Error ? e.message : 'Nu s-au putut șterge datele');
-            }
-          },
+    Alert.alert('Atenție', 'Vrei să ștergi TOATE datele? Aceasta este ireversibilă.', [
+      { text: 'Anulare', style: 'cancel' },
+      {
+        text: 'Șterge',
+        style: 'destructive',
+        onPress: () => {
+          try {
+            db.runAsync('DELETE FROM documents');
+            db.runAsync('DELETE FROM persons');
+            db.runAsync('DELETE FROM properties');
+            db.runAsync('DELETE FROM vehicles');
+            db.runAsync('DELETE FROM cards');
+            Alert.alert('Date șterse', 'Toate datele au fost șterse.');
+          } catch (e) {
+            Alert.alert('Eroare', e instanceof Error ? e.message : 'Nu s-au putut șterge datele');
+          }
         },
-      ]
-    );
+      },
+    ]);
   };
 
   // ── Contact ──────────────────────────────────────────────────────────────────
@@ -438,7 +431,9 @@ export default function SetariScreen() {
   return (
     <RNView style={[styles.container, { backgroundColor: C.background }]}>
       {/* ── Header ── */}
-      <RNView style={[styles.header, { backgroundColor: C.background, paddingTop: insets.top + 8 }]}>
+      <RNView
+        style={[styles.header, { backgroundColor: C.background, paddingTop: insets.top + 8 }]}
+      >
         <RNText style={[styles.headerTitle, { color: C.text }]}>Setări</RNText>
       </RNView>
 
@@ -458,7 +453,10 @@ export default function SetariScreen() {
               <RNText style={[styles.rowLabel, { color: C.text }]}>Zile înainte de expirare</RNText>
             </RNView>
             <TextInput
-              style={[styles.inputSmall, { color: C.text, borderColor: C.border, backgroundColor: C.background }]}
+              style={[
+                styles.inputSmall,
+                { color: C.text, borderColor: C.border, backgroundColor: C.background },
+              ]}
               value={String(notifDays)}
               onChangeText={handleNotifDays}
               keyboardType="number-pad"
@@ -468,24 +466,27 @@ export default function SetariScreen() {
           <RNView style={styles.rowLast}>
             <RNView style={styles.rowLeft}>
               <RNView style={[styles.rowIcon, { backgroundColor: '#E8F5E9' }]}>
-                <Ionicons name="notifications-outline" size={18} color="#2E7D32" />
+                <Ionicons name="notifications-outline" size={18} color={primary} />
               </RNView>
               <RNText style={[styles.rowLabel, { color: C.text }]}>Notificări push</RNText>
             </RNView>
             <Switch
               value={pushEnabled}
               onValueChange={handlePushToggle}
-              trackColor={{ false: '#ccc', true: '#9EB567' }}
+              trackColor={{ false: '#ccc', true: primary }}
               thumbColor="#fff"
             />
           </RNView>
         </RNView>
 
         {/* ── Backup ── */}
-        <RNText style={[styles.sectionLabel, { color: C.textSecondary }]}>BACKUP ȘI RESTAURARE</RNText>
+        <RNText style={[styles.sectionLabel, { color: C.textSecondary }]}>
+          BACKUP ȘI RESTAURARE
+        </RNText>
         <RNView style={[styles.card, { backgroundColor: C.card, shadowColor: C.cardShadow }]}>
           <RNText style={[styles.hint, { color: C.textSecondary }]}>
-            Exportă toate datele și pozele ca fișier JSON și salvează-l în iCloud Drive sau Files. La schimbarea telefonului, importă fișierul pentru a restaura complet datele și pozele.
+            Exportă toate datele și pozele ca fișier JSON și salvează-l în iCloud Drive sau Files.
+            La schimbarea telefonului, importă fișierul pentru a restaura complet datele și pozele.
           </RNText>
           <Pressable
             style={({ pressed }) => [styles.btn, { opacity: pressed ? 0.85 : 1 }]}
@@ -495,11 +496,21 @@ export default function SetariScreen() {
             <RNText style={styles.btnText}>Exportă backup (JSON)</RNText>
           </Pressable>
           <Pressable
-            style={({ pressed }) => [styles.btnOutline, { borderColor: '#9EB567', opacity: pressed ? 0.85 : 1 }]}
+            style={({ pressed }) => [
+              styles.btnOutline,
+              { borderColor: primary, opacity: pressed ? 0.85 : 1 },
+            ]}
             onPress={handleImportBackup}
           >
-            <Ionicons name="cloud-download-outline" size={18} color="#9EB567" style={styles.btnIcon} />
-            <RNText style={[styles.btnOutlineText, { color: '#9EB567' }]}>Importă din fișier JSON</RNText>
+            <Ionicons
+              name="cloud-download-outline"
+              size={18}
+              color={primary}
+              style={styles.btnIcon}
+            />
+            <RNText style={[styles.btnOutlineText, { color: primary }]}>
+              Importă din fișier JSON
+            </RNText>
           </Pressable>
         </RNView>
 
@@ -513,13 +524,15 @@ export default function SetariScreen() {
               </RNView>
               <RNView style={styles.rowLabelWrap}>
                 <RNText style={[styles.rowLabel, { color: C.text }]}>Blocare aplicație</RNText>
-                <RNText style={[styles.rowSub, { color: C.textSecondary }]}>Face ID / Touch ID / PIN</RNText>
+                <RNText style={[styles.rowSub, { color: C.textSecondary }]}>
+                  Face ID / Touch ID / PIN
+                </RNText>
               </RNView>
             </RNView>
             <Switch
               value={appLockEnabled}
               onValueChange={handleAppLockToggle}
-              trackColor={{ false: '#ccc', true: '#9EB567' }}
+              trackColor={{ false: '#ccc', true: primary }}
               thumbColor="#fff"
             />
           </RNView>
@@ -529,7 +542,8 @@ export default function SetariScreen() {
         <RNText style={[styles.sectionLabel, { color: C.textSecondary }]}>ENTITĂȚI ACTIVE</RNText>
         <RNView style={[styles.card, { backgroundColor: C.card, shadowColor: C.cardShadow }]}>
           <RNText style={[styles.hint, { color: C.textSecondary }]}>
-            Alege ce tipuri de entități să apară în aplicație. Entitățile dezactivate nu vor apărea în formulare sau liste.
+            Alege ce tipuri de entități să apară în aplicație. Entitățile dezactivate nu vor apărea
+            în formulare sau liste.
           </RNText>
           {ALL_ENTITY_TYPES.map((entityType, idx) => {
             const isActive = visibleEntityTypes.includes(entityType);
@@ -537,21 +551,22 @@ export default function SetariScreen() {
             return (
               <RNView
                 key={entityType}
-                style={[
-                  isLast ? styles.rowLast : styles.row,
-                  { borderBottomColor: C.border },
-                ]}
+                style={[isLast ? styles.rowLast : styles.row, { borderBottomColor: C.border }]}
               >
                 <RNView style={styles.rowLeft}>
-                  <RNView style={[styles.rowIcon, { backgroundColor: isActive ? '#E8F5E9' : '#F5F5F5' }]}>
+                  <RNView
+                    style={[styles.rowIcon, { backgroundColor: isActive ? '#E8F5E9' : '#F5F5F5' }]}
+                  >
                     <RNText style={{ fontSize: 16 }}>{ENTITY_ICONS[entityType]}</RNText>
                   </RNView>
-                  <RNText style={[styles.rowLabel, { color: C.text }]}>{ENTITY_LABELS[entityType]}</RNText>
+                  <RNText style={[styles.rowLabel, { color: C.text }]}>
+                    {ENTITY_LABELS[entityType]}
+                  </RNText>
                 </RNView>
                 <Switch
                   value={isActive}
                   onValueChange={() => handleToggleEntityType(entityType)}
-                  trackColor={{ false: '#ccc', true: '#9EB567' }}
+                  trackColor={{ false: '#ccc', true: primary }}
                   thumbColor="#fff"
                 />
               </RNView>
@@ -560,10 +575,13 @@ export default function SetariScreen() {
         </RNView>
 
         {/* ── Vizibilitate tipuri documente ── */}
-        <RNText style={[styles.sectionLabel, { color: C.textSecondary }]}>TIPURI DOCUMENTE ACTIVE</RNText>
+        <RNText style={[styles.sectionLabel, { color: C.textSecondary }]}>
+          TIPURI DOCUMENTE ACTIVE
+        </RNText>
         <RNView style={[styles.card, { backgroundColor: C.card, shadowColor: C.cardShadow }]}>
           <RNText style={[styles.hint, { color: C.textSecondary }]}>
-            Alege ce tipuri de documente să apară în formulare. Tipurile dezactivate nu vor apărea la adăugarea documentelor.
+            Alege ce tipuri de documente să apară în formulare. Tipurile dezactivate nu vor apărea
+            la adăugarea documentelor.
           </RNText>
           <RNView style={styles.chipRow}>
             {STANDARD_DOC_TYPES.map(docType => {
@@ -574,17 +592,12 @@ export default function SetariScreen() {
                   style={[
                     styles.chip,
                     isActive
-                      ? [styles.chipActive, { borderColor: '#9EB567' }]
+                      ? [styles.chipActive, { borderColor: primary }]
                       : { borderColor: C.border },
                   ]}
                   onPress={() => handleToggleDocType(docType)}
                 >
-                  <RNText
-                    style={[
-                      styles.chipText,
-                      { color: isActive ? '#fff' : C.textSecondary },
-                    ]}
-                  >
+                  <RNText style={[styles.chipText, { color: isActive ? '#fff' : C.textSecondary }]}>
                     {DOCUMENT_TYPE_LABELS[docType]}
                   </RNText>
                 </Pressable>
@@ -594,10 +607,13 @@ export default function SetariScreen() {
         </RNView>
 
         {/* ── Tipuri personalizate de documente ── */}
-        <RNText style={[styles.sectionLabel, { color: C.textSecondary }]}>TIPURI PERSONALIZATE DE DOCUMENTE</RNText>
+        <RNText style={[styles.sectionLabel, { color: C.textSecondary }]}>
+          TIPURI PERSONALIZATE DE DOCUMENTE
+        </RNText>
         <RNView style={[styles.card, { backgroundColor: C.card, shadowColor: C.cardShadow }]}>
           <RNText style={[styles.hint, { color: C.textSecondary }]}>
-            Adaugă tipuri proprii de documente (ex: „Asigurare viață", „Dosar medical"). Tipurile de entități (Persoană, Vehicul, Proprietate etc.) sunt fixe și nu pot fi modificate.
+            Adaugă tipuri proprii de documente (ex: „Asigurare viață", „Dosar medical"). Tipurile de
+            entități (Persoană, Vehicul, Proprietate etc.) sunt fixe și nu pot fi modificate.
           </RNText>
           {customTypes.map((ct, idx) => (
             <RNView
@@ -616,7 +632,10 @@ export default function SetariScreen() {
           ))}
           <RNView style={styles.addTypeRow}>
             <TextInput
-              style={[styles.addTypeInput, { color: C.text, borderColor: C.border, backgroundColor: C.background }]}
+              style={[
+                styles.addTypeInput,
+                { color: C.text, borderColor: C.border, backgroundColor: C.background },
+              ]}
               placeholder="Nume tip nou (ex: Asigurare viață)"
               placeholderTextColor={C.textSecondary}
               value={newTypeName}
@@ -635,12 +654,14 @@ export default function SetariScreen() {
         </RNView>
 
         {/* ── GDPR – Date și confidențialitate ── */}
-        <RNText style={[styles.sectionLabel, { color: C.textSecondary }]}>DATE ȘI CONFIDENȚIALITATE</RNText>
+        <RNText style={[styles.sectionLabel, { color: C.textSecondary }]}>
+          DATE ȘI CONFIDENȚIALITATE
+        </RNText>
         <RNView style={[styles.card, { backgroundColor: C.card, shadowColor: C.cardShadow }]}>
           <InfoRow
             icon="shield-checkmark-outline"
             iconBg="#E8F5E9"
-            iconColor="#2E7D32"
+            iconColor={primary}
             label="Politică de confidențialitate"
             sub="Cum sunt protejate datele tale"
             onPress={() => setPrivacyVisible(true)}
@@ -673,7 +694,9 @@ export default function SetariScreen() {
                 <Ionicons name="sparkles-outline" size={18} color="#4527A0" />
               </RNView>
               <RNView style={styles.rowLabelWrap}>
-                <RNText style={[styles.rowLabel, { color: C.text }]}>Consimțământ asistent AI</RNText>
+                <RNText style={[styles.rowLabel, { color: C.text }]}>
+                  Consimțământ asistent AI
+                </RNText>
                 <RNText style={[styles.rowSub, { color: C.textSecondary }]}>
                   {aiConsentGiven ? 'Acordat – apasă pentru revocare' : 'Nerevocat / neacordat'}
                 </RNText>
@@ -725,7 +748,9 @@ export default function SetariScreen() {
             iconColor="#F57F17"
             label="Evaluează aplicația"
             sub="Ne ajuți cu o recenzie pe App Store"
-            onPress={() => Linking.openURL('itms-apps://itunes.apple.com/app/id6760576986?action=write-review')}
+            onPress={() =>
+              Linking.openURL('itms-apps://itunes.apple.com/app/id6760576986?action=write-review')
+            }
             isLast
             scheme={scheme}
           />
@@ -737,7 +762,7 @@ export default function SetariScreen() {
           <RNView style={[styles.row, { borderBottomColor: C.border }]}>
             <RNView style={styles.rowLeft}>
               <RNView style={[styles.rowIcon, { backgroundColor: '#E8F5E9' }]}>
-                <Ionicons name="folder-outline" size={18} color="#9EB567" />
+                <Ionicons name="folder-outline" size={18} color={primary} />
               </RNView>
               <RNView style={styles.rowLabelWrap}>
                 <RNText style={[styles.rowLabel, { color: C.text }]}>{APP_NAME}</RNText>
@@ -746,7 +771,9 @@ export default function SetariScreen() {
                 </RNText>
               </RNView>
             </RNView>
-            <RNText style={[styles.versionBadge, { color: C.textSecondary, borderColor: C.border }]}>
+            <RNText
+              style={[styles.versionBadge, { color: C.textSecondary, borderColor: C.border }]}
+            >
               v{APP_VERSION}
             </RNText>
           </RNView>
@@ -812,46 +839,11 @@ export default function SetariScreen() {
         scheme={scheme}
       />
 
-      {/* ── Modal PIN blocare ── */}
-      {appLockPinModal && (
-        <RNView style={styles.overlay}>
-          <RNView style={[styles.overlayBox, { backgroundColor: C.card }]}>
-            <RNText style={[styles.overlayTitle, { color: C.text }]}>Setare PIN blocare</RNText>
-            <RNText style={[styles.hint, { color: C.textSecondary }]}>Alege un PIN de 4–8 cifre.</RNText>
-            <TextInput
-              style={[styles.pinInput, { color: C.text, borderColor: C.border, backgroundColor: C.background }]}
-              value={appLockPin1}
-              onChangeText={t => setAppLockPin1(t.replace(/\D/g, '').slice(0, 8))}
-              placeholder="PIN"
-              placeholderTextColor={C.textSecondary}
-              keyboardType="number-pad"
-              secureTextEntry
-              maxLength={8}
-            />
-            <TextInput
-              style={[styles.pinInput, { color: C.text, borderColor: C.border, backgroundColor: C.background }]}
-              value={appLockPin2}
-              onChangeText={t => setAppLockPin2(t.replace(/\D/g, '').slice(0, 8))}
-              placeholder="Confirmă PIN"
-              placeholderTextColor={C.textSecondary}
-              keyboardType="number-pad"
-              secureTextEntry
-              maxLength={8}
-            />
-            <RNView style={styles.overlayBtns}>
-              <Pressable
-                style={[styles.btnOutline, styles.overlayBtn, { borderColor: '#9EB567' }]}
-                onPress={() => { setAppLockPinModal(false); setAppLockPin1(''); setAppLockPin2(''); }}
-              >
-                <RNText style={[styles.btnOutlineText, { color: '#9EB567' }]}>Anulare</RNText>
-              </Pressable>
-              <Pressable style={[styles.btn, styles.overlayBtn]} onPress={handleAppLockPinSubmit}>
-                <RNText style={styles.btnText}>Salvează</RNText>
-              </Pressable>
-            </RNView>
-          </RNView>
-        </RNView>
-      )}
+      <AppLockPinModal
+        visible={appLockPinModal}
+        onDismiss={() => setAppLockPinModal(false)}
+        onPinSaved={() => setAppLockEnabled(true)}
+      />
     </RNView>
   );
 }
@@ -957,7 +949,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#9EB567',
+    backgroundColor: primary,
     borderRadius: 12,
     paddingVertical: 14,
     marginBottom: 10,
@@ -1008,7 +1000,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   addTypeBtn: {
-    backgroundColor: '#9EB567',
+    backgroundColor: primary,
     borderRadius: 10,
     paddingHorizontal: 16,
     justifyContent: 'center',
@@ -1023,7 +1015,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 1,
   },
-  chipActive: { backgroundColor: '#9EB567' },
+  chipActive: { backgroundColor: primary },
   chipText: { fontSize: 13, fontWeight: '500' },
 
   bottomPad: { height: 20 },
@@ -1043,41 +1035,4 @@ const styles = StyleSheet.create({
   legalScroll: { flex: 1 },
   legalContent: { padding: 20, paddingBottom: 40 },
   legalText: { fontSize: 14, lineHeight: 22 },
-
-  // Modal PIN
-  overlay: {
-    position: 'absolute',
-    left: 0, right: 0, top: 0, bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  overlayBox: {
-    borderRadius: 20,
-    padding: 20,
-    width: '100%',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.2,
-        shadowRadius: 12,
-      },
-      android: { elevation: 8 },
-    }),
-  },
-  overlayTitle: { fontSize: 18, fontWeight: '700', marginBottom: 4 },
-  pinInput: {
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 18,
-    letterSpacing: 4,
-    marginBottom: 12,
-    textAlign: 'center',
-  },
-  overlayBtns: { flexDirection: 'row', gap: 10, marginTop: 4 },
-  overlayBtn: { flex: 1, marginBottom: 0 },
 });

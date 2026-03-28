@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { Platform, StyleSheet } from 'react-native';
 import { SymbolView } from 'expo-symbols';
 import { Tabs, useRouter } from 'expo-router';
 import * as Notifications from 'expo-notifications';
@@ -6,10 +7,11 @@ import * as Notifications from 'expo-notifications';
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
 import { scheduleExpirationReminders } from '@/services/notifications';
+import { radius } from '@/theme/layout';
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
-  const colors = Colors[colorScheme];
+  const colors = Colors[colorScheme ?? 'light'];
   const router = useRouter();
   const lastResponse = Notifications.useLastNotificationResponse();
 
@@ -18,7 +20,9 @@ export default function TabLayout() {
   }, []);
 
   useEffect(() => {
-    const data = lastResponse?.notification.request.content.data as { documentId?: string } | undefined;
+    const data = lastResponse?.notification.request.content.data as
+      | { documentId?: string }
+      | undefined;
     if (
       lastResponse &&
       lastResponse.actionIdentifier === Notifications.DEFAULT_ACTION_IDENTIFIER &&
@@ -34,7 +38,29 @@ export default function TabLayout() {
         tabBarActiveTintColor: colors.tabIconSelected,
         tabBarInactiveTintColor: colors.tabIconDefault,
         headerShown: false,
-      }}>
+        // Nu seta height + paddingBottom aici: navigatorul adaugă deja insets.bottom pe tab bar.
+        // Dublarea comprima rândul de taburi și pe ecrane înguste ultimul tab (ex. Asistent) dispărea.
+        tabBarStyle: {
+          backgroundColor: colors.surface,
+          borderTopWidth: 0,
+          paddingTop: 6,
+          ...Platform.select({
+            ios: {
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: -3 },
+              shadowOpacity: 0.06,
+              shadowRadius: 10,
+            },
+            android: { elevation: 12 },
+            default: {},
+          }),
+          borderTopLeftRadius: radius.xl,
+          borderTopRightRadius: radius.xl,
+        },
+        tabBarLabelStyle: styles.tabLabel,
+        tabBarItemStyle: styles.tabItem,
+      }}
+    >
       <Tabs.Screen
         name="index"
         options={{
@@ -75,12 +101,12 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="expirari"
+        name="chat"
         options={{
-          title: 'Expirări',
+          title: 'Asistent',
           tabBarIcon: ({ color }) => (
             <SymbolView
-              name={{ ios: 'calendar', android: 'event', web: 'event' }}
+              name={{ ios: 'message.fill', android: 'chat', web: 'chat' }}
               tintColor={color}
               size={24}
             />
@@ -88,12 +114,12 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="chat"
+        name="expirari"
         options={{
-          title: 'Asistent',
+          title: 'Expirări',
           tabBarIcon: ({ color }) => (
             <SymbolView
-              name={{ ios: 'bubble.left.and.bubble.right.fill', android: 'chat', web: 'chat' }}
+              name={{ ios: 'calendar', android: 'event', web: 'event' }}
               tintColor={color}
               size={24}
             />
@@ -117,3 +143,8 @@ export default function TabLayout() {
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  tabLabel: { fontSize: 10, fontWeight: '600' },
+  tabItem: { paddingTop: 2 },
+});

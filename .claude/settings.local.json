@@ -9,7 +9,16 @@
       "Bash(chmod +x /Users/ax/work/documents/app/.claude/hooks/format-ts.sh)",
       "Bash(cat package.json | python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); [print\\(k,v\\) for k,v in {**d.get\\('dependencies',{}\\),**d.get\\('devDependencies',{}\\)}.items\\(\\)]\" | grep -E \"vector-icons|reanimated|gesture\")",
       "Bash(npx tsc:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(cd:*)",
+      "Bash(find:*)",
+      "Bash(for f:*)",
+      "Bash(pod install:*)",
+      "Bash(grep -r \"fetch\\\\|axios\" /Users/ax/work/documents/app/services --include=*.ts)",
+      "Bash(grep -r \"AI\\\\|assistant\\\\|Mistral\" /Users/ax/work/documents/app/docs --include=*.md)",
+      "Bash(pod spec:*)",
+      "Bash(xargs -I{} grep -l 8.0.0 {})",
+      "Bash(node:*)"
     ]
   }
 }

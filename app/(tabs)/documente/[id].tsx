@@ -567,10 +567,10 @@ export default function DocumentDetailScreen() {
   .meta-header {
     display: flex; align-items: flex-start; justify-content: space-between;
     padding-bottom: 4mm;
-    border-bottom: 2px solid #9EB567;
+    border-bottom: 2px solid ${primary};
     margin-bottom: 6mm;
   }
-  .meta-brand { font-size: 16px; font-weight: 800; color: #9EB567; }
+  .meta-brand { font-size: 16px; font-weight: 800; color: ${primary}; }
   .meta-brand-sub { font-size: 9px; color: #aaa; margin-top: 1px; }
   .meta-doc-type { font-size: 24px; font-weight: 700; margin-bottom: 6mm; }
   .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 3mm; margin-bottom: 4mm; }
@@ -580,17 +580,17 @@ export default function DocumentDetailScreen() {
   }
   .field-label {
     font-size: 8px; font-weight: 700; text-transform: uppercase;
-    letter-spacing: 0.06em; color: #9EB567; margin-bottom: 1.5mm;
+    letter-spacing: 0.06em; color: ${primary}; margin-bottom: 1.5mm;
   }
   .field-value { font-size: 13px; font-weight: 500; }
   .note-box {
     background: #f8faf4; border: 1px solid #e2ebd4;
-    border-left: 3px solid #9EB567;
+    border-left: 3px solid ${primary};
     border-radius: 0 6px 6px 0; padding: 3mm 4mm; margin-bottom: 6mm;
   }
   .note-label {
     font-size: 8px; font-weight: 700; text-transform: uppercase;
-    letter-spacing: 0.06em; color: #9EB567; margin-bottom: 1.5mm;
+    letter-spacing: 0.06em; color: ${primary}; margin-bottom: 1.5mm;
   }
   .note-value { font-size: 12px; color: #444; line-height: 1.6; }
   .meta-footer {
@@ -599,7 +599,7 @@ export default function DocumentDetailScreen() {
     display: flex; justify-content: space-between;
     font-size: 8px; color: #bbb;
   }
-  .meta-footer-brand { color: #9EB567; font-weight: 700; }
+  .meta-footer-brand { color: ${primary}; font-weight: 700; }
 
   /* Pagina OCR */
   .ocr-page {
@@ -1079,7 +1079,7 @@ const styles = StyleSheet.create({
   },
   typeToggleChevron: {
     fontSize: 13,
-    color: '#9EB567',
+    color: primary,
     fontWeight: '500',
   },
   actionBar: {
@@ -1117,7 +1117,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 10,
     borderWidth: 1,
-    borderColor: '#9EB567',
+    borderColor: primary,
   },
   asigaBtnText: { color: primary, fontSize: 14, fontWeight: '600' },
   // Edit overlay

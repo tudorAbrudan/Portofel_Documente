@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
+import { primary } from '@/theme/colors';
 import { useEntities } from '@/hooks/useEntities';
 import { VIGNETA_COUNTRIES } from '@/services/vigneta';
 import type { VignetaCountry } from '@/services/vigneta';
@@ -47,7 +48,7 @@ export default function VignetaScreen() {
         <Ionicons name="open-outline" size={14} color={C.primary} style={{ marginLeft: 8, flexShrink: 0 }} />
       </Pressable>
 
-      <RNText style={[styles.sectionTitle, { color: '#9EB567' }]}>VIGNETĂ OBLIGATORIE</RNText>
+      <RNText style={[styles.sectionTitle, { color: primary }]}>VIGNETĂ OBLIGATORIE</RNText>
       {required.map(country => (
         <RequiredCard key={country.code} country={country} C={C} />
       ))}
@@ -66,7 +67,7 @@ function RequiredCard({ country, C }: { country: VignetaCountry; C: typeof Color
   return (
     <RNView style={[styles.card, styles.cardRequired]}>
       <RNView style={styles.cardHeader}>
-        <RNText style={[styles.countryName, { color: '#2E7D32' }]}>{country.name}</RNText>
+        <RNText style={[styles.countryName, { color: primary }]}>{country.name}</RNText>
         <RNView style={styles.badgeRequired}>
           <RNText style={styles.badgeRequiredText}>NECESAR</RNText>
         </RNView>
@@ -74,7 +75,7 @@ function RequiredCard({ country, C }: { country: VignetaCountry; C: typeof Color
       {country.validityOptions.length > 0 && (
         <RNView style={styles.validityRow}>
           <RNText style={{ fontSize: 13, color: '#555' }}>Valabilitate: </RNText>
-          <RNText style={{ fontSize: 13, fontWeight: '600', color: '#2E7D32', flexShrink: 1 }}>
+          <RNText style={{ fontSize: 13, fontWeight: '600', color: primary, flexShrink: 1 }}>
             {country.validityOptions.join(' · ')}
           </RNText>
         </RNView>
@@ -87,7 +88,7 @@ function RequiredCard({ country, C }: { country: VignetaCountry; C: typeof Color
           style={styles.buyBtn}
           onPress={() => Linking.openURL(country.buyUrl!)}
         >
-          <Ionicons name="open-outline" size={13} color="#2E7D32" style={{ marginRight: 4 }} />
+          <Ionicons name="open-outline" size={13} color={primary} style={{ marginRight: 4 }} />
           <RNText style={styles.buyBtnText}>Cumpără online</RNText>
         </Pressable>
       ) : null}
@@ -125,8 +126,8 @@ const styles = StyleSheet.create({
   },
   cardRequired: {
     backgroundColor: '#f0f7e8',
-    borderColor: '#9EB567',
-    shadowColor: '#9EB567',
+    borderColor: primary,
+    shadowColor: primary,
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.15,
     shadowRadius: 4,
@@ -140,7 +141,7 @@ const styles = StyleSheet.create({
   },
   countryName: { fontSize: 16, fontWeight: '600', flex: 1 },
   badgeRequired: {
-    backgroundColor: '#9EB567',
+    backgroundColor: primary,
     borderRadius: 6,
     paddingHorizontal: 8,
     paddingVertical: 3,
@@ -169,5 +170,5 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: '#e8f5e9',
   },
-  buyBtnText: { fontSize: 12, fontWeight: '600', color: '#2E7D32' },
+  buyBtnText: { fontSize: 12, fontWeight: '600', color: primary },
 });

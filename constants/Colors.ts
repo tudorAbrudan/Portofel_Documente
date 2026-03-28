@@ -1,5 +1,5 @@
 /**
- * Culori app – delegare către theme (EVPoint + #9EB567)
+ * Culori app – delegare către theme (Mindify-inspired sage)
  */
 import { light, dark } from '@/theme/colors';
 

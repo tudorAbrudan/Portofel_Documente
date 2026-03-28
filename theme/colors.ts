@@ -1,34 +1,46 @@
 /**
- * Design system – EVPoint style + primary #9EB567
- * @see docs/DESIGN_SYSTEM.md
+ * Design system – Mindify-inspired (sage / olive, fundal cald, butoane pill).
+ * @see docs/DESIGN_SYSTEM.md (actualizat conceptual la paleta Mindify)
  */
 
-export const primary = '#9EB567';
+export const primary = '#A3B86C';
+export const primaryPressed = '#8FA05A';
+/** Fundal ușor pentru butoane secundare (ex. Cancel în Mindify) */
+export const primaryMuted = '#E8F0D8';
+/** Badge / fundal discret pentru accente primary */
+export const primaryTint = 'rgba(163, 184, 108, 0.16)';
 
 export const light = {
-  primary: '#9EB567',
+  primary,
+  primaryPressed,
+  primaryMuted,
+  primaryTint,
   text: '#1a1a1a',
-  textSecondary: '#666',
-  background: '#f5f5f5',
+  textSecondary: '#6b6b6b',
+  /** Fundal ecran – ușor cald, integrat cu tab bar */
+  background: '#F5F6F3',
   surface: '#ffffff',
-  border: '#e0e0e0',
-  tabIconDefault: '#999',
-  tabIconSelected: '#9EB567',
+  border: '#E8E9E4',
+  tabIconDefault: '#9a9a9a',
+  tabIconSelected: primary,
   card: '#ffffff',
-  cardShadow: 'rgba(0,0,0,0.08)',
+  cardShadow: 'rgba(0,0,0,0.06)',
 };
 
 export const dark = {
-  primary: '#9EB567',
+  primary,
+  primaryPressed: '#B8C98A',
+  primaryMuted: 'rgba(163, 184, 108, 0.22)',
+  primaryTint: 'rgba(163, 184, 108, 0.22)',
   text: '#f5f5f5',
-  textSecondary: '#aaa',
-  background: '#121212',
-  surface: '#1e1e1e',
-  border: '#333',
-  tabIconDefault: '#666',
-  tabIconSelected: '#9EB567',
-  card: '#1e1e1e',
-  cardShadow: 'rgba(0,0,0,0.3)',
+  textSecondary: '#a8a8a8',
+  background: '#1a1b18',
+  surface: '#242522',
+  border: '#3a3b37',
+  tabIconDefault: '#777',
+  tabIconSelected: primary,
+  card: '#242522',
+  cardShadow: 'rgba(0,0,0,0.35)',
 };
 
 export type ColorScheme = 'light' | 'dark';

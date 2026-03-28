@@ -27,7 +27,7 @@ npm run format        # Prettier
 
 - `app/` – rute Expo Router (tabs: Acasă, Entități, Documente, Expirări, Setări)
 - `components/` – componente UI reutilizabile
-- `theme/` – design system (EVPoint + primary #9EB567)
+- `theme/` – design system (Mindify-inspired sage + `theme/layout`)
 - `constants/` – culori, temă navigare
 - `services/` – SQLite (db.ts), entități, documente, backup, notificări
 - `hooks/` – useDocuments, useEntities, useAppLock
@@ -35,4 +35,4 @@ npm run format        # Prettier
 
 ## Design
 
-Design system: [../docs/DESIGN_SYSTEM.md](../docs/DESIGN_SYSTEM.md). Primary: `#9EB567`.
+Design system: [../docs/DESIGN_SYSTEM.md](../docs/DESIGN_SYSTEM.md). Primary: `#A3B86C`.

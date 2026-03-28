@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
+import { primary, primaryTint } from '@/theme/colors';
 import { useDocuments } from '@/hooks/useDocuments';
 import { useEntities } from '@/hooks/useEntities';
 import { useVisibilitySettings } from '@/hooks/useVisibilitySettings';
@@ -150,12 +151,12 @@ function getExpiryInfo(doc: Document): { label: string; bg: string; fg: string }
     return { label: `${daysLeft}z`, bg: '#F57C00', fg: '#fff' };
   }
   if (daysLeft <= 365) {
-    return { label: `${daysLeft}z`, bg: '#9EB56722', fg: '#9EB567' };
+    return { label: `${daysLeft}z`, bg: primaryTint, fg: primary };
   }
   // Pentru date departe: afișează luna și anul
   const date = new Date(doc.expiry_date);
   const label = date.toLocaleDateString('ro-RO', { month: 'short', year: 'numeric' });
-  return { label, bg: '#9EB56722', fg: '#9EB567' };
+  return { label, bg: primaryTint, fg: primary };
 }
 
 // ─── Main screen ──────────────────────────────────────────────────────────────

@@ -17,6 +17,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ThemedTextInput } from '@/components/Themed';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
+import { primary } from '@/theme/colors';
+import { radius } from '@/theme/layout';
 import { useEntities } from '@/hooks/useEntities';
 import { useDocuments } from '@/hooks/useDocuments';
 import { getDocuments, linkDocumentToEntity } from '@/services/documents';
@@ -460,7 +462,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#9EB567',
+    backgroundColor: primary,
     borderRadius: 12,
     paddingVertical: 14,
   },
@@ -470,7 +472,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#9EB567',
+    borderColor: primary,
     borderRadius: 12,
     paddingVertical: 13,
   },
@@ -497,6 +499,6 @@ const styles = StyleSheet.create({
   modalButtons: { flexDirection: 'row', gap: 12, marginTop: 8 },
   modalCancelBtn: { flex: 1, borderWidth: 1, borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
   modalCancelText: { fontSize: 16, opacity: 0.8 },
-  modalSaveBtn: { flex: 1, backgroundColor: '#9EB567', borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
+  modalSaveBtn: { flex: 1, backgroundColor: primary, borderRadius: radius.lg, paddingVertical: 14, alignItems: 'center' },
   modalSaveText: { color: '#fff', fontSize: 16, fontWeight: '600' },
 });

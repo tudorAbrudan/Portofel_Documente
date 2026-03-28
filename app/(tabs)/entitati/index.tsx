@@ -15,6 +15,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
+import { FloatingPillButton } from '@/components/ui/FloatingPillButton';
+import { primary } from '@/theme/colors';
 import { useEntities } from '@/hooks/useEntities';
 import { useVisibilitySettings } from '@/hooks/useVisibilitySettings';
 import type { EntityType, Person, Property, Vehicle, Card, Animal, Company } from '@/types';
@@ -219,7 +221,7 @@ export default function EntitatiListScreen() {
               style={[
                 styles.chip,
                 { borderColor: C.border },
-                isActive && { backgroundColor: '#9EB567', borderColor: '#9EB567' },
+                isActive && { backgroundColor: primary, borderColor: primary },
               ]}
               onPress={() => setTab(key)}
             >
@@ -325,16 +327,11 @@ export default function EntitatiListScreen() {
         )}
       </ScrollView>
 
-      {/* ── FAB ── */}
-      <Pressable
-        style={({ pressed }) => [styles.fab, pressed && styles.fabPressed]}
+      <FloatingPillButton
+        label="Adaugă entitate"
+        icon={<Ionicons name="add" size={22} color="#fff" />}
         onPress={() => router.push('/(tabs)/entitati/add')}
-        accessibilityLabel="Adaugă entitate"
-        accessibilityRole="button"
-      >
-        <Ionicons name="add" size={24} color="#fff" />
-        <RNText style={styles.fabText}>Adaugă</RNText>
-      </Pressable>
+      />
     </RNView>
   );
 }
@@ -505,35 +502,4 @@ const styles = StyleSheet.create({
     lineHeight: 17,
   },
 
-  // FAB
-  fab: {
-    position: 'absolute',
-    bottom: 24,
-    right: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: 52,
-    paddingHorizontal: 20,
-    borderRadius: 26,
-    backgroundColor: '#9EB567',
-    gap: 6,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 3 },
-        shadowOpacity: 0.22,
-        shadowRadius: 6,
-      },
-      android: { elevation: 6 },
-    }),
-  },
-  fabPressed: {
-    opacity: 0.88,
-    transform: [{ scale: 0.96 }],
-  },
-  fabText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
 });

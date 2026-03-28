@@ -83,7 +83,7 @@ export function DatePickerField({
       <View
         style={[
           styles.container,
-          { borderColor: focused ? '#9EB567' : C.border, backgroundColor: C.background },
+          { borderColor: focused ? C.primary : C.border, backgroundColor: C.background },
         ]}
       >
         <TextInput

@@ -16,6 +16,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
+import { FloatingPillButton } from '@/components/ui/FloatingPillButton';
+import { primary, primaryTint } from '@/theme/colors';
 import { useDocuments } from '@/hooks/useDocuments';
 import { useEntities } from '@/hooks/useEntities';
 import { DOCUMENT_TYPE_LABELS, getDocumentLabel } from '@/types';
@@ -175,7 +177,7 @@ function getExpiryInfo(doc: Document): {
   if (daysLeft <= 30) {
     return { label: `${daysLeft}z`, bg: '#F57C00', fg: '#fff' };
   }
-  return { label: formatShortDate(doc.expiry_date), bg: '#9EB56722', fg: '#9EB567' };
+  return { label: formatShortDate(doc.expiry_date), bg: primaryTint, fg: primary };
 }
 
 function formatShortDate(dateStr: string): string {
@@ -590,7 +592,7 @@ export default function DocumenteListScreen() {
           style={[
             styles.chip,
             { borderColor: C.border },
-            onlyExpiring && { backgroundColor: '#9EB567', borderColor: '#9EB567' },
+            onlyExpiring && { backgroundColor: primary, borderColor: primary },
           ]}
           onPress={() => setOnlyExpiring(!onlyExpiring)}
         >
@@ -619,7 +621,7 @@ export default function DocumenteListScreen() {
               style={[
                 styles.chip,
                 { borderColor: C.border },
-                isActive && { backgroundColor: '#9EB567', borderColor: '#9EB567' },
+                isActive && { backgroundColor: primary, borderColor: primary },
               ]}
               onPress={() => setFilterType(value)}
             >
@@ -650,7 +652,7 @@ export default function DocumenteListScreen() {
             style={[
               styles.chip,
               { borderColor: C.border },
-              !filterEntity && { backgroundColor: '#9EB567', borderColor: '#9EB567' },
+              !filterEntity && { backgroundColor: primary, borderColor: primary },
             ]}
             onPress={() => setFilterEntity(null)}
           >
@@ -675,7 +677,7 @@ export default function DocumenteListScreen() {
                 style={[
                   styles.chip,
                   { borderColor: C.border },
-                  isActive && { backgroundColor: '#9EB567', borderColor: '#9EB567' },
+                  isActive && { backgroundColor: primary, borderColor: primary },
                 ]}
                 onPress={() => setFilterEntity({ kind: opt.kind, id: opt.id })}
               >
@@ -728,18 +730,11 @@ export default function DocumenteListScreen() {
         keyboardDismissMode="on-drag"
       />
 
-      {/* ── FAB ── */}
-      <Pressable
-        style={({ pressed }) => [
-          styles.fab,
-          pressed && styles.fabPressed,
-        ]}
+      <FloatingPillButton
+        label="Adaugă document"
+        icon={<Ionicons name="add" size={22} color="#fff" />}
         onPress={() => router.push('/(tabs)/documente/add')}
-        accessibilityLabel="Adaugă document"
-        accessibilityRole="button"
-      >
-        <Ionicons name="add" size={28} color="#fff" />
-      </Pressable>
+      />
     </RNView>
   );
 }
@@ -864,29 +859,4 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
 
-  // FAB
-  fab: {
-    position: 'absolute',
-    bottom: 24,
-    right: 20,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#9EB567',
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 3 },
-        shadowOpacity: 0.22,
-        shadowRadius: 6,
-      },
-      android: { elevation: 6 },
-    }),
-  },
-  fabPressed: {
-    opacity: 0.88,
-    transform: [{ scale: 0.96 }],
-  },
 });

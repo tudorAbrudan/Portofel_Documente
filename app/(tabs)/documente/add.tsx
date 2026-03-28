@@ -894,7 +894,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#9EB567',
+    borderColor: primary,
   },
   calendarInlineBtnText: {
     fontSize: 13,
@@ -913,13 +913,13 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   typeToggleCurrent: { fontSize: 15, fontWeight: '500', flex: 1 },
-  typeToggleChevron: { fontSize: 13, color: '#9EB567', fontWeight: '500' },
+  typeToggleChevron: { fontSize: 13, color: primary, fontWeight: '500' },
   showAllBtn: {
     alignSelf: 'flex-start',
     marginBottom: 8,
   },
   showAllBtnText: {
-    color: '#9EB567',
+    color: primary,
     fontSize: 13,
     fontWeight: '500',
   },
