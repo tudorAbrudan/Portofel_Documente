@@ -1,7 +1,7 @@
 import * as SQLite from 'expo-sqlite';
 
 export function generateId(): string {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
     const r = (Math.random() * 16) | 0;
     return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
   });
@@ -103,12 +103,39 @@ db.execSync(`
     created_at TEXT NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS document_entities (
+    id TEXT PRIMARY KEY,
+    document_id TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    entity_id TEXT NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_doc_entities_doc ON document_entities(document_id);
+  CREATE INDEX IF NOT EXISTS idx_doc_entities_entity ON document_entities(entity_type, entity_id);
+
+  CREATE TABLE IF NOT EXISTS chat_threads (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS chat_messages (
+    id TEXT PRIMARY KEY,
+    thread_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+
   CREATE INDEX IF NOT EXISTS idx_docs_expiry ON documents(expiry_date);
   CREATE INDEX IF NOT EXISTS idx_docs_person ON documents(person_id);
   CREATE INDEX IF NOT EXISTS idx_docs_vehicle ON documents(vehicle_id);
   CREATE INDEX IF NOT EXISTS idx_docs_property ON documents(property_id);
   CREATE INDEX IF NOT EXISTS idx_pages_doc ON document_pages(document_id);
   CREATE INDEX IF NOT EXISTS idx_fuel_vehicle ON fuel_records(vehicle_id, date DESC);
+  CREATE INDEX IF NOT EXISTS idx_chat_messages_thread ON chat_messages(thread_id, created_at ASC);
+  CREATE INDEX IF NOT EXISTS idx_chat_threads_updated ON chat_threads(updated_at DESC);
 `);
 
 // Migrare: adaugă custom_type_id dacă nu există
@@ -163,6 +190,60 @@ try {
 // Migrare: adaugă ocr_text dacă nu există
 try {
   db.execSync('ALTER TABLE documents ADD COLUMN ocr_text TEXT');
+} catch {
+  // coloana există deja
+}
+
+// Migrare: populează document_entities din coloanele legacy (o singură dată)
+// Folosim OR IGNORE pentru a evita duplicate la rulări repetate
+try {
+  db.execSync(`
+    INSERT OR IGNORE INTO document_entities (id, document_id, entity_type, entity_id)
+    SELECT lower(hex(randomblob(16))), id, 'person', person_id
+    FROM documents WHERE person_id IS NOT NULL
+  `);
+  db.execSync(`
+    INSERT OR IGNORE INTO document_entities (id, document_id, entity_type, entity_id)
+    SELECT lower(hex(randomblob(16))), id, 'vehicle', vehicle_id
+    FROM documents WHERE vehicle_id IS NOT NULL
+  `);
+  db.execSync(`
+    INSERT OR IGNORE INTO document_entities (id, document_id, entity_type, entity_id)
+    SELECT lower(hex(randomblob(16))), id, 'property', property_id
+    FROM documents WHERE property_id IS NOT NULL
+  `);
+  db.execSync(`
+    INSERT OR IGNORE INTO document_entities (id, document_id, entity_type, entity_id)
+    SELECT lower(hex(randomblob(16))), id, 'card', card_id
+    FROM documents WHERE card_id IS NOT NULL
+  `);
+  db.execSync(`
+    INSERT OR IGNORE INTO document_entities (id, document_id, entity_type, entity_id)
+    SELECT lower(hex(randomblob(16))), id, 'animal', animal_id
+    FROM documents WHERE animal_id IS NOT NULL
+  `);
+  db.execSync(`
+    INSERT OR IGNORE INTO document_entities (id, document_id, entity_type, entity_id)
+    SELECT lower(hex(randomblob(16))), id, 'company', company_id
+    FROM documents WHERE company_id IS NOT NULL
+  `);
+} catch {
+  // Migrare deja aplicată sau eroare neesențială
+}
+
+// Migrare: adaugă phone, email, iban la persons dacă nu există
+try {
+  db.execSync('ALTER TABLE persons ADD COLUMN phone TEXT');
+} catch {
+  // coloana există deja
+}
+try {
+  db.execSync('ALTER TABLE persons ADD COLUMN email TEXT');
+} catch {
+  // coloana există deja
+}
+try {
+  db.execSync('ALTER TABLE persons ADD COLUMN iban TEXT');
 } catch {
   // coloana există deja
 }

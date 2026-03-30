@@ -1,11 +1,25 @@
 import { useEffect, useState, useMemo } from 'react';
-import { StyleSheet, ScrollView, Image, Alert, Pressable, ActivityIndicator, Modal, useWindowDimensions, StatusBar, Linking } from 'react-native';
+import {
+  StyleSheet,
+  ScrollView,
+  Image,
+  Alert,
+  Pressable,
+  ActivityIndicator,
+  Modal,
+  useWindowDimensions,
+  StatusBar,
+  Linking,
+  Platform,
+} from 'react-native';
+import { WebView } from 'react-native-webview';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { useLocalSearchParams, router, Stack } from 'expo-router';
 import { useTheme } from '@react-navigation/native';
 import * as Sharing from 'expo-sharing';
 import * as Print from 'expo-print';
 import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Share } from 'react-native';
 import { Text, View } from '@/components/Themed';
@@ -20,19 +34,32 @@ import {
   removeDocumentPage,
   setDocumentOcrText,
   linkDocumentToEntity,
+  addEntityLinkToDocument,
+  removeEntityLinkFromDocument,
+  getDocumentEntityLinks,
 } from '@/services/documents';
+import type { DocumentEntityLink, EntityType } from '@/types';
 import { scheduleExpirationReminders } from '@/services/notifications';
-import { addExpiryCalendarEvent, addEventToCalendar, isCalendarAvailable } from '@/services/calendar';
-import { extractText, extractDocumentInfo, detectDocumentType, formatOcrSummary } from '@/services/ocr';
+import {
+  addExpiryCalendarEvent,
+  addEventToCalendar,
+  isCalendarAvailable,
+} from '@/services/calendar';
+import {
+  extractText,
+  extractDocumentInfo,
+  detectDocumentType,
+  formatOcrSummary,
+} from '@/services/ocr';
 import { extractFieldsForType } from '@/services/ocrExtractors';
 import { toFileUri } from '@/services/fileUtils';
+import { isPdfFile, extractTextFromPdf } from '@/services/pdfExtractor';
 import { getDocumentLabel } from '@/types';
 import type { Document as DocType } from '@/types';
 import { useCustomTypes } from '@/hooks/useCustomTypes';
 import { useEntities } from '@/hooks/useEntities';
 import { DOCUMENT_FIELDS } from '@/types/documentFields';
 import type { FieldDef } from '@/types/documentFields';
-
 
 function autoDeleteLabel(rule: string): string {
   if (rule === 'expiry') return 'La data expirării';
@@ -64,6 +91,7 @@ export default function DocumentDetailScreen() {
 
   const [fullscreenUri, setFullscreenUri] = useState<string | null>(null);
   const [linkEntityVisible, setLinkEntityVisible] = useState(false);
+  const [entityLinks, setEntityLinks] = useState<DocumentEntityLink[]>([]);
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
 
   useEffect(() => {
@@ -75,8 +103,13 @@ export default function DocumentDetailScreen() {
       })
       .catch(() => setDoc(null))
       .finally(() => setLoading(false));
+    // Încarcă entity links din junction table
+    getDocumentEntityLinks(id)
+      .then(links => {
+        setEntityLinks(links);
+      })
+      .catch(() => {});
   }, [id]);
-
 
   const allPages = useMemo(() => {
     if (!doc) return [];
@@ -86,10 +119,11 @@ export default function DocumentDetailScreen() {
   }, [doc]);
 
   const photoPages: PhotoPage[] = useMemo(
-    () => allPages.map(p => ({
-      id: p.id,
-      uri: rotatedUris[p.file_path] ?? toFileUri(p.file_path),
-    })),
+    () =>
+      allPages.map(p => ({
+        id: p.id,
+        uri: rotatedUris[p.file_path] ?? toFileUri(p.file_path),
+      })),
     [allPages, rotatedUris]
   );
 
@@ -111,6 +145,26 @@ export default function DocumentDetailScreen() {
     }
   }
 
+  async function handleAddEntityLink(link: DocumentEntityLink) {
+    if (!doc) return;
+    await addEntityLinkToDocument(doc.id, link);
+    const updated = await getDocumentEntityLinks(doc.id);
+    setEntityLinks(updated);
+    const updatedDoc = await getDocumentById(doc.id);
+    if (updatedDoc) setDoc(updatedDoc);
+    setLinkEntityVisible(false);
+  }
+
+  async function handleRemoveEntityLink(link: DocumentEntityLink) {
+    if (!doc) return;
+    await removeEntityLinkFromDocument(doc.id, link);
+    const updated = await getDocumentEntityLinks(doc.id);
+    setEntityLinks(updated);
+    const updatedDoc = await getDocumentById(doc.id);
+    if (updatedDoc) setDoc(updatedDoc);
+  }
+
+  // Backward compat: legacy handleLinkEntity (înlocuiește toate linkurile cu unul singur)
   async function handleLinkEntity(entity: {
     person_id?: string;
     property_id?: string;
@@ -123,6 +177,8 @@ export default function DocumentDetailScreen() {
     await linkDocumentToEntity(doc.id, entity);
     const updated = await getDocumentById(doc.id);
     if (updated) setDoc(updated);
+    const links = await getDocumentEntityLinks(doc.id);
+    setEntityLinks(links);
     setLinkEntityVisible(false);
   }
 
@@ -169,11 +225,14 @@ export default function DocumentDetailScreen() {
       const filename = `doc_${Date.now()}.jpg`;
       const relativePath = `documents/${filename}`;
       const dest = `${FileSystem.documentDirectory}${relativePath}`;
-      await FileSystem.makeDirectoryAsync(`${FileSystem.documentDirectory}documents`, { intermediates: true });
+      await FileSystem.makeDirectoryAsync(`${FileSystem.documentDirectory}documents`, {
+        intermediates: true,
+      });
       // Normalizează EXIF (bake-in rotația) înainte de salvare
-      const normalized = await ImageManipulator.manipulateAsync(
-        uri, [], { compress: 0.92, format: ImageManipulator.SaveFormat.JPEG }
-      );
+      const normalized = await ImageManipulator.manipulateAsync(uri, [], {
+        compress: 0.92,
+        format: ImageManipulator.SaveFormat.JPEG,
+      });
       await FileSystem.copyAsync({ from: normalized.uri, to: dest });
       if (!doc.file_path) {
         await updateDocument(doc.id, {
@@ -199,7 +258,9 @@ export default function DocumentDetailScreen() {
   // Încearcă să găsească orientarea corectă a imaginii via OCR.
   // Dacă textul inițial e prea scurt, testează 90°/270°/180° și salvează versiunea cea mai bună.
   // Returnează textul extras și dacă imaginea a fost rotită.
-  async function ocrWithAutoRotate(storedPath: string): Promise<{ text: string; rotated: boolean }> {
+  async function ocrWithAutoRotate(
+    storedPath: string
+  ): Promise<{ text: string; rotated: boolean }> {
     const fileUri = toFileUri(storedPath);
     let { text } = await extractText(fileUri);
 
@@ -209,9 +270,10 @@ export default function DocumentDetailScreen() {
     let bestUri = fileUri;
 
     for (const deg of [90, 270, 180]) {
-      const r = await ImageManipulator.manipulateAsync(
-        fileUri, [{ rotate: deg }], { compress: 0.92, format: ImageManipulator.SaveFormat.JPEG }
-      );
+      const r = await ImageManipulator.manipulateAsync(fileUri, [{ rotate: deg }], {
+        compress: 0.92,
+        format: ImageManipulator.SaveFormat.JPEG,
+      });
       const { text: rotText } = await extractText(r.uri);
       if (rotText.trim().length > bestText.trim().length) {
         bestText = rotText;
@@ -241,10 +303,13 @@ export default function DocumentDetailScreen() {
       const summary = formatOcrSummary(text, info);
 
       const updates: Parameters<typeof updateDocument>[1] = {
-        type: (detectedType && detectedType !== 'altul' && detectedType !== 'custom') ? detectedType : currentDoc.type,
+        type:
+          detectedType && detectedType !== 'altul' && detectedType !== 'custom'
+            ? detectedType
+            : currentDoc.type,
         issue_date: info.issue_date ?? currentDoc.issue_date,
         expiry_date: info.expiry_date ?? currentDoc.expiry_date,
-        note: (!currentDoc.note && summary) ? summary : currentDoc.note,
+        note: !currentDoc.note && summary ? summary : currentDoc.note,
         file_path: currentDoc.file_path,
         auto_delete: currentDoc.auto_delete,
       };
@@ -261,8 +326,54 @@ export default function DocumentDetailScreen() {
     }
   }
 
+  async function saveAndAddPdf(sourceUri: string) {
+    if (!doc) return;
+    try {
+      const filename = `doc_${Date.now()}.pdf`;
+      const relativePath = `documents/${filename}`;
+      const dest = `${FileSystem.documentDirectory}documents/${filename}`;
+      await FileSystem.makeDirectoryAsync(`${FileSystem.documentDirectory}documents`, {
+        intermediates: true,
+      });
+      await FileSystem.copyAsync({ from: sourceUri, to: dest });
+
+      if (!doc.file_path) {
+        await updateDocument(doc.id, {
+          type: doc.type,
+          issue_date: doc.issue_date,
+          expiry_date: doc.expiry_date,
+          note: doc.note,
+          file_path: relativePath,
+          auto_delete: doc.auto_delete,
+        });
+      } else {
+        await addDocumentPage(doc.id, relativePath);
+      }
+
+      // Extrage text din PDF și actualizează OCR
+      try {
+        const text = await extractTextFromPdf(dest);
+        if (text.trim()) {
+          const existingOcr = doc.ocr_text ?? '';
+          const newOcrText = existingOcr ? `${existingOcr}\n\n---\n\n${text}` : text;
+          await setDocumentOcrText(doc.id, newOcrText);
+          if (text.trim().length < 100) {
+            Alert.alert('PDF scanat', 'PDF-ul pare a fi o scanare – textul extras este limitat.');
+          }
+        }
+      } catch {
+        // Extracția text e opțională
+      }
+
+      const updated = await getDocumentById(doc.id);
+      setDoc(updated);
+    } catch (e) {
+      Alert.alert('Eroare', e instanceof Error ? e.message : 'Nu s-a putut adăuga PDF-ul');
+    }
+  }
+
   function handleAddPage() {
-    Alert.alert('Adaugă pagină', '', [
+    Alert.alert('Adaugă atașament', '', [
       {
         text: 'Cameră',
         onPress: async () => {
@@ -293,10 +404,25 @@ export default function DocumentDetailScreen() {
           if (!result.canceled && result.assets[0]) await saveAndAddPage(result.assets[0].uri);
         },
       },
+      {
+        text: 'Adaugă PDF',
+        onPress: async () => {
+          try {
+            const result = await DocumentPicker.getDocumentAsync({
+              type: 'application/pdf',
+              copyToCacheDirectory: true,
+            });
+            if (!result.canceled && result.assets[0]?.uri) {
+              await saveAndAddPdf(result.assets[0].uri);
+            }
+          } catch (e) {
+            Alert.alert('Eroare', e instanceof Error ? e.message : 'Nu s-a putut selecta PDF-ul');
+          }
+        },
+      },
       { text: 'Anulare', style: 'cancel' },
     ]);
   }
-
 
   const handleOcr = async () => {
     if (allPages.length === 0) {
@@ -310,10 +436,18 @@ export default function DocumentDetailScreen() {
       let anyRotated = false;
       for (const page of allPages) {
         try {
-          const { text, rotated } = await ocrWithAutoRotate(page.file_path);
-          if (text.trim()) texts.push(text);
-          if (rotated) anyRotated = true;
-        } catch { /* pagina nu a putut fi scanată */ }
+          if (isPdfFile(page.file_path)) {
+            // ML Kit nu suportă PDF — încearcă extracție text din PDF
+            const pdfText = await extractTextFromPdf(toFileUri(page.file_path));
+            if (pdfText.trim()) texts.push(pdfText);
+          } else {
+            const { text, rotated } = await ocrWithAutoRotate(page.file_path);
+            if (text.trim()) texts.push(text);
+            if (rotated) anyRotated = true;
+          }
+        } catch {
+          /* pagina nu a putut fi scanată */
+        }
       }
       if (anyRotated) setRotatedUris({});
 
@@ -326,8 +460,17 @@ export default function DocumentDetailScreen() {
       const info = extractDocumentInfo(combinedText);
       const summary = formatOcrSummary(combinedText, info);
 
-      // Extracție structurată per tip document
-      const extracted = doc ? extractFieldsForType(doc.type, combinedText) : { metadata: {} };
+      // Detectare tip document din text
+      const detectedType = detectDocumentType(combinedText);
+      const typeChanged =
+        detectedType &&
+        detectedType !== 'altul' &&
+        detectedType !== 'custom' &&
+        detectedType !== doc?.type;
+
+      // Extracție structurată per tip document (folosim tipul detectat dacă există)
+      const effectiveType = (typeChanged ? detectedType : doc?.type) ?? doc?.type ?? 'altul';
+      const extracted = extractFieldsForType(effectiveType, combinedText);
       const newExpiry = extracted.expiry_date ?? info.expiry_date;
       const newIssue = extracted.issue_date ?? info.issue_date;
 
@@ -339,7 +482,8 @@ export default function DocumentDetailScreen() {
         metaEntries.slice(0, 5).forEach(([, v]) => found.push(`• ${v}`));
         if (metaEntries.length > 5) found.push(`… și ${metaEntries.length - 5} mai multe`);
       }
-      if (newExpiry && !found.some(f => f.includes(newExpiry))) found.push(`📅 Expiră: ${newExpiry}`);
+      if (newExpiry && !found.some(f => f.includes(newExpiry)))
+        found.push(`📅 Expiră: ${newExpiry}`);
       if (newIssue && !found.some(f => f.includes(newIssue))) found.push(`📅 Emis: ${newIssue}`);
       if (!found.length) {
         if (info.name) found.push(`👤 ${info.name}`);
@@ -348,46 +492,46 @@ export default function DocumentDetailScreen() {
       }
 
       const pageLabel = `${allPages.length} ${allPages.length === 1 ? 'pagină' : 'pagini'}`;
-      const message = found.length > 0
-        ? `Găsit din ${pageLabel}:\n\n${found.join('\n')}`
-        : `Text extras din ${pageLabel}:\n\n${combinedText.slice(0, 400)}${combinedText.length > 400 ? '…' : ''}`;
+      const typeNote = typeChanged ? `\n\n📋 Tip detectat: ${effectiveType}` : '';
+      const message =
+        found.length > 0
+          ? `Găsit din ${pageLabel}:${typeNote}\n\n${found.join('\n')}`
+          : `Text extras din ${pageLabel}:${typeNote}\n\n${combinedText.slice(0, 400)}${combinedText.length > 400 ? '…' : ''}`;
 
-      Alert.alert(
-        'Procesare OCR',
-        message,
-        [
-          { text: 'Închide', style: 'cancel' },
-          found.length > 0
-            ? {
-                text: 'Aplică pe document',
-                onPress: async () => {
-                  const mergedMeta = { ...(doc!.metadata ?? {}), ...extracted.metadata };
-                  await updateDocument(doc!.id, {
-                    type: doc!.type,
-                    issue_date: newIssue ?? doc!.issue_date,
-                    expiry_date: newExpiry ?? doc!.expiry_date,
-                    note: (!doc!.note && summary) ? summary : doc!.note,
-                    file_path: doc!.file_path,
-                    auto_delete: doc!.auto_delete,
-                    metadata: mergedMeta,
-                  });
-                  await setDocumentOcrText(doc!.id, combinedText);
-                  const updated = await getDocumentById(doc!.id);
-                  setDoc(updated);
-                  Alert.alert('Salvat', 'Datele OCR au fost aplicate.');
-                },
-              }
-            : {
-                text: 'Copiază în notă',
-                onPress: async () => {
-                  await setDocumentOcrText(doc!.id, combinedText);
-                  const updated = await getDocumentById(doc!.id);
-                  setDoc(updated);
-                  router.push(`/(tabs)/documente/edit?id=${doc!.id}`);
-                },
+      Alert.alert('Procesare OCR', message, [
+        { text: 'Închide', style: 'cancel' },
+        found.length > 0 || typeChanged
+          ? {
+              text: typeChanged
+                ? `Aplică (schimbă tipul în ${effectiveType})`
+                : 'Aplică pe document',
+              onPress: async () => {
+                const mergedMeta = { ...(doc!.metadata ?? {}), ...extracted.metadata };
+                await updateDocument(doc!.id, {
+                  type: typeChanged ? effectiveType : doc!.type,
+                  issue_date: newIssue ?? doc!.issue_date,
+                  expiry_date: newExpiry ?? doc!.expiry_date,
+                  note: !doc!.note && summary ? summary : doc!.note,
+                  file_path: doc!.file_path,
+                  auto_delete: doc!.auto_delete,
+                  metadata: mergedMeta,
+                });
+                await setDocumentOcrText(doc!.id, combinedText);
+                const updated = await getDocumentById(doc!.id);
+                setDoc(updated);
+                Alert.alert('Salvat', 'Datele OCR au fost aplicate.');
               },
-        ]
-      );
+            }
+          : {
+              text: 'Copiază în notă',
+              onPress: async () => {
+                await setDocumentOcrText(doc!.id, combinedText);
+                const updated = await getDocumentById(doc!.id);
+                setDoc(updated);
+                router.push(`/(tabs)/documente/edit?id=${doc!.id}`);
+              },
+            },
+      ]);
     } catch (e) {
       Alert.alert('Eroare OCR', e instanceof Error ? e.message : 'Eroare la procesare');
     } finally {
@@ -402,13 +546,28 @@ export default function DocumentDetailScreen() {
       return;
     }
     if (doc.type === 'bilet' && doc.metadata?.event_date) {
-      const title = [doc.metadata?.categorie, doc.metadata?.venue].filter(Boolean).join(' – ') || 'Eveniment';
-      const calId = await addEventToCalendar({ title, eventDate: doc.metadata!.event_date, venue: doc.metadata?.venue, note: doc.note, documentId: doc.id });
-      if (!calId) Alert.alert('Eroare', 'Nu s-a putut accesa calendarul. Verifică permisiunile în Setări.');
+      const title =
+        [doc.metadata?.categorie, doc.metadata?.venue].filter(Boolean).join(' – ') || 'Eveniment';
+      const calId = await addEventToCalendar({
+        title,
+        eventDate: doc.metadata!.event_date,
+        venue: doc.metadata?.venue,
+        note: doc.note,
+        documentId: doc.id,
+      });
+      if (!calId)
+        Alert.alert('Eroare', 'Nu s-a putut accesa calendarul. Verifică permisiunile în Setări.');
       else Alert.alert('Calendar', 'Reminder adăugat! Vei fi notificat cu 1 zi și 2 ore înainte.');
     } else if (doc.expiry_date) {
-      const calId = await addExpiryCalendarEvent({ docType: doc.type, expiryDate: doc.expiry_date, entityName: undefined, documentId: doc.id, note: doc.note });
-      if (!calId) Alert.alert('Eroare', 'Nu s-a putut accesa calendarul. Verifică permisiunile în Setări.');
+      const calId = await addExpiryCalendarEvent({
+        docType: doc.type,
+        expiryDate: doc.expiry_date,
+        entityName: undefined,
+        documentId: doc.id,
+        note: doc.note,
+      });
+      if (!calId)
+        Alert.alert('Eroare', 'Nu s-a putut accesa calendarul. Verifică permisiunile în Setări.');
       else Alert.alert('Calendar', 'Evenimentul a fost adăugat în calendar.');
     }
   };
@@ -441,10 +600,14 @@ export default function DocumentDetailScreen() {
           dialogTitle: `Distribuie: ${getDocumentLabel(doc!, customTypes)}`,
         });
       } else {
-        await Share.share({ message: shareMessage(doc!), title: getDocumentLabel(doc!, customTypes) });
+        await Share.share({
+          message: shareMessage(doc!),
+          title: getDocumentLabel(doc!, customTypes),
+        });
       }
     } catch (e) {
-      if ((e as Error)?.message?.includes('cancel') || (e as Error)?.message === 'User cancelled') return;
+      if ((e as Error)?.message?.includes('cancel') || (e as Error)?.message === 'User cancelled')
+        return;
       Alert.alert('Eroare', (e as Error)?.message ?? 'Nu s-a putut distribui');
     }
   };
@@ -460,17 +623,13 @@ export default function DocumentDetailScreen() {
       return;
     }
     // Mai multe pagini — alege care să o distribui
-    Alert.alert(
-      'Distribuie imagine',
-      'Alege pagina:',
-      [
-        ...allPages.map((_, idx) => ({
-          text: `Pagina ${idx + 1}`,
-          onPress: () => shareImageAtIndex(idx),
-        })),
-        { text: 'Anulare', style: 'cancel' as const },
-      ]
-    );
+    Alert.alert('Distribuie imagine', 'Alege pagina:', [
+      ...allPages.map((_, idx) => ({
+        text: `Pagina ${idx + 1}`,
+        onPress: () => shareImageAtIndex(idx),
+      })),
+      { text: 'Anulare', style: 'cancel' as const },
+    ]);
   };
 
   function shareMessage(d: DocType): string {
@@ -506,20 +665,29 @@ export default function DocumentDetailScreen() {
         }
       }
       if (imgTags.length === 0 && allPages.length > 0) {
-        Alert.alert('Atenție', 'Imaginile nu au putut fi incluse în PDF. Va conține doar textul documentului.');
+        Alert.alert(
+          'Atenție',
+          'Imaginile nu au putut fi incluse în PDF. Va conține doar textul documentului.'
+        );
       }
 
       const docLabel = escapeHtml(getDocumentLabel(doc, customTypes));
-      const generatedDate = new Date().toLocaleDateString('ro-RO', { day: '2-digit', month: 'long', year: 'numeric' });
+      const generatedDate = new Date().toLocaleDateString('ro-RO', {
+        day: '2-digit',
+        month: 'long',
+        year: 'numeric',
+      });
 
       // Câmpuri metadata
       const metaFields: string[] = [];
-      if (doc.issue_date) metaFields.push(`
+      if (doc.issue_date)
+        metaFields.push(`
         <div class="field">
           <div class="field-label">Data emisiunii</div>
           <div class="field-value">${escapeHtml(doc.issue_date)}</div>
         </div>`);
-      if (doc.expiry_date) metaFields.push(`
+      if (doc.expiry_date)
+        metaFields.push(`
         <div class="field">
           <div class="field-label">Data expirării</div>
           <div class="field-value">${escapeHtml(doc.expiry_date)}</div>
@@ -529,7 +697,8 @@ export default function DocumentDetailScreen() {
         const fields = DOCUMENT_FIELDS[doc.type] ?? [];
         for (const f of fields) {
           const val = doc.metadata[f.key];
-          if (val) metaFields.push(`
+          if (val)
+            metaFields.push(`
             <div class="field">
               <div class="field-label">${escapeHtml(f.label)}</div>
               <div class="field-value">${escapeHtml(val)}</div>
@@ -634,7 +803,9 @@ export default function DocumentDetailScreen() {
     </div>
   </div>
 
-  ${doc.ocr_text ? `
+  ${
+    doc.ocr_text
+      ? `
   <div class="ocr-page">
     <div class="meta-header">
       <div>
@@ -648,7 +819,9 @@ export default function DocumentDetailScreen() {
       <span class="meta-footer-brand">Dosar</span>
       <span>tudorabrudan.github.io/Dosar • Generat pe ${generatedDate}</span>
     </div>
-  </div>` : ''}
+  </div>`
+      : ''
+  }
 
 </body></html>`;
       const { uri } = await Print.printToFileAsync({ html, width: 595, height: 842 }); // A4 in points
@@ -685,20 +858,24 @@ export default function DocumentDetailScreen() {
 
   return (
     <View style={styles.root}>
-      <Stack.Screen options={{
-        title: doc ? (doc.note?.slice(0, 30) || 'Detaliu document') : 'Detaliu document',
-        headerLeft: () => (
-          <Pressable
-            onPress={() => router.canGoBack() ? router.back() : router.push('/(tabs)/documente')}
-            style={{ paddingRight: 16 }}
-          >
-            <Text style={{ color: primary, fontSize: 16 }}>‹ Înapoi</Text>
-          </Pressable>
-        ),
-      }} />
+      <Stack.Screen
+        options={{
+          title: doc ? doc.note?.slice(0, 30) || 'Detaliu document' : 'Detaliu document',
+          headerLeft: () => (
+            <Pressable
+              onPress={() =>
+                router.canGoBack() ? router.back() : router.push('/(tabs)/documente')
+              }
+              style={{ paddingRight: 16 }}
+            >
+              <Text style={{ color: primary, fontSize: 16 }}>‹ Înapoi</Text>
+            </Pressable>
+          ),
+        }}
+      />
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         <DocumentPhotoSection
-          pages={photoPages}
+          pages={photoPages.filter(p => !isPdfFile(p.uri) && !isPdfFile(p.id))}
           ocrLoading={ocrLoading}
           ocrText={doc.ocr_text ?? undefined}
           isEditing={false}
@@ -708,28 +885,100 @@ export default function DocumentDetailScreen() {
           onRunOcr={handleOcr}
           onFullscreen={setFullscreenUri}
         />
+        {/* Vizualizare PDF — WKWebView redă PDF nativ pe iOS */}
+        {allPages
+          .filter(p => isPdfFile(p.file_path))
+          .map((pdfPage, idx) => {
+            const pdfUri = toFileUri(pdfPage.file_path);
+            return (
+              <View key={pdfPage.id} style={styles.pdfContainer}>
+                <Text style={styles.pdfSectionLabel}>
+                  PDF{' '}
+                  {allPages.filter(p => isPdfFile(p.file_path)).length > 1 ? `(${idx + 1})` : ''}
+                </Text>
+                {Platform.OS === 'ios' ? (
+                  <WebView
+                    source={{ uri: pdfUri }}
+                    style={styles.pdfWebView}
+                    originWhitelist={['file://*', '*']}
+                    allowFileAccess
+                    allowFileAccessFromFileURLs
+                    allowUniversalAccessFromFileURLs
+                    scrollEnabled
+                  />
+                ) : (
+                  <Pressable style={styles.pdfOpenBtn} onPress={() => Linking.openURL(pdfUri)}>
+                    <Text style={styles.pdfOpenBtnText}>📄 Deschide PDF extern</Text>
+                  </Pressable>
+                )}
+              </View>
+            );
+          })}
         <View style={styles.meta}>
           <Text style={styles.label}>Tip</Text>
           <Text style={styles.value}>{getDocumentLabel(doc, customTypes)}</Text>
           {(() => {
-            let entityName: string | null = null;
-            if (doc.person_id) entityName = persons.find(p => p.id === doc.person_id)?.name ?? null;
-            else if (doc.property_id) entityName = properties.find(p => p.id === doc.property_id)?.name ?? null;
-            else if (doc.vehicle_id) entityName = vehicles.find(v => v.id === doc.vehicle_id)?.name ?? null;
-            else if (doc.card_id) {
-              const c = cards.find(c => c.id === doc.card_id);
-              entityName = c ? `${c.nickname ?? ''} ····${c.last4}`.trim() : null;
-            } else if (doc.animal_id) entityName = animals.find(a => a.id === doc.animal_id)?.name ?? null;
-            else if (doc.company_id) entityName = companies.find(c => c.id === doc.company_id)?.name ?? null;
+            // Funcție helper pentru numele entității
+            function entityLinkLabel(link: DocumentEntityLink): string {
+              switch (link.entityType) {
+                case 'person':
+                  return persons.find(p => p.id === link.entityId)?.name ?? link.entityId;
+                case 'vehicle':
+                  return vehicles.find(v => v.id === link.entityId)?.name ?? link.entityId;
+                case 'property':
+                  return properties.find(p => p.id === link.entityId)?.name ?? link.entityId;
+                case 'card': {
+                  const c = cards.find(c => c.id === link.entityId);
+                  return c ? `${c.nickname} ····${c.last4}` : link.entityId;
+                }
+                case 'animal':
+                  return animals.find(a => a.id === link.entityId)?.name ?? link.entityId;
+                case 'company':
+                  return companies.find(c => c.id === link.entityId)?.name ?? link.entityId;
+              }
+            }
+            const ENTITY_TYPE_LABELS: Record<EntityType, string> = {
+              person: '👤',
+              vehicle: '🚗',
+              property: '🏠',
+              card: '💳',
+              animal: '🐾',
+              company: '🏢',
+            };
             return (
               <>
                 <Text style={styles.label}>Legat de</Text>
-                <Pressable style={styles.entityRow} onPress={() => setLinkEntityVisible(true)}>
-                  <Text style={[styles.value, !entityName && styles.entityPlaceholder]}>
-                    {entityName ?? 'Nelegat'}
-                  </Text>
-                  <Text style={styles.entityEditHint}>Schimbă</Text>
-                </Pressable>
+                <View style={styles.entityLinksRow}>
+                  {entityLinks.length === 0 && (
+                    <Text style={[styles.value, styles.entityPlaceholder]}>Nelegat</Text>
+                  )}
+                  {entityLinks.map((link, idx) => (
+                    <View
+                      key={idx}
+                      style={[
+                        styles.entityChip,
+                        { backgroundColor: colors.card, borderColor: colors.border },
+                      ]}
+                    >
+                      <Text style={[styles.entityChipText, { color: colors.text }]}>
+                        {ENTITY_TYPE_LABELS[link.entityType]} {entityLinkLabel(link)}
+                      </Text>
+                      <Pressable
+                        onPress={() => handleRemoveEntityLink(link)}
+                        hitSlop={8}
+                        style={styles.entityChipRemove}
+                      >
+                        <Text style={{ color: '#E53935', fontSize: 14, fontWeight: '700' }}>✕</Text>
+                      </Pressable>
+                    </View>
+                  ))}
+                  <Pressable
+                    style={[styles.entityAddBtn, { borderColor: primary }]}
+                    onPress={() => setLinkEntityVisible(true)}
+                  >
+                    <Text style={[styles.entityAddBtnText, { color: primary }]}>+ Adaugă</Text>
+                  </Pressable>
+                </View>
               </>
             );
           })()}
@@ -744,11 +993,16 @@ export default function DocumentDetailScreen() {
               <Text style={styles.label}>Data expirare</Text>
               <Text style={styles.value}>{doc.expiry_date}</Text>
               <Pressable
-                style={[styles.calendarBtn, { borderColor: colors.border, backgroundColor: colors.card }]}
+                style={[
+                  styles.calendarBtn,
+                  { borderColor: colors.border, backgroundColor: colors.card },
+                ]}
                 onPress={handleCalendar}
               >
                 <Text style={styles.actionItemIcon}>📅</Text>
-                <Text style={[styles.actionItemLabel, { color: primary }]}>Adaugă reminder în calendar</Text>
+                <Text style={[styles.actionItemLabel, { color: primary }]}>
+                  Adaugă reminder în calendar
+                </Text>
               </Pressable>
             </>
           )}
@@ -777,34 +1031,51 @@ export default function DocumentDetailScreen() {
             <View style={{ marginTop: 12 }}>
               <Pressable onPress={() => setOcrExpanded(v => !v)} style={styles.ocrToggleRow}>
                 <Text style={styles.label}>Text complet extras (OCR)</Text>
-                <Text style={[styles.label, { color: primary }]}>{ocrExpanded ? '▲ Ascunde' : '▼ Arată'}</Text>
+                <Text style={[styles.label, { color: primary }]}>
+                  {ocrExpanded ? '▲ Ascunde' : '▼ Arată'}
+                </Text>
               </Pressable>
               {ocrExpanded && (
-                <Text style={styles.ocrText} selectable>{doc.ocr_text}</Text>
+                <Text style={styles.ocrText} selectable>
+                  {doc.ocr_text}
+                </Text>
               )}
             </View>
           )}
           {doc.type === 'bilet' && doc.metadata?.event_date && (
             <Pressable
-              style={[styles.calendarBtn, { borderColor: colors.border, backgroundColor: colors.card }]}
+              style={[
+                styles.calendarBtn,
+                { borderColor: colors.border, backgroundColor: colors.card },
+              ]}
               onPress={handleCalendar}
             >
               <Text style={styles.actionItemIcon}>📅</Text>
-              <Text style={[styles.actionItemLabel, { color: primary }]}>Reminder eveniment în calendar</Text>
+              <Text style={[styles.actionItemLabel, { color: primary }]}>
+                Reminder eveniment în calendar
+              </Text>
             </Pressable>
           )}
         </View>
 
         {/* Butoane acțiuni — grid 2×2 compact */}
-        <View style={[styles.actionBar, { borderColor: colors.border, backgroundColor: colors.card }]}>
+        <View
+          style={[styles.actionBar, { borderColor: colors.border, backgroundColor: colors.card }]}
+        >
           <Pressable
-            style={[styles.actionItem, { borderRightWidth: 1, borderBottomWidth: 1, borderColor: colors.border }, pdfLoading && styles.btnDisabled]}
+            style={[
+              styles.actionItem,
+              { borderRightWidth: 1, borderBottomWidth: 1, borderColor: colors.border },
+              pdfLoading && styles.btnDisabled,
+            ]}
             onPress={handleExportPdf}
             disabled={pdfLoading}
           >
-            {pdfLoading
-              ? <ActivityIndicator color={primary} size="small" />
-              : <Text style={styles.actionItemIcon}>📄</Text>}
+            {pdfLoading ? (
+              <ActivityIndicator color={primary} size="small" />
+            ) : (
+              <Text style={styles.actionItemIcon}>📄</Text>
+            )}
             <Text style={[styles.actionItemLabel, { color: primary }]}>Distribuie PDF</Text>
           </Pressable>
           <Pressable
@@ -847,6 +1118,7 @@ export default function DocumentDetailScreen() {
         <View style={styles.fsOverlay}>
           <StatusBar hidden />
           <ScrollView
+            key={fullscreenUri ?? 'fs'}
             style={{ flex: 1 }}
             contentContainerStyle={styles.fsScrollContent}
             maximumZoomScale={6}
@@ -873,87 +1145,150 @@ export default function DocumentDetailScreen() {
       {linkEntityVisible && (
         <View style={styles.overlay}>
           <View style={[styles.overlayBox, { backgroundColor: colors.card }]}>
-            <Text style={styles.overlayTitle}>Asociază cu o entitate</Text>
+            <Text style={styles.overlayTitle}>Adaugă entitate asociată</Text>
             <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 420 }}>
               {persons.length > 0 && (
                 <>
                   <Text style={styles.entityGroupLabel}>Persoane</Text>
-                  {persons.map(p => (
-                    <Pressable key={p.id} style={[styles.entityPickerRow, { borderBottomColor: colors.border }]}
-                      onPress={() => handleLinkEntity({ person_id: p.id })}>
-                      <Text style={styles.value}>{p.name}</Text>
-                    </Pressable>
-                  ))}
+                  {persons.map(p => {
+                    const linked = entityLinks.some(
+                      l => l.entityType === 'person' && l.entityId === p.id
+                    );
+                    return (
+                      <Pressable
+                        key={p.id}
+                        style={[styles.entityPickerRow, { borderBottomColor: colors.border }]}
+                        onPress={() =>
+                          handleAddEntityLink({ entityType: 'person', entityId: p.id })
+                        }
+                      >
+                        <Text style={styles.value}>{p.name}</Text>
+                        {linked && <Text style={{ color: primary, fontSize: 13 }}>✓ Adăugat</Text>}
+                      </Pressable>
+                    );
+                  })}
                 </>
               )}
               {vehicles.length > 0 && (
                 <>
                   <Text style={styles.entityGroupLabel}>Vehicule</Text>
-                  {vehicles.map(v => (
-                    <Pressable key={v.id} style={[styles.entityPickerRow, { borderBottomColor: colors.border }]}
-                      onPress={() => handleLinkEntity({ vehicle_id: v.id })}>
-                      <Text style={styles.value}>{v.name}</Text>
-                    </Pressable>
-                  ))}
+                  {vehicles.map(v => {
+                    const linked = entityLinks.some(
+                      l => l.entityType === 'vehicle' && l.entityId === v.id
+                    );
+                    return (
+                      <Pressable
+                        key={v.id}
+                        style={[styles.entityPickerRow, { borderBottomColor: colors.border }]}
+                        onPress={() =>
+                          handleAddEntityLink({ entityType: 'vehicle', entityId: v.id })
+                        }
+                      >
+                        <Text style={styles.value}>{v.name}</Text>
+                        {linked && <Text style={{ color: primary, fontSize: 13 }}>✓ Adăugat</Text>}
+                      </Pressable>
+                    );
+                  })}
                 </>
               )}
               {properties.length > 0 && (
                 <>
                   <Text style={styles.entityGroupLabel}>Proprietăți</Text>
-                  {properties.map(p => (
-                    <Pressable key={p.id} style={[styles.entityPickerRow, { borderBottomColor: colors.border }]}
-                      onPress={() => handleLinkEntity({ property_id: p.id })}>
-                      <Text style={styles.value}>{p.name}</Text>
-                    </Pressable>
-                  ))}
+                  {properties.map(p => {
+                    const linked = entityLinks.some(
+                      l => l.entityType === 'property' && l.entityId === p.id
+                    );
+                    return (
+                      <Pressable
+                        key={p.id}
+                        style={[styles.entityPickerRow, { borderBottomColor: colors.border }]}
+                        onPress={() =>
+                          handleAddEntityLink({ entityType: 'property', entityId: p.id })
+                        }
+                      >
+                        <Text style={styles.value}>{p.name}</Text>
+                        {linked && <Text style={{ color: primary, fontSize: 13 }}>✓ Adăugat</Text>}
+                      </Pressable>
+                    );
+                  })}
                 </>
               )}
               {cards.length > 0 && (
                 <>
                   <Text style={styles.entityGroupLabel}>Carduri</Text>
-                  {cards.map(c => (
-                    <Pressable key={c.id} style={[styles.entityPickerRow, { borderBottomColor: colors.border }]}
-                      onPress={() => handleLinkEntity({ card_id: c.id })}>
-                      <Text style={styles.value}>{c.nickname ?? ''} ····{c.last4}</Text>
-                    </Pressable>
-                  ))}
+                  {cards.map(c => {
+                    const linked = entityLinks.some(
+                      l => l.entityType === 'card' && l.entityId === c.id
+                    );
+                    return (
+                      <Pressable
+                        key={c.id}
+                        style={[styles.entityPickerRow, { borderBottomColor: colors.border }]}
+                        onPress={() => handleAddEntityLink({ entityType: 'card', entityId: c.id })}
+                      >
+                        <Text style={styles.value}>
+                          {c.nickname ?? ''} ····{c.last4}
+                        </Text>
+                        {linked && <Text style={{ color: primary, fontSize: 13 }}>✓ Adăugat</Text>}
+                      </Pressable>
+                    );
+                  })}
                 </>
               )}
               {animals.length > 0 && (
                 <>
                   <Text style={styles.entityGroupLabel}>Animale</Text>
-                  {animals.map(a => (
-                    <Pressable key={a.id} style={[styles.entityPickerRow, { borderBottomColor: colors.border }]}
-                      onPress={() => handleLinkEntity({ animal_id: a.id })}>
-                      <Text style={styles.value}>{a.name}</Text>
-                    </Pressable>
-                  ))}
+                  {animals.map(a => {
+                    const linked = entityLinks.some(
+                      l => l.entityType === 'animal' && l.entityId === a.id
+                    );
+                    return (
+                      <Pressable
+                        key={a.id}
+                        style={[styles.entityPickerRow, { borderBottomColor: colors.border }]}
+                        onPress={() =>
+                          handleAddEntityLink({ entityType: 'animal', entityId: a.id })
+                        }
+                      >
+                        <Text style={styles.value}>{a.name}</Text>
+                        {linked && <Text style={{ color: primary, fontSize: 13 }}>✓ Adăugat</Text>}
+                      </Pressable>
+                    );
+                  })}
                 </>
               )}
               {companies.length > 0 && (
                 <>
                   <Text style={styles.entityGroupLabel}>Firme</Text>
-                  {companies.map(c => (
-                    <Pressable key={c.id} style={[styles.entityPickerRow, { borderBottomColor: colors.border }]}
-                      onPress={() => handleLinkEntity({ company_id: c.id })}>
-                      <Text style={styles.value}>{c.name}</Text>
-                    </Pressable>
-                  ))}
+                  {companies.map(c => {
+                    const linked = entityLinks.some(
+                      l => l.entityType === 'company' && l.entityId === c.id
+                    );
+                    return (
+                      <Pressable
+                        key={c.id}
+                        style={[styles.entityPickerRow, { borderBottomColor: colors.border }]}
+                        onPress={() =>
+                          handleAddEntityLink({ entityType: 'company', entityId: c.id })
+                        }
+                      >
+                        <Text style={styles.value}>{c.name}</Text>
+                        {linked && <Text style={{ color: primary, fontSize: 13 }}>✓ Adăugat</Text>}
+                      </Pressable>
+                    );
+                  })}
                 </>
               )}
-              <Pressable style={styles.entityPickerRowDanger}
-                onPress={() => handleLinkEntity({})}>
-                <Text style={styles.entityPickerDangerText}>Elimină legătura</Text>
-              </Pressable>
             </ScrollView>
-            <Pressable style={[styles.overlayBtn, styles.overlayBtnOutline, { marginTop: 12 }]}
-              onPress={() => setLinkEntityVisible(false)}>
-              <Text style={styles.overlayBtnOutlineText}>Anulare</Text>
+            <Pressable
+              style={[styles.overlayBtn, styles.overlayBtnOutline, { marginTop: 12 }]}
+              onPress={() => setLinkEntityVisible(false)}
+            >
+              <Text style={styles.overlayBtnOutlineText}>Închide</Text>
             </Pressable>
           </View>
         </View>
       )}
-
     </View>
   );
 }
@@ -1037,16 +1372,72 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   addPageBtnText: { color: primary, fontSize: 15, fontWeight: '500' },
+  // PDF viewer
+  pdfContainer: {
+    marginBottom: 16,
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#e2ebd4',
+  },
+  pdfSectionLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    opacity: 0.6,
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 4,
+  },
+  pdfWebView: {
+    height: 500,
+    width: '100%',
+  },
+  pdfOpenBtn: {
+    backgroundColor: '#f8faf4',
+    borderRadius: 8,
+    paddingVertical: 16,
+    alignItems: 'center',
+    margin: 8,
+  },
+  pdfOpenBtnText: { color: primary, fontSize: 15, fontWeight: '500' },
   meta: { marginBottom: 24 },
   label: { fontSize: 12, opacity: 0.7, marginTop: 12, marginBottom: 2 },
   value: { fontSize: 16 },
   entityRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   entityPlaceholder: { opacity: 0.4 },
+  entityLinksRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4, marginBottom: 4 },
+  entityChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 20,
+    borderWidth: 1,
+    paddingVertical: 5,
+    paddingLeft: 10,
+    paddingRight: 8,
+    gap: 6,
+  },
+  entityChipText: { fontSize: 13, fontWeight: '500' },
+  entityChipRemove: { padding: 2 },
+  entityAddBtn: {
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    paddingVertical: 5,
+    paddingHorizontal: 12,
+  },
+  entityAddBtnText: { fontSize: 13, fontWeight: '600' },
   emptyValue: { opacity: 0.3 },
   ocrToggleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   ocrText: { fontSize: 13, opacity: 0.7, lineHeight: 20, marginTop: 6 },
   entityEditHint: { fontSize: 13, color: primary, fontWeight: '500' },
-  entityGroupLabel: { fontSize: 11, fontWeight: '600', opacity: 0.5, marginTop: 14, marginBottom: 2, textTransform: 'uppercase' },
+  entityGroupLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    opacity: 0.5,
+    marginTop: 14,
+    marginBottom: 2,
+    textTransform: 'uppercase',
+  },
   entityPickerRow: { paddingVertical: 13, borderBottomWidth: StyleSheet.hairlineWidth },
   entityPickerRowDanger: { paddingVertical: 14, marginTop: 8 },
   entityPickerDangerText: { color: '#E53935', fontSize: 15 },

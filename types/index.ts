@@ -18,6 +18,7 @@ export type DocumentType =
   | 'reteta_medicala'
   | 'analize_medicale'
   | 'bon_cumparaturi'
+  | 'bon_parcare'
   | 'pad'
   | 'stingator_incendiu'
   | 'abonament'
@@ -42,6 +43,9 @@ export interface CustomDocumentType {
 export interface Person {
   id: string;
   name: string;
+  phone?: string;
+  email?: string;
+  iban?: string;
   createdAt: string;
 }
 
@@ -74,9 +78,9 @@ export interface Animal {
 
 export interface Company {
   id: string;
-  name: string;       // denumire firmă
-  cui?: string;       // cod unic de înregistrare
-  reg_com?: string;   // nr. registru comerț (ex: J40/1234/2020)
+  name: string; // denumire firmă
+  cui?: string; // cod unic de înregistrare
+  reg_com?: string; // nr. registru comerț (ex: J40/1234/2020)
   createdAt: string;
 }
 
@@ -86,6 +90,11 @@ export interface DocumentPage {
   page_order: number;
   file_path: string;
   created_at: string;
+}
+
+export interface DocumentEntityLink {
+  entityType: EntityType;
+  entityId: string;
 }
 
 export interface Document {
@@ -98,6 +107,7 @@ export interface Document {
   custom_type_id?: string;
   metadata?: Record<string, string>;
   pages?: DocumentPage[];
+  // Legacy single-entity columns (backward compat)
   person_id?: string;
   property_id?: string;
   vehicle_id?: string;
@@ -107,19 +117,79 @@ export interface Document {
   auto_delete?: string;
   ocr_text?: string;
   created_at: string;
+  // Multi-entity links (din document_entities junction table)
+  entity_links?: DocumentEntityLink[];
 }
 
 export type EntityType = 'person' | 'property' | 'vehicle' | 'card' | 'animal' | 'company';
 
-export const ALL_ENTITY_TYPES: EntityType[] = ['person', 'vehicle', 'property', 'card', 'animal', 'company'];
+export const ALL_ENTITY_TYPES: EntityType[] = [
+  'person',
+  'vehicle',
+  'property',
+  'card',
+  'animal',
+  'company',
+];
 
-// Lista completă a tipurilor standard (fără 'custom')
+// Lista completă a tipurilor standard (fără 'custom') — apare în Setări
 export const STANDARD_DOC_TYPES: DocumentType[] = [
-  'buletin', 'pasaport', 'permis_auto', 'talon', 'carte_auto', 'rca', 'casco', 'itp',
-  'vigneta', 'act_proprietate', 'cadastru', 'factura', 'impozit_proprietate', 'contract',
-  'card', 'garantie', 'reteta_medicala', 'analize_medicale', 'bon_cumparaturi', 'pad',
-  'stingator_incendiu', 'abonament', 'vaccin_animal', 'deparazitare', 'vizita_vet', 'bilet',
-  'certificat_inregistrare', 'autorizatie_activitate', 'act_constitutiv', 'certificat_tva', 'asigurare_profesionala',
+  'buletin',
+  'pasaport',
+  'permis_auto',
+  'talon',
+  'carte_auto',
+  'rca',
+  'casco',
+  'itp',
+  'vigneta',
+  'act_proprietate',
+  'cadastru',
+  'factura',
+  'impozit_proprietate',
+  'pad',
+  'contract',
+  'card',
+  'garantie',
+  'abonament',
+  'bon_cumparaturi',
+  'bon_parcare',
+  'reteta_medicala',
+  'analize_medicale',
+  'stingator_incendiu',
+  'vaccin_animal',
+  'deparazitare',
+  'vizita_vet',
+  'bilet',
+  'certificat_inregistrare',
+  'autorizatie_activitate',
+  'act_constitutiv',
+  'certificat_tva',
+  'asigurare_profesionala',
+  'altul',
+];
+
+// Tipuri active implicit pentru utilizatori noi — doar ce folosesc cei mai mulți
+export const DEFAULT_VISIBLE_DOC_TYPES: DocumentType[] = [
+  // Identitate — toată lumea
+  'buletin',
+  'pasaport',
+  'permis_auto',
+  // Vehicule — cei mai mulți adulți
+  'talon',
+  'carte_auto',
+  'rca',
+  'itp',
+  // Financiar — toată lumea
+  'factura',
+  'contract',
+  'card',
+  'garantie',
+  'abonament',
+  // Medical — toată lumea
+  'reteta_medicala',
+  'analize_medicale',
+  // Fallback
   'altul',
 ];
 
@@ -143,9 +213,10 @@ export const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
   reteta_medicala: 'Rețetă medicală',
   analize_medicale: 'Analize medicale',
   bon_cumparaturi: 'Bon cumpărături',
+  bon_parcare: 'Bon parcare',
   pad: 'PAD Asigurare Locuință',
   stingator_incendiu: 'Stingător incendiu',
-  abonament: 'Abonament recurent',
+  abonament: 'Abonament',
   vaccin_animal: 'Vaccin animal',
   deparazitare: 'Deparazitare',
   vizita_vet: 'Vizită veterinar',
@@ -160,12 +231,60 @@ export const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
 };
 
 export const ENTITY_DOCUMENT_TYPES: Record<EntityType, DocumentType[]> = {
-  person: ['buletin', 'pasaport', 'permis_auto', 'card', 'reteta_medicala', 'analize_medicale', 'bon_cumparaturi', 'bilet', 'abonament', 'contract', 'garantie', 'altul', 'custom'],
-  vehicle: ['talon', 'carte_auto', 'rca', 'casco', 'itp', 'vigneta', 'stingator_incendiu', 'contract', 'altul', 'custom'],
-  property: ['act_proprietate', 'cadastru', 'factura', 'impozit_proprietate', 'pad', 'stingator_incendiu', 'abonament', 'contract', 'altul', 'custom'],
-  card: ['factura', 'bon_cumparaturi', 'abonament', 'contract', 'altul', 'custom'],
+  person: [
+    'buletin',
+    'pasaport',
+    'permis_auto',
+    'card',
+    'reteta_medicala',
+    'analize_medicale',
+    'bon_cumparaturi',
+    'bon_parcare',
+    'bilet',
+    'abonament',
+    'contract',
+    'garantie',
+    'altul',
+    'custom',
+  ],
+  vehicle: [
+    'talon',
+    'carte_auto',
+    'rca',
+    'casco',
+    'itp',
+    'vigneta',
+    'bon_parcare',
+    'stingator_incendiu',
+    'contract',
+    'altul',
+    'custom',
+  ],
+  property: [
+    'act_proprietate',
+    'cadastru',
+    'factura',
+    'impozit_proprietate',
+    'pad',
+    'stingator_incendiu',
+    'abonament',
+    'contract',
+    'altul',
+    'custom',
+  ],
+  card: ['factura', 'bon_cumparaturi', 'bon_parcare', 'abonament', 'contract', 'altul', 'custom'],
   animal: ['vaccin_animal', 'deparazitare', 'vizita_vet', 'altul', 'custom'],
-  company: ['certificat_inregistrare', 'act_constitutiv', 'certificat_tva', 'autorizatie_activitate', 'asigurare_profesionala', 'factura', 'contract', 'altul', 'custom'],
+  company: [
+    'certificat_inregistrare',
+    'act_constitutiv',
+    'certificat_tva',
+    'autorizatie_activitate',
+    'asigurare_profesionala',
+    'factura',
+    'contract',
+    'altul',
+    'custom',
+  ],
 };
 
 export function getDocumentLabel(

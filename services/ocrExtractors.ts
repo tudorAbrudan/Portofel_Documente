@@ -14,8 +14,8 @@ import type { DocumentType } from '@/types';
 
 export interface ExtractResult {
   metadata: Record<string, string>;
-  expiry_date?: string;  // YYYY-MM-DD
-  issue_date?: string;   // YYYY-MM-DD
+  expiry_date?: string; // YYYY-MM-DD
+  issue_date?: string; // YYYY-MM-DD
 }
 
 // ─── Utilități ───────────────────────────────────────────────────────────────
@@ -102,15 +102,21 @@ function extractPermisAuto(text: string): ExtractResult {
 // ─── TALON (Certificat de Înmatriculare) ─────────────────────────────────────
 // IMPORTANT: talonul NU expiră. expiry_date = data ITP din ștampila RAR.
 
+/** Convertește MM/YYYY în număr comparabil (YYYYMM) pentru comparații. */
+function mmYyyyToSortKey(mm: string, yyyy: string): number {
+  return parseInt(yyyy) * 100 + parseInt(mm);
+}
+
 function extractTalonDoc(text: string): ExtractResult {
   const meta: Record<string, string> = {};
 
   const plate = extractPlateNumber(text);
   if (plate) meta['plate'] = plate;
 
-  // VIN: 17 caractere
-  const vin = text.match(/\b([A-HJ-NPR-Z0-9]{17})\b/);
-  if (vin) meta['vin'] = vin[1]; // pentru cross-referință internă, nu afișat ca câmp UI
+  // VIN: 17 caractere alfanumerice (câmp E sau standalone)
+  const vin =
+    text.match(/\bE\s*[:\s]\s*([A-HJ-NPR-Z0-9]{17})\b/i) ?? text.match(/\b([A-HJ-NPR-Z0-9]{17})\b/);
+  if (vin) meta['vin'] = vin[1];
 
   // D.1 = marcă / tip
   const d1 = text.match(/D\.?1\s*[:\s]*\n?\s*([A-Z][A-Z\s\-\/]{1,40})/im);
@@ -120,47 +126,41 @@ function extractTalonDoc(text: string): ExtractResult {
     if (parts[1]) meta['model'] = parts[1].trim();
   }
 
-  // P.3 = combustibil
-  const p3 = text.match(/P\.?3\s*[:\s]*\n?\s*(BENZIN[AĂÃ]?|DIESEL|ELECTRIC|HYBRID|GPL|GNC|MOTORIN[AĂÃ]?)/i)
-    ?? text.match(/\b(BENZIN[AĂÃ]?|DIESEL|ELECTRIC|HYBRID|GPL|GNC|MOTORIN[AĂÃ]?)\b/i);
-  if (p3) {
-    const f = p3[1].toUpperCase();
-    meta['combustibil'] = f.includes('BENZIN') ? 'Benzină'
-      : (f.includes('MOTORIN') || f === 'DIESEL') ? 'Diesel'
-      : f === 'ELECTRIC' ? 'Electric'
-      : f === 'HYBRID' ? 'Hybrid'
-      : p3[1];
+  // ITP: colectează TOATE datele MM/YYYY sau MM.YYYY și ia cea mai viitoare (max).
+  // Talonul conține: data fabricației (trecut), prima înmatriculare (trecut), ștampila RAR ITP (viitor).
+  const allMmYyyy: Array<{ mm: string; yyyy: string }> = [];
+
+  // 1. Căutare lângă cuvinte cheie ITP/RAR (prioritate)
+  const itpKwMatches = [
+    ...text.matchAll(
+      /(?:ITP|INSPEC[TȚ]IE|RAR)[^\n]{0,30}\n?\s*(0[1-9]|1[0-2])\s*[.\/\s]\s*(20\d{2})/gi
+    ),
+    ...text.matchAll(
+      /(0[1-9]|1[0-2])\s*[.\/\s]\s*(20\d{2})\s*[^\n]{0,20}(?:ITP|INSPEC[TȚ]IE|RAR)/gi
+    ),
+  ];
+  for (const m of itpKwMatches) {
+    allMmYyyy.push({ mm: m[1], yyyy: m[2] });
   }
 
-  // B = data primei înmatriculări → an fabricație
-  const bField = text.match(/\bB\s*[:\s]\s*(\d{2}[.\/\-]\d{2}[.\/\-]\d{4})/i);
-  if (bField) {
-    const yr = bField[1].match(/\d{4}/);
-    if (yr) meta['an_fabricatie'] = yr[0];
+  // 2. Fallback: toate MM/YYYY standalone (nu parte din DD.MM.YYYY)
+  if (allMmYyyy.length === 0) {
+    const standalone = [...text.matchAll(/(?<!\d\.)(0[1-9]|1[0-2])[.\/](20[2-9]\d)(?!\d)/g)];
+    for (const m of standalone) {
+      allMmYyyy.push({ mm: m[1], yyyy: m[2] });
+    }
   }
 
-  // ITP: format MM/YYYY sau MM.YYYY lângă cuvinte cheie
-  let itpDate: string | undefined;
-  const itpKw = text.match(
-    /(?:ITP|INSPEC[TȚ]IE|RAR)[^\n]{0,30}\n?\s*(0[1-9]|1[0-2])\s*[.\/\s]\s*(20\d{2})/i
-  ) ?? text.match(
-    /(0[1-9]|1[0-2])\s*[.\/\s]\s*(20\d{2})[^\n]{0,20}(?:ITP|INSPEC[TȚ]IE|RAR)/i
-  );
-  if (itpKw) {
-    itpDate = `${itpKw[1]}/${itpKw[2]}`;
-  } else {
-    // Fallback: MM/YYYY standalone (nu parte din DD.MM.YYYY)
-    const mmYyyy = text.match(/(?<!\d[.\/])(0[1-9]|1[0-2])[.\/](20[2-9]\d)(?!\d)/);
-    if (mmYyyy) itpDate = `${mmYyyy[1]}/${mmYyyy[2]}`;
-  }
-
+  // Ia cea mai viitoare dată (maximum)
   let itpIso: string | undefined;
-  if (itpDate) {
-    const [mm, yyyy] = itpDate.split('/');
-    const lastDay = new Date(parseInt(yyyy), parseInt(mm), 0).getDate();
+  if (allMmYyyy.length > 0) {
+    const best = allMmYyyy.reduce((prev, cur) =>
+      mmYyyyToSortKey(cur.mm, cur.yyyy) > mmYyyyToSortKey(prev.mm, prev.yyyy) ? cur : prev
+    );
+    const lastDay = new Date(parseInt(best.yyyy), parseInt(best.mm), 0).getDate();
     const dd = String(lastDay).padStart(2, '0');
-    itpIso = `${yyyy}-${mm}-${dd}`;
-    meta['itp_expiry_date'] = `${dd}.${mm}.${yyyy}`; // ZZ.LL.AAAA
+    itpIso = `${best.yyyy}-${best.mm}-${dd}`;
+    meta['itp_expiry_date'] = `${dd}.${best.mm}.${best.yyyy}`; // ZZ.LL.AAAA
   }
 
   return { metadata: meta, expiry_date: itpIso };
@@ -174,22 +174,9 @@ function extractCarteAuto(text: string): ExtractResult {
   const plate = extractPlateNumber(text);
   if (plate) meta['plate'] = plate;
 
-  const vin = text.match(/\b([A-HJ-NPR-Z0-9]{17})\b/);
+  const vin =
+    text.match(/\bE\s*[:\s]\s*([A-HJ-NPR-Z0-9]{17})\b/i) ?? text.match(/\b([A-HJ-NPR-Z0-9]{17})\b/);
   if (vin) meta['vin'] = vin[1];
-
-  const d1 = text.match(/D\.?1\s*[:\s]*\n?\s*([A-Z][A-Z\s\-\/]{1,40})/im);
-  if (d1) {
-    const parts = d1[1].trim().split(/\s*\/\s*/);
-    meta['marca'] = parts[0].trim();
-    if (parts[1]) meta['model'] = parts[1].trim();
-  }
-
-  // B = data primei înmatriculări → an fabricație
-  const bField = text.match(/\bB\s*[:\s]\s*(\d{2}[.\/\-]\d{2}[.\/\-]\d{4})/i);
-  if (bField) {
-    const yr = bField[1].match(/\d{4}/);
-    if (yr) meta['an_fabricatie'] = yr[0];
-  }
 
   // CIV nu expiră
   return { metadata: meta };
@@ -198,9 +185,21 @@ function extractCarteAuto(text: string): ExtractResult {
 // ─── RCA ─────────────────────────────────────────────────────────────────────
 
 const ROMANIAN_INSURERS = [
-  'ALLIANZ', 'GROUPAMA', 'GENERALI', 'OMNIASIG', 'UNIQA', 'ASIROM',
-  'GRAWE', 'SIGNAL IDUNA', 'EUROINS', 'AXERIA', 'CITY INSURANCE',
-  'METROPOLITAN', 'GARANTA', 'AXA', 'CERTASIG',
+  'ALLIANZ',
+  'GROUPAMA',
+  'GENERALI',
+  'OMNIASIG',
+  'UNIQA',
+  'ASIROM',
+  'GRAWE',
+  'SIGNAL IDUNA',
+  'EUROINS',
+  'AXERIA',
+  'CITY INSURANCE',
+  'METROPOLITAN',
+  'GARANTA',
+  'AXA',
+  'CERTASIG',
 ];
 
 function detectInsurer(text: string): string | undefined {
@@ -214,7 +213,9 @@ function detectInsurer(text: string): string | undefined {
 function extractRca(text: string): ExtractResult {
   const meta: Record<string, string> = {};
 
-  const policy = text.match(/(?:poli[tț][aă]|contract|serie[:\s]+nr\.?)\s*[:\s]+([A-Z0-9\-\/]{5,30})/i);
+  const policy = text.match(
+    /(?:poli[tț][aă]|contract|serie[:\s]+nr\.?)\s*[:\s]+([A-Z0-9\-\/]{5,30})/i
+  );
   if (policy) meta['policy_number'] = policy[1].trim();
 
   const insurer = detectInsurer(text);
@@ -237,9 +238,6 @@ function extractItp(text: string): ExtractResult {
   const plate = extractPlateNumber(text);
   if (plate) meta['plate'] = plate;
 
-  const station = text.match(/(?:sta[tț]ie\s*ITP|RAR|autorizat[aă])[:\s]+([^\n]{5,60})/i);
-  if (station) meta['statie_itp'] = station[1].trim();
-
   const expiry = findDateNear(text, /valabil[ăa]?\s*p[âa]n[ăa]\s*la|urm[aă]toarea\s*inspec[tț]ie/i);
   const issue = findDateNear(text, /data\s*inspec[tț]iei?/i);
 
@@ -253,9 +251,6 @@ function extractVigneta(text: string): ExtractResult {
 
   const plate = extractPlateNumber(text);
   if (plate) meta['plate'] = plate;
-
-  const period = text.match(/\b(7\s*zile|30\s*zile|90\s*zile|1\s*an|anual[aă]?)\b/i);
-  if (period) meta['tip_vigneta'] = period[1].replace(/\s+/g, ' ');
 
   const expiry = findDateNear(text, /valabil[ăa]?\s*p[âa]n[ăa]\s*la|expiră/i);
   const issue = findDateNear(text, /data\s*emit|data\s*[îi]nregistr[aă]rii/i);
@@ -344,7 +339,9 @@ function extractCadastru(text: string): ExtractResult {
 function extractImpozitProprietate(text: string): ExtractResult {
   const meta: Record<string, string> = {};
 
-  const suma = text.match(/(?:total\s*impozit|sum[aă]\s*de\s*plat[aă]|sum[aă]\s*anual[aă]?)[:\s]+(\d+[.,]?\d*)\s*(?:RON|LEI)/i);
+  const suma = text.match(
+    /(?:total\s*impozit|sum[aă]\s*de\s*plat[aă]|sum[aă]\s*anual[aă]?)[:\s]+(\d+[.,]?\d*)\s*(?:RON|LEI)/i
+  );
   if (suma) meta['amount'] = suma[1].replace(',', '.');
 
   const issue = findDateNear(text, /data\s*emiter|emis/i);
@@ -357,7 +354,9 @@ function extractImpozitProprietate(text: string): ExtractResult {
 function extractFactura(text: string): ExtractResult {
   const meta: Record<string, string> = {};
 
-  const invNr = text.match(/(?:factur[aă]\s*nr\.?\s*|nr\.?\s*factur[aă]\s*|invoice\s*(?:no\.?|nr\.?)\s*)([A-Z0-9\-\/]+)/i);
+  const invNr = text.match(
+    /(?:factur[aă]\s*nr\.?\s*|nr\.?\s*factur[aă]\s*|invoice\s*(?:no\.?|nr\.?)\s*)([A-Z0-9\-\/]+)/i
+  );
   if (invNr) meta['invoice_number'] = invNr[1].trim();
 
   const supplier = text.match(/(?:furnizor|emitent|v[âa]nz[aă]tor)[:\s]+([^\n]{5,60})/i);
@@ -370,7 +369,10 @@ function extractFactura(text: string): ExtractResult {
   ];
   for (const p of amountPatterns) {
     const m = text.match(p);
-    if (m) { meta['amount'] = m[1].replace(',', '.'); break; }
+    if (m) {
+      meta['amount'] = m[1].replace(',', '.');
+      break;
+    }
   }
 
   const issue = findDateNear(text, /data\s*factur[ii]|data\s*emiter/i);
@@ -395,6 +397,47 @@ function extractBonCumparaturi(text: string): ExtractResult {
   return { metadata: meta, issue_date: issue };
 }
 
+// ─── BON PARCARE ─────────────────────────────────────────────────────────────
+
+function extractBonParcare(text: string): ExtractResult {
+  const meta: Record<string, string> = {};
+
+  // Locație: caută numele parcării sau adresa lângă cuvintele cheie
+  const locPatterns = [
+    /(?:parcar[ei]|parking)\s+([^\n]{5,60})/i,
+    /(?:locatie|adres[aă])\s*[:\s]+([^\n]{5,60})/i,
+  ];
+  for (const p of locPatterns) {
+    const m = text.match(p);
+    if (m) {
+      meta['location'] = m[1].trim();
+      break;
+    }
+  }
+  // Fallback: primul rând ALL CAPS ca nume parcare
+  if (!meta['location']) {
+    const firstLine = text.match(/^([A-ZĂÂÎȘȚ][A-ZĂÂÎȘȚ\s\-\.]{4,40})(?:\r?\n)/m);
+    if (firstLine) meta['location'] = firstLine[1].trim();
+  }
+
+  // Sumă totală
+  const amountPatterns = [
+    /(?:total|suma\s*de\s*plat[aă]|de\s*plat[aă])\s*[:\s]+(\d+[.,]?\d*)\s*(?:RON|LEI)?/i,
+    /(\d+[.,]\d{2})\s*(?:RON|LEI)/i,
+  ];
+  for (const p of amountPatterns) {
+    const m = text.match(p);
+    if (m) {
+      meta['amount'] = m[1].replace(',', '.');
+      break;
+    }
+  }
+
+  const issue = firstDate(text);
+
+  return { metadata: meta, issue_date: issue };
+}
+
 // ─── GARANȚIE ────────────────────────────────────────────────────────────────
 
 function extractGarantie(text: string): ExtractResult {
@@ -403,14 +446,14 @@ function extractGarantie(text: string): ExtractResult {
   const prod = text.match(/(?:produs|denumire|articol)[:\s]+([^\n]{5,60})/i);
   if (prod) meta['product_name'] = prod[1].trim();
 
-  const brand = text.match(/(?:marc[aă]|brand|produc[aă]tor)[:\s]+([^\n]{3,40})/i);
-  if (brand) meta['brand'] = brand[1].trim();
-
   const serial = text.match(/(?:serial|serie|s\/n)[:\s]+([A-Z0-9\-]{5,30})/i);
   if (serial) meta['serie_produs'] = serial[1].trim();
 
   const issue = findDateNear(text, /data\s*achizi[tț]iei|cump[aă]rat/i);
-  const expiry = findDateNear(text, /garan[tț]ie\s*p[âa]n[ăa]\s*la|valabil[ăa]?\s*p[âa]n[ăa]\s*la/i);
+  const expiry = findDateNear(
+    text,
+    /garan[tț]ie\s*p[âa]n[ăa]\s*la|valabil[ăa]?\s*p[âa]n[ăa]\s*la/i
+  );
 
   return { metadata: meta, issue_date: issue, expiry_date: expiry };
 }
@@ -419,9 +462,6 @@ function extractGarantie(text: string): ExtractResult {
 
 function extractContract(text: string): ExtractResult {
   const meta: Record<string, string> = {};
-
-  const nr = text.match(/(?:contract\s*nr\.?|nr\.?\s*contract)[:\s]+([A-Z0-9\-\/]{3,25})/i);
-  if (nr) meta['contract_number'] = nr[1].trim();
 
   const tip = text.match(/contract\s+(?:de\s+)?([a-zăâîșț\s]{5,40})(?:\s|$)/i);
   if (tip) meta['tip_contract'] = tip[1].trim();
@@ -437,11 +477,27 @@ function extractContract(text: string): ExtractResult {
 function extractAbonament(text: string): ExtractResult {
   const meta: Record<string, string> = {};
 
-  const providers = ['DIGI', 'ORANGE', 'VODAFONE', 'TELEKOM', 'RCS', 'RDS', 'COSMOTE',
-    'UPC', 'NETFLIX', 'SPOTIFY', 'HBO', 'DISNEY', 'AMAZON'];
+  const providers = [
+    'DIGI',
+    'ORANGE',
+    'VODAFONE',
+    'TELEKOM',
+    'RCS',
+    'RDS',
+    'COSMOTE',
+    'UPC',
+    'NETFLIX',
+    'SPOTIFY',
+    'HBO',
+    'DISNEY',
+    'AMAZON',
+  ];
   const tu = text.toUpperCase();
   for (const p of providers) {
-    if (tu.includes(p)) { meta['service_name'] = p; break; }
+    if (tu.includes(p)) {
+      meta['service_name'] = p;
+      break;
+    }
   }
   if (!meta['service_name']) {
     const service = text.match(/(?:serviciu|furnizor|abonament)[:\s]+([^\n]{5,40})/i);
@@ -461,7 +517,9 @@ function extractAbonament(text: string): ExtractResult {
 function extractReteta(text: string): ExtractResult {
   const meta: Record<string, string> = {};
 
-  const medic = text.match(/(?:Dr\.?|doctor|medic\s*prescriptor)[:\s.]+([A-ZĂÂÎȘȚ][a-zăâîșțA-Z\s\-\.]{3,50})/i);
+  const medic = text.match(
+    /(?:Dr\.?|doctor|medic\s*prescriptor)[:\s.]+([A-ZĂÂÎȘȚ][a-zăâîșțA-Z\s\-\.]{3,50})/i
+  );
   if (medic) meta['doctor'] = medic[1].trim();
 
   // Medicament: după "Rp:" sau "1." sau primul rând cu doze
@@ -493,12 +551,12 @@ function extractAnalize(text: string): ExtractResult {
     const knownLabs = ['SYNEVO', 'MEDLIFE', 'REGINA MARIA', 'MEDICOVER', 'BIOCLINICA', 'PONDERAS'];
     const tu = text.toUpperCase();
     for (const l of knownLabs) {
-      if (tu.includes(l)) { meta['lab'] = l; break; }
+      if (tu.includes(l)) {
+        meta['lab'] = l;
+        break;
+      }
     }
   }
-
-  const nr = text.match(/(?:nr\.?\s*buletin|nr\.?\s*raport|buletin\s*nr\.?|raport\s*nr\.?)[:\s]+([A-Z0-9\-]{3,20})/i);
-  if (nr) meta['report_number'] = nr[1];
 
   const issue = findDateNear(text, /data\s*(?:recolt|eliber|rezult)/i) ?? firstDate(text);
 
@@ -549,9 +607,6 @@ function extractVizitaVet(text: string): ExtractResult {
   const vet = text.match(/(?:Dr\.?|medic\s*veterinar)[:\s.]+([A-ZĂÂÎȘȚ][a-zăâîșț\s\-\.]{3,50})/i);
   if (vet) meta['vet_name'] = vet[1].trim();
 
-  const clinic = text.match(/(?:clinica|cabinet|spital)[:\s]+([^\n]{5,60})/i);
-  if (clinic) meta['clinic_name'] = clinic[1].trim();
-
   const issue = findDateNear(text, /data\s*consult[aă]rii|data\s*viz/i) ?? firstDate(text);
 
   return { metadata: meta, issue_date: issue };
@@ -579,7 +634,9 @@ function extractCertificatInregistrare(text: string): ExtractResult {
   const cui = text.match(/(?:CUI|CIF|cod\s*unic)[:\s]+(?:RO\s*)?(\d{6,10})/i);
   if (cui) meta['cui'] = cui[1];
 
-  const rc = text.match(/(?:nr\.?\s*reg\.?\s*com\.?|reg\.?\s*com)[:\s]+([J]\d{1,2}\/\d{4}\/\d{4})/i);
+  const rc = text.match(
+    /(?:nr\.?\s*reg\.?\s*com\.?|reg\.?\s*com)[:\s]+([J]\d{1,2}\/\d{4}\/\d{4})/i
+  );
   if (rc) meta['reg_com'] = rc[1];
 
   const den = text.match(/(?:denumire|societate|firm[aă])[:\s]+([^\n]{5,80})/i);
@@ -588,6 +645,168 @@ function extractCertificatInregistrare(text: string): ExtractResult {
   const issue = findDateNear(text, /data\s*[îi]nregistr[aă]rii|emis/i);
 
   return { metadata: meta, issue_date: issue };
+}
+
+// ─── CARD ────────────────────────────────────────────────────────────────────
+
+function extractCard(text: string): ExtractResult {
+  const meta: Record<string, string> = {};
+
+  // Ultimele 4 cifre: ultimul grup de 4 cifre (de pe card)
+  const last4 = text.match(/\b(\d{4})\s*$/m);
+  if (last4) meta['last4'] = last4[1];
+
+  // Bancă emitentă
+  const banks = [
+    'BCR',
+    'BRD',
+    'BT',
+    'ING',
+    'REVOLUT',
+    'RAIFFEISEN',
+    'UNICREDIT',
+    'CEC',
+    'ALPHA',
+    'GARANTI',
+    'OTP',
+  ];
+  const tu = text.toUpperCase();
+  for (const b of banks) {
+    if (tu.includes(b)) {
+      meta['bank'] = b;
+      break;
+    }
+  }
+  if (!meta['bank']) {
+    const bankMatch = text.match(/(?:emis\s*de|banca?|bank)[:\s]+([^\n]{3,40})/i);
+    if (bankMatch) meta['bank'] = bankMatch[1].trim();
+  }
+
+  // Data expirare card: MM/YY sau MM/YYYY
+  const expiryMatch = text.match(/\b(0[1-9]|1[0-2])\s*\/\s*(\d{2,4})\b/);
+  let expiry: string | undefined;
+  if (expiryMatch) {
+    const yy = expiryMatch[2].length === 2 ? `20${expiryMatch[2]}` : expiryMatch[2];
+    const lastDay = new Date(parseInt(yy), parseInt(expiryMatch[1]), 0).getDate();
+    expiry = `${yy}-${expiryMatch[1]}-${String(lastDay).padStart(2, '0')}`;
+  }
+
+  return { metadata: meta, expiry_date: expiry };
+}
+
+// ─── BILET ───────────────────────────────────────────────────────────────────
+
+function extractBilet(text: string): ExtractResult {
+  const meta: Record<string, string> = {};
+
+  // Categorie: avion, tren, concert, meci etc.
+  const catMatch = text.match(
+    /\b(avion|zbor|flight|tren|autobuz|concert|spectacol|meci|festival|teatru|film)\b/i
+  );
+  if (catMatch)
+    meta['categorie'] = catMatch[1].charAt(0).toUpperCase() + catMatch[1].slice(1).toLowerCase();
+
+  // Locație / rută
+  const venuePatterns = [
+    /(?:rut[aă]|de\s*la|from)[:\s]+([^\n]{5,60})/i,
+    /(?:arena|stadion|sala|venue|loc[aț]ie)[:\s]+([^\n]{5,60})/i,
+  ];
+  for (const p of venuePatterns) {
+    const m = text.match(p);
+    if (m) {
+      meta['venue'] = m[1].trim();
+      break;
+    }
+  }
+
+  // Eveniment / nr. zbor / artist
+  const eventPatterns = [
+    /(?:zbor|flight|nr\.?\s*zbor)[:\s]+([A-Z0-9\s]{2,20})/i,
+    /(?:eveniment|artist|spectacol|tren\s*nr\.?)[:\s]+([^\n]{5,60})/i,
+  ];
+  for (const p of eventPatterns) {
+    const m = text.match(p);
+    if (m) {
+      meta['eveniment_artist'] = m[1].trim();
+      break;
+    }
+  }
+
+  // Data evenimentului = expiry
+  const issue = firstDate(text);
+  return { metadata: meta, expiry_date: issue, issue_date: issue };
+}
+
+// ─── AUTORIZAȚIE ACTIVITATE ───────────────────────────────────────────────────
+
+function extractAutorizatieActivitate(text: string): ExtractResult {
+  const meta: Record<string, string> = {};
+
+  const tipMatch =
+    text.match(/(?:tip\s*autorizatie|tip\s*autoriza[tț]ie|autorizatie\s+de)[:\s]+([^\n]{5,60})/i) ??
+    text.match(/\b(sanitar[aă]|ISU|mediu|construire|func[tț]ionare)\b/i);
+  if (tipMatch) meta['tip_autorizatie'] = tipMatch[1].trim();
+
+  const nrMatch = text.match(
+    /(?:nr\.?\s*autorizatie|nr\.?\s*autoriza[tț]ie|autoriza[tț]ie\s*nr\.?)[:\s]+([A-Z0-9\/\-]{3,25})/i
+  );
+  if (nrMatch) meta['numar_autorizatie'] = nrMatch[1].trim();
+
+  const expiry = findDateNear(text, /valabil[ăa]?\s*p[âa]n[ăa]\s*la|expir[aă]/i);
+  const issue = findDateNear(text, /data\s*eliber[aă]rii|emis[aă]?/i);
+
+  return { metadata: meta, expiry_date: expiry, issue_date: issue };
+}
+
+// ─── ACT CONSTITUTIV ─────────────────────────────────────────────────────────
+
+function extractActConstitutiv(text: string): ExtractResult {
+  const meta: Record<string, string> = {};
+
+  const denMatch = text.match(/(?:denumire|societate|firm[aă])[:\s]+([^\n]{5,80})/i);
+  if (denMatch) meta['denumire'] = denMatch[1].trim();
+
+  const formMatch = text.match(
+    /\b(S\.?R\.?L\.?|S\.?A\.?|P\.?F\.?A\.?|I\.?I\.?|I\.?F\.?|R\.?A\.?)\b/i
+  );
+  if (formMatch) meta['legal_form'] = formMatch[1].replace(/\./g, '').toUpperCase();
+
+  const issue = findDateNear(text, /[îi]ncheiat|autentificat|data\s*actului/i);
+
+  return { metadata: meta, issue_date: issue };
+}
+
+// ─── CERTIFICAT TVA ──────────────────────────────────────────────────────────
+
+function extractCertificatTva(text: string): ExtractResult {
+  const meta: Record<string, string> = {};
+
+  const codMatch = text.match(/(?:cod\s*TVA|CIF)[:\s]+(RO\s*\d{6,10}|\d{6,10})/i);
+  if (codMatch) meta['cod_tva'] = codMatch[1].replace(/\s/g, '');
+
+  const denMatch = text.match(/(?:denumire|societate|contribuabil)[:\s]+([^\n]{5,80})/i);
+  if (denMatch) meta['denumire'] = denMatch[1].trim();
+
+  const issue = findDateNear(text, /data\s*[îi]nregistr[aă]rii|emis/i);
+
+  return { metadata: meta, issue_date: issue };
+}
+
+// ─── ASIGURARE PROFESIONALĂ ───────────────────────────────────────────────────
+
+function extractAsigurareProf(text: string): ExtractResult {
+  const meta: Record<string, string> = {};
+
+  const policy = text.match(/(?:poli[tț][aă]|contract|nr\.?)\s*[:\s]+([A-Z0-9\-\/]{5,30})/i);
+  if (policy) meta['policy_number'] = policy[1].trim();
+
+  const insurer = detectInsurer(text);
+  if (insurer) meta['insurer'] = insurer;
+
+  const expiry = findDateNear(text, /valabil[ăa]?\s*p[âa]n[ăa]\s*la|data\s*expir/i);
+  const issue = findDateNear(text, /data\s*emit|[îi]ncheiat/i);
+
+  return { metadata: meta, expiry_date: expiry, issue_date: issue };
 }
 
 // ─── GENERIC FALLBACK ────────────────────────────────────────────────────────
@@ -608,31 +827,71 @@ function extractGeneric(text: string): ExtractResult {
 
 export function extractFieldsForType(type: DocumentType | string, text: string): ExtractResult {
   switch (type) {
-    case 'buletin':                  return extractBuletin(text);
-    case 'pasaport':                 return extractPasaport(text);
-    case 'permis_auto':              return extractPermisAuto(text);
-    case 'talon':                    return extractTalonDoc(text);
-    case 'carte_auto':               return extractCarteAuto(text);
-    case 'rca':                      return extractRca(text);
-    case 'itp':                      return extractItp(text);
-    case 'vigneta':                  return extractVigneta(text);
-    case 'casco':                    return extractCasco(text);
-    case 'pad':                      return extractPad(text);
-    case 'factura':                  return extractFactura(text);
-    case 'bon_cumparaturi':          return extractBonCumparaturi(text);
-    case 'garantie':                 return extractGarantie(text);
-    case 'contract':                 return extractContract(text);
-    case 'act_proprietate':          return extractActProprietate(text);
-    case 'cadastru':                 return extractCadastru(text);
-    case 'impozit_proprietate':      return extractImpozitProprietate(text);
-    case 'abonament':                return extractAbonament(text);
-    case 'stingator_incendiu':       return extractStingator(text);
-    case 'reteta_medicala':          return extractReteta(text);
-    case 'analize_medicale':         return extractAnalize(text);
-    case 'vaccin_animal':            return extractVaccinAnimal(text);
-    case 'deparazitare':             return extractDeparazitare(text);
-    case 'vizita_vet':               return extractVizitaVet(text);
-    case 'certificat_inregistrare':  return extractCertificatInregistrare(text);
-    default:                         return extractGeneric(text);
+    case 'buletin':
+      return extractBuletin(text);
+    case 'pasaport':
+      return extractPasaport(text);
+    case 'permis_auto':
+      return extractPermisAuto(text);
+    case 'talon':
+      return extractTalonDoc(text);
+    case 'carte_auto':
+      return extractCarteAuto(text);
+    case 'rca':
+      return extractRca(text);
+    case 'itp':
+      return extractItp(text);
+    case 'vigneta':
+      return extractVigneta(text);
+    case 'casco':
+      return extractCasco(text);
+    case 'pad':
+      return extractPad(text);
+    case 'factura':
+      return extractFactura(text);
+    case 'bon_cumparaturi':
+      return extractBonCumparaturi(text);
+    case 'bon_parcare':
+      return extractBonParcare(text);
+    case 'garantie':
+      return extractGarantie(text);
+    case 'contract':
+      return extractContract(text);
+    case 'act_proprietate':
+      return extractActProprietate(text);
+    case 'cadastru':
+      return extractCadastru(text);
+    case 'impozit_proprietate':
+      return extractImpozitProprietate(text);
+    case 'abonament':
+      return extractAbonament(text);
+    case 'stingator_incendiu':
+      return extractStingator(text);
+    case 'reteta_medicala':
+      return extractReteta(text);
+    case 'analize_medicale':
+      return extractAnalize(text);
+    case 'vaccin_animal':
+      return extractVaccinAnimal(text);
+    case 'deparazitare':
+      return extractDeparazitare(text);
+    case 'vizita_vet':
+      return extractVizitaVet(text);
+    case 'card':
+      return extractCard(text);
+    case 'bilet':
+      return extractBilet(text);
+    case 'certificat_inregistrare':
+      return extractCertificatInregistrare(text);
+    case 'autorizatie_activitate':
+      return extractAutorizatieActivitate(text);
+    case 'act_constitutiv':
+      return extractActConstitutiv(text);
+    case 'certificat_tva':
+      return extractCertificatTva(text);
+    case 'asigurare_profesionala':
+      return extractAsigurareProf(text);
+    default:
+      return extractGeneric(text);
   }
 }

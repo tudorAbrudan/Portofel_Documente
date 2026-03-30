@@ -53,6 +53,7 @@ const DOC_ICON: Record<DocumentType, IoniconName> = {
   reteta_medicala: 'medkit-outline',
   analize_medicale: 'flask-outline',
   bon_cumparaturi: 'receipt-outline',
+  bon_parcare: 'car-outline',
   pad: 'home-outline',
   stingator_incendiu: 'flame-outline',
   abonament: 'repeat-outline',
@@ -89,6 +90,7 @@ const DOC_ICON_BG: Record<DocumentType, string> = {
   reteta_medicala: '#FCE4EC',
   analize_medicale: '#E3F2FD',
   bon_cumparaturi: '#FFF8E1',
+  bon_parcare: '#E8F5E9',
   pad: '#E3F2FD',
   stingator_incendiu: '#FCE4EC',
   abonament: '#F3E5F5',
@@ -125,6 +127,7 @@ const DOC_ICON_COLOR: Record<DocumentType, string> = {
   reteta_medicala: '#C62828',
   analize_medicale: '#1565C0',
   bon_cumparaturi: '#F57F17',
+  bon_parcare: '#2E7D32',
   pad: '#1565C0',
   stingator_incendiu: '#BF360C',
   abonament: '#7B1FA2',
@@ -183,7 +186,20 @@ function getExpiryInfo(doc: Document): {
 function formatShortDate(dateStr: string): string {
   const d = new Date(dateStr);
   const day = String(d.getDate()).padStart(2, '0');
-  const months = ['Ian', 'Feb', 'Mar', 'Apr', 'Mai', 'Iun', 'Iul', 'Aug', 'Sep', 'Oct', 'Noi', 'Dec'];
+  const months = [
+    'Ian',
+    'Feb',
+    'Mar',
+    'Apr',
+    'Mai',
+    'Iun',
+    'Iul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Noi',
+    'Dec',
+  ];
   return `${day} ${months[d.getMonth()]}`;
 }
 
@@ -235,10 +251,7 @@ function DocumentCard({
 
       {/* Middle: text */}
       <RNView style={cardStyles.content}>
-        <RNText
-          style={[cardStyles.title, { color: C.text }]}
-          numberOfLines={1}
-        >
+        <RNText style={[cardStyles.title, { color: C.text }]} numberOfLines={1}>
           {label}
         </RNText>
 
@@ -250,20 +263,14 @@ function DocumentCard({
               color={C.textSecondary}
               style={cardStyles.entityIcon}
             />
-            <RNText
-              style={[cardStyles.entityText, { color: C.textSecondary }]}
-              numberOfLines={1}
-            >
+            <RNText style={[cardStyles.entityText, { color: C.textSecondary }]} numberOfLines={1}>
               {entityName}
             </RNText>
           </RNView>
         )}
 
         {doc.note ? (
-          <RNText
-            style={[cardStyles.note, { color: C.textSecondary }]}
-            numberOfLines={1}
-          >
+          <RNText style={[cardStyles.note, { color: C.textSecondary }]} numberOfLines={1}>
             {doc.note}
           </RNText>
         ) : null}
@@ -273,12 +280,15 @@ function DocumentCard({
       <RNView style={cardStyles.right}>
         {expiry && (
           <RNView style={[cardStyles.expiryBadge, { backgroundColor: expiry.bg }]}>
-            <RNText style={[cardStyles.expiryText, { color: expiry.fg }]}>
-              {expiry.label}
-            </RNText>
+            <RNText style={[cardStyles.expiryText, { color: expiry.fg }]}>{expiry.label}</RNText>
           </RNView>
         )}
-        <Ionicons name="chevron-forward" size={16} color={C.textSecondary} style={cardStyles.chevron} />
+        <Ionicons
+          name="chevron-forward"
+          size={16}
+          color={C.textSecondary}
+          style={cardStyles.chevron}
+        />
       </RNView>
     </Pressable>
   );
@@ -366,17 +376,16 @@ const cardStyles = StyleSheet.create({
 
 // ─── Empty state ──────────────────────────────────────────────────────────────
 
-function EmptyState({
-  isFiltered,
-  scheme,
-}: {
-  isFiltered: boolean;
-  scheme: 'light' | 'dark';
-}) {
+function EmptyState({ isFiltered, scheme }: { isFiltered: boolean; scheme: 'light' | 'dark' }) {
   const C = Colors[scheme];
   return (
     <RNView style={emptyStyles.wrap}>
-      <Ionicons name="document-outline" size={64} color={C.textSecondary} style={emptyStyles.icon} />
+      <Ionicons
+        name="document-outline"
+        size={64}
+        color={C.textSecondary}
+        style={emptyStyles.icon}
+      />
       <RNText style={[emptyStyles.title, { color: C.text }]}>
         {isFiltered ? 'Niciun rezultat' : 'Niciun document'}
       </RNText>
@@ -478,9 +487,7 @@ export default function DocumenteListScreen() {
   const entityOptions = useMemo(() => {
     const list: { kind: string; id: string; label: string }[] = [];
     persons.forEach(p => list.push({ kind: 'person_id', id: p.id, label: p.name }));
-    properties.forEach(p =>
-      list.push({ kind: 'property_id', id: p.id, label: p.name })
-    );
+    properties.forEach(p => list.push({ kind: 'property_id', id: p.id, label: p.name }));
     vehicles.forEach(v => list.push({ kind: 'vehicle_id', id: v.id, label: v.name }));
     cards.forEach(c =>
       list.push({ kind: 'card_id', id: c.id, label: c.nickname || c.last4 || c.id })
@@ -530,7 +537,10 @@ export default function DocumenteListScreen() {
   };
 
   const isFiltered =
-    filterType !== 'toate' || filterEntity !== null || onlyExpiring || searchQuery.trim().length > 0;
+    filterType !== 'toate' ||
+    filterEntity !== null ||
+    onlyExpiring ||
+    searchQuery.trim().length > 0;
 
   // ── Render item ──────────────────────────────────────────────────────────────
   const renderItem = useCallback(
@@ -553,11 +563,11 @@ export default function DocumenteListScreen() {
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
     <RNView style={[styles.container, { backgroundColor: C.background }]}>
-
       {/* ── Custom Header ── */}
-      <RNView style={[styles.header, { backgroundColor: C.background, paddingTop: insets.top + 8 }]}>
+      <RNView
+        style={[styles.header, { backgroundColor: C.background, paddingTop: insets.top + 8 }]}
+      >
         <RNView style={styles.headerLeft}>
-          <RNText style={[styles.headerTitle, { color: C.text }]}>Documente</RNText>
           <RNText style={[styles.headerSub, { color: C.textSecondary }]}>
             {isFiltered && filtered.length !== documents.length
               ? `${filtered.length} din ${documents.length}`
@@ -582,125 +592,125 @@ export default function DocumenteListScreen() {
 
       {/* ── Type filter chips ── */}
       <RNView style={styles.chipsRow}>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.chipsContent}
-      >
-        {/* "Expiră curând" chip */}
-        <Pressable
-          style={[
-            styles.chip,
-            { borderColor: C.border },
-            onlyExpiring && { backgroundColor: primary, borderColor: primary },
-          ]}
-          onPress={() => setOnlyExpiring(!onlyExpiring)}
-        >
-          <Ionicons
-            name="time-outline"
-            size={13}
-            color={onlyExpiring ? '#fff' : C.textSecondary}
-            style={styles.chipIcon}
-          />
-          <RNText
-            style={[
-              styles.chipText,
-              { color: onlyExpiring ? '#fff' : C.text },
-              onlyExpiring && styles.chipTextActive,
-            ]}
-          >
-            Expiră curând
-          </RNText>
-        </Pressable>
-
-        {DOCUMENT_TYPES.map(({ value, label }) => {
-          const isActive = filterType === value;
-          return (
-            <Pressable
-              key={value}
-              style={[
-                styles.chip,
-                { borderColor: C.border },
-                isActive && { backgroundColor: primary, borderColor: primary },
-              ]}
-              onPress={() => setFilterType(value)}
-            >
-              <RNText
-                style={[
-                  styles.chipText,
-                  { color: isActive ? '#fff' : C.text },
-                  isActive && styles.chipTextActive,
-                ]}
-              >
-                {label}
-              </RNText>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
-      </RNView>
-
-      {/* ── Entity filter chips ── */}
-      {entityOptions.length > 0 && (
-        <RNView style={styles.chipsRow}>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.chipsContent}
         >
+          {/* "Expiră curând" chip */}
           <Pressable
             style={[
               styles.chip,
               { borderColor: C.border },
-              !filterEntity && { backgroundColor: primary, borderColor: primary },
+              onlyExpiring && { backgroundColor: primary, borderColor: primary },
             ]}
-            onPress={() => setFilterEntity(null)}
+            onPress={() => setOnlyExpiring(!onlyExpiring)}
           >
+            <Ionicons
+              name="time-outline"
+              size={13}
+              color={onlyExpiring ? '#fff' : C.textSecondary}
+              style={styles.chipIcon}
+            />
             <RNText
               style={[
                 styles.chipText,
-                { color: !filterEntity ? '#fff' : C.text },
-                !filterEntity && styles.chipTextActive,
+                { color: onlyExpiring ? '#fff' : C.text },
+                onlyExpiring && styles.chipTextActive,
               ]}
             >
-              Toate
+              Expiră curând
             </RNText>
           </Pressable>
 
-          {entityOptions.slice(0, 8).map(opt => {
-            const isActive = filterEntity?.id === opt.id;
-            const entityIconName: IoniconName = ENTITY_ICON[opt.kind] ?? 'ellipse-outline';
-            const truncated = opt.label.length > 18 ? opt.label.slice(0, 16) + '…' : opt.label;
+          {DOCUMENT_TYPES.map(({ value, label }) => {
+            const isActive = filterType === value;
             return (
               <Pressable
-                key={`${opt.kind}-${opt.id}`}
+                key={value}
                 style={[
                   styles.chip,
                   { borderColor: C.border },
                   isActive && { backgroundColor: primary, borderColor: primary },
                 ]}
-                onPress={() => setFilterEntity({ kind: opt.kind, id: opt.id })}
+                onPress={() => setFilterType(value)}
               >
-                <Ionicons
-                  name={entityIconName}
-                  size={13}
-                  color={isActive ? '#fff' : C.textSecondary}
-                  style={styles.chipIcon}
-                />
                 <RNText
                   style={[
                     styles.chipText,
                     { color: isActive ? '#fff' : C.text },
                     isActive && styles.chipTextActive,
                   ]}
-                  numberOfLines={1}
                 >
-                  {truncated}
+                  {label}
                 </RNText>
               </Pressable>
             );
           })}
         </ScrollView>
+      </RNView>
+
+      {/* ── Entity filter chips ── */}
+      {entityOptions.length > 0 && (
+        <RNView style={styles.chipsRow}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.chipsContent}
+          >
+            <Pressable
+              style={[
+                styles.chip,
+                { borderColor: C.border },
+                !filterEntity && { backgroundColor: primary, borderColor: primary },
+              ]}
+              onPress={() => setFilterEntity(null)}
+            >
+              <RNText
+                style={[
+                  styles.chipText,
+                  { color: !filterEntity ? '#fff' : C.text },
+                  !filterEntity && styles.chipTextActive,
+                ]}
+              >
+                Toate
+              </RNText>
+            </Pressable>
+
+            {entityOptions.slice(0, 8).map(opt => {
+              const isActive = filterEntity?.id === opt.id;
+              const entityIconName: IoniconName = ENTITY_ICON[opt.kind] ?? 'ellipse-outline';
+              const truncated = opt.label.length > 18 ? opt.label.slice(0, 16) + '…' : opt.label;
+              return (
+                <Pressable
+                  key={`${opt.kind}-${opt.id}`}
+                  style={[
+                    styles.chip,
+                    { borderColor: C.border },
+                    isActive && { backgroundColor: primary, borderColor: primary },
+                  ]}
+                  onPress={() => setFilterEntity({ kind: opt.kind, id: opt.id })}
+                >
+                  <Ionicons
+                    name={entityIconName}
+                    size={13}
+                    color={isActive ? '#fff' : C.textSecondary}
+                    style={styles.chipIcon}
+                  />
+                  <RNText
+                    style={[
+                      styles.chipText,
+                      { color: isActive ? '#fff' : C.text },
+                      isActive && styles.chipTextActive,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {truncated}
+                  </RNText>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
         </RNView>
       )}
 
@@ -721,7 +731,9 @@ export default function DocumenteListScreen() {
           styles.listContent,
           filtered.length === 0 && styles.listContentEmpty,
         ]}
-        refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} tintColor={C.primary} />}
+        refreshControl={
+          <RefreshControl refreshing={loading} onRefresh={refresh} tintColor={C.primary} />
+        }
         ListEmptyComponent={
           !loading ? <EmptyState isFiltered={isFiltered} scheme={scheme} /> : null
         }
@@ -858,5 +870,4 @@ const styles = StyleSheet.create({
   listContentEmpty: {
     flexGrow: 1,
   },
-
 });

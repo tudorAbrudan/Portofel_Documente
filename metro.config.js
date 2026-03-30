@@ -10,4 +10,7 @@ config.watcher = {
   },
 };
 
+// Support .mjs extensions (required by pdfjs-dist)
+config.resolver.sourceExts = [...config.resolver.sourceExts, 'mjs'];
+
 module.exports = config;

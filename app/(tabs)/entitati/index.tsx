@@ -71,7 +71,9 @@ export default function EntitatiListScreen() {
   const [tab, setTab] = useState<EntityTab>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const { visibleEntityTypes } = useVisibilitySettings();
-  const TABS = ALL_TABS.filter(t => t.key === 'all' || visibleEntityTypes.includes(t.key as EntityType));
+  const TABS = ALL_TABS.filter(
+    t => t.key === 'all' || visibleEntityTypes.includes(t.key as EntityType)
+  );
   const {
     persons,
     properties,
@@ -173,10 +175,10 @@ export default function EntitatiListScreen() {
           : tab === 'vehicle'
             ? 'vehicule'
             : tab === 'animal'
-            ? 'animale'
-            : tab === 'company'
-              ? 'firme'
-              : 'carduri'
+              ? 'animale'
+              : tab === 'company'
+                ? 'firme'
+                : 'carduri'
   }`;
 
   const emptyIconName: IoniconName =
@@ -185,9 +187,10 @@ export default function EntitatiListScreen() {
   return (
     <RNView style={[styles.container, { backgroundColor: C.background }]}>
       {/* ── Custom Header ── */}
-      <RNView style={[styles.header, { backgroundColor: C.background, paddingTop: insets.top + 8 }]}>
+      <RNView
+        style={[styles.header, { backgroundColor: C.background, paddingTop: insets.top + 8 }]}
+      >
         <RNView style={styles.headerLeft}>
-          <RNText style={[styles.headerTitle, { color: C.text }]}>Entități</RNText>
           <RNText style={[styles.headerSub, { color: C.textSecondary }]}>{subtitleText}</RNText>
         </RNView>
       </RNView>
@@ -208,42 +211,42 @@ export default function EntitatiListScreen() {
 
       {/* ── Tabs as chips ── */}
       <RNView style={styles.chipsRow}>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.chipsContent}
-      >
-        {TABS.map(({ key, label, icon }) => {
-          const isActive = tab === key;
-          return (
-            <Pressable
-              key={key}
-              style={[
-                styles.chip,
-                { borderColor: C.border },
-                isActive && { backgroundColor: primary, borderColor: primary },
-              ]}
-              onPress={() => setTab(key)}
-            >
-              <Ionicons
-                name={icon}
-                size={13}
-                color={isActive ? '#fff' : C.textSecondary}
-                style={styles.chipIcon}
-              />
-              <RNText
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.chipsContent}
+        >
+          {TABS.map(({ key, label, icon }) => {
+            const isActive = tab === key;
+            return (
+              <Pressable
+                key={key}
                 style={[
-                  styles.chipText,
-                  { color: isActive ? '#fff' : C.text },
-                  isActive && styles.chipTextActive,
+                  styles.chip,
+                  { borderColor: C.border },
+                  isActive && { backgroundColor: primary, borderColor: primary },
                 ]}
+                onPress={() => setTab(key)}
               >
-                {label}
-              </RNText>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
+                <Ionicons
+                  name={icon}
+                  size={13}
+                  color={isActive ? '#fff' : C.textSecondary}
+                  style={styles.chipIcon}
+                />
+                <RNText
+                  style={[
+                    styles.chipText,
+                    { color: isActive ? '#fff' : C.text },
+                    isActive && styles.chipTextActive,
+                  ]}
+                >
+                  {label}
+                </RNText>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
       </RNView>
 
       {/* ── Error banner ── */}
@@ -312,10 +315,7 @@ export default function EntitatiListScreen() {
                     {title}
                   </RNText>
                   {subtitle && (
-                    <RNText
-                      style={[styles.cardSub, { color: C.textSecondary }]}
-                      numberOfLines={1}
-                    >
+                    <RNText style={[styles.cardSub, { color: C.textSecondary }]} numberOfLines={1}>
                       {subtitle}
                     </RNText>
                   )}
@@ -501,5 +501,4 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 17,
   },
-
 });

@@ -33,42 +33,96 @@ const RECENT_COUNT = 4;
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
 const DOC_ICON: Partial<Record<DocumentType, IoniconName>> = {
-  buletin: 'id-card', pasaport: 'book', permis_auto: 'car',
-  talon: 'document-text', carte_auto: 'document',
-  rca: 'shield-checkmark', casco: 'shield-half', itp: 'checkmark-circle',
-  vigneta: 'ribbon', act_proprietate: 'home', cadastru: 'map',
-  factura: 'receipt', impozit_proprietate: 'cash-outline', card: 'card',
-  garantie: 'ribbon-outline', reteta_medicala: 'medkit-outline',
-  analize_medicale: 'flask-outline', bon_cumparaturi: 'receipt-outline',
-  pad: 'home-outline', stingator_incendiu: 'flame-outline',
-  abonament: 'repeat-outline', contract: 'document-text-outline',
-  vaccin_animal: 'fitness-outline', deparazitare: 'bug-outline',
-  vizita_vet: 'paw-outline', bilet: 'ticket-outline',
-  altul: 'document-outline', custom: 'document-outline',
+  buletin: 'id-card',
+  pasaport: 'book',
+  permis_auto: 'car',
+  talon: 'document-text',
+  carte_auto: 'document',
+  rca: 'shield-checkmark',
+  casco: 'shield-half',
+  itp: 'checkmark-circle',
+  vigneta: 'ribbon',
+  act_proprietate: 'home',
+  cadastru: 'map',
+  factura: 'receipt',
+  impozit_proprietate: 'cash-outline',
+  card: 'card',
+  garantie: 'ribbon-outline',
+  reteta_medicala: 'medkit-outline',
+  analize_medicale: 'flask-outline',
+  bon_cumparaturi: 'receipt-outline',
+  pad: 'home-outline',
+  stingator_incendiu: 'flame-outline',
+  abonament: 'repeat-outline',
+  contract: 'document-text-outline',
+  vaccin_animal: 'fitness-outline',
+  deparazitare: 'bug-outline',
+  vizita_vet: 'paw-outline',
+  bilet: 'ticket-outline',
+  altul: 'document-outline',
+  custom: 'document-outline',
 };
 
 const DOC_ICON_BG: Partial<Record<DocumentType, string>> = {
-  buletin: '#E3F2FD', pasaport: '#E8EAF6', permis_auto: '#FFF3E0',
-  talon: '#E0F2F1', carte_auto: '#E0F2F1', rca: '#FCE4EC', casco: '#FCE4EC',
-  itp: '#F3E5F5', vigneta: '#FFF8E1', act_proprietate: '#E8F5E9',
-  cadastru: '#E8F5E9', factura: '#FFF3E0', impozit_proprietate: '#FFF8E1',
-  card: '#F3E5F5', garantie: '#E8F5E9', reteta_medicala: '#FCE4EC',
-  analize_medicale: '#E3F2FD', bon_cumparaturi: '#FFF8E1', pad: '#E3F2FD',
-  stingator_incendiu: '#FCE4EC', abonament: '#F3E5F5', contract: '#E8EAF6',
-  vaccin_animal: '#E8F5E9', deparazitare: '#FFF8E1', vizita_vet: '#E8EAF6',
-  bilet: '#F3E5F5', altul: '#F5F5F5', custom: '#F5F5F5',
+  buletin: '#E3F2FD',
+  pasaport: '#E8EAF6',
+  permis_auto: '#FFF3E0',
+  talon: '#E0F2F1',
+  carte_auto: '#E0F2F1',
+  rca: '#FCE4EC',
+  casco: '#FCE4EC',
+  itp: '#F3E5F5',
+  vigneta: '#FFF8E1',
+  act_proprietate: '#E8F5E9',
+  cadastru: '#E8F5E9',
+  factura: '#FFF3E0',
+  impozit_proprietate: '#FFF8E1',
+  card: '#F3E5F5',
+  garantie: '#E8F5E9',
+  reteta_medicala: '#FCE4EC',
+  analize_medicale: '#E3F2FD',
+  bon_cumparaturi: '#FFF8E1',
+  pad: '#E3F2FD',
+  stingator_incendiu: '#FCE4EC',
+  abonament: '#F3E5F5',
+  contract: '#E8EAF6',
+  vaccin_animal: '#E8F5E9',
+  deparazitare: '#FFF8E1',
+  vizita_vet: '#E8EAF6',
+  bilet: '#F3E5F5',
+  altul: '#F5F5F5',
+  custom: '#F5F5F5',
 };
 
 const DOC_ICON_COLOR: Partial<Record<DocumentType, string>> = {
-  buletin: '#1565C0', pasaport: '#283593', permis_auto: '#E65100',
-  talon: '#00695C', carte_auto: '#00897B', rca: '#C62828', casco: '#AD1457',
-  itp: '#6A1B9A', vigneta: '#F57F17', act_proprietate: '#2E7D32',
-  cadastru: '#388E3C', factura: '#BF360C', impozit_proprietate: '#F57F17',
-  card: '#7B1FA2', garantie: '#2E7D32', reteta_medicala: '#C62828',
-  analize_medicale: '#1565C0', bon_cumparaturi: '#F57F17', pad: '#1565C0',
-  stingator_incendiu: '#BF360C', abonament: '#7B1FA2', contract: '#283593',
-  vaccin_animal: '#388E3C', deparazitare: '#F57F17', vizita_vet: '#283593',
-  bilet: '#7B1FA2', altul: '#757575', custom: '#757575',
+  buletin: '#1565C0',
+  pasaport: '#283593',
+  permis_auto: '#E65100',
+  talon: '#00695C',
+  carte_auto: '#00897B',
+  rca: '#C62828',
+  casco: '#AD1457',
+  itp: '#6A1B9A',
+  vigneta: '#F57F17',
+  act_proprietate: '#2E7D32',
+  cadastru: '#388E3C',
+  factura: '#BF360C',
+  impozit_proprietate: '#F57F17',
+  card: '#7B1FA2',
+  garantie: '#2E7D32',
+  reteta_medicala: '#C62828',
+  analize_medicale: '#1565C0',
+  bon_cumparaturi: '#F57F17',
+  pad: '#1565C0',
+  stingator_incendiu: '#BF360C',
+  abonament: '#7B1FA2',
+  contract: '#283593',
+  vaccin_animal: '#388E3C',
+  deparazitare: '#F57F17',
+  vizita_vet: '#283593',
+  bilet: '#7B1FA2',
+  altul: '#757575',
+  custom: '#757575',
 };
 
 function greeting(): string {
@@ -119,7 +173,11 @@ function buildAlerts(
         icon: 'document-text-outline',
         iconBg: '#E0F2F1',
         iconColor: '#00695C',
-        action: () => router.push({ pathname: '/(tabs)/documente/add', params: { vehicle_id: v.id, type: 'talon' } }),
+        action: () =>
+          router.push({
+            pathname: '/(tabs)/documente/add',
+            params: { vehicle_id: v.id, type: 'talon' },
+          }),
         actionLabel: 'Adaugă',
       });
     }
@@ -135,7 +193,11 @@ function buildAlerts(
         icon: 'shield-outline',
         iconBg: '#FCE4EC',
         iconColor: '#C62828',
-        action: () => router.push({ pathname: '/(tabs)/documente/add', params: { vehicle_id: v.id, type: 'rca' } }),
+        action: () =>
+          router.push({
+            pathname: '/(tabs)/documente/add',
+            params: { vehicle_id: v.id, type: 'rca' },
+          }),
         actionLabel: 'Adaugă',
       });
     }
@@ -151,7 +213,11 @@ function buildAlerts(
         icon: 'checkmark-circle-outline',
         iconBg: '#F3E5F5',
         iconColor: '#6A1B9A',
-        action: () => router.push({ pathname: '/(tabs)/documente/add', params: { vehicle_id: v.id, type: 'itp' } }),
+        action: () =>
+          router.push({
+            pathname: '/(tabs)/documente/add',
+            params: { vehicle_id: v.id, type: 'itp' },
+          }),
         actionLabel: 'Adaugă',
       });
     }
@@ -167,7 +233,11 @@ function buildAlerts(
         icon: 'id-card-outline',
         iconBg: '#E3F2FD',
         iconColor: '#1565C0',
-        action: () => router.push({ pathname: '/(tabs)/documente/add', params: { person_id: p.id, type: 'buletin' } }),
+        action: () =>
+          router.push({
+            pathname: '/(tabs)/documente/add',
+            params: { person_id: p.id, type: 'buletin' },
+          }),
         actionLabel: 'Adaugă',
       });
     }
@@ -187,13 +257,18 @@ export default function HomeScreen() {
   const { persons, properties, vehicles, cards, animals, companies } = useEntities();
   const { customTypes } = useCustomTypes();
 
-  useFocusEffect(useCallback(() => { refresh(); }, []));
+  useFocusEffect(
+    useCallback(() => {
+      refresh();
+    }, [])
+  );
 
   // ── Stats ────────────────────────────────────────────────────────────────────
   const stats = useMemo(() => {
     const now = Date.now();
     const limit30 = now + EXPIRING_DAYS * 24 * 60 * 60 * 1000;
-    let expired = 0, expiringSoon = 0;
+    let expired = 0,
+      expiringSoon = 0;
     for (const d of documents) {
       if (!d.expiry_date) continue;
       const t = new Date(d.expiry_date).getTime();
@@ -218,10 +293,11 @@ export default function HomeScreen() {
   }, [documents]);
 
   // ── Recent documents ─────────────────────────────────────────────────────────
-  const recentDocs = useMemo(() =>
-    [...documents]
-      .sort((a, b) => b.created_at.localeCompare(a.created_at))
-      .slice(0, RECENT_COUNT),
+  const recentDocs = useMemo(
+    () =>
+      [...documents]
+        .sort((a, b) => b.created_at.localeCompare(a.created_at))
+        .slice(0, RECENT_COUNT),
     [documents]
   );
 
@@ -245,27 +321,34 @@ export default function HomeScreen() {
     return null;
   }
 
-  const totalEntities = persons.length + properties.length + vehicles.length + cards.length + animals.length + companies.length;
+  const totalEntities =
+    persons.length +
+    properties.length +
+    vehicles.length +
+    cards.length +
+    animals.length +
+    companies.length;
 
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
     <RNView style={[styles.container, { backgroundColor: C.background }]}>
-
       {/* ── Header ── */}
-      <RNView style={[styles.header, { backgroundColor: C.background, paddingTop: insets.top + 10 }]}>
+      <RNView
+        style={[styles.header, { backgroundColor: C.background, paddingTop: insets.top + 10 }]}
+      >
         <RNView>
           <RNText style={[styles.greeting, { color: C.textSecondary }]}>{greeting()}</RNText>
-          <RNText style={[styles.headerTitle, { color: C.text }]}>Acasă</RNText>
         </RNView>
       </RNView>
 
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
-        refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} tintColor={C.primary} />}
+        refreshControl={
+          <RefreshControl refreshing={loading} onRefresh={refresh} tintColor={C.primary} />
+        }
         showsVerticalScrollIndicator={false}
       >
-
         {/* ── Rezumat + acțiuni (card integrat) ── */}
         <SurfaceCard style={styles.integratedCard}>
           <RNView style={styles.statsRow}>
@@ -275,14 +358,18 @@ export default function HomeScreen() {
             </Pressable>
             <RNView style={[styles.statDivider, { backgroundColor: C.border }]} />
             <Pressable style={styles.statCell} onPress={() => router.push('/(tabs)/expirari')}>
-              <RNText style={[styles.statNumber, { color: stats.expired > 0 ? '#E53935' : C.text }]}>
+              <RNText
+                style={[styles.statNumber, { color: stats.expired > 0 ? '#E53935' : C.text }]}
+              >
                 {stats.expired}
               </RNText>
               <RNText style={[styles.statLabel, { color: C.textSecondary }]}>Expirate</RNText>
             </Pressable>
             <RNView style={[styles.statDivider, { backgroundColor: C.border }]} />
             <Pressable style={styles.statCell} onPress={() => router.push('/(tabs)/expirari')}>
-              <RNText style={[styles.statNumber, { color: stats.expiringSoon > 0 ? '#F57C00' : C.text }]}>
+              <RNText
+                style={[styles.statNumber, { color: stats.expiringSoon > 0 ? '#F57C00' : C.text }]}
+              >
                 {stats.expiringSoon}
               </RNText>
               <RNText style={[styles.statLabel, { color: C.textSecondary }]}>30 zile</RNText>
@@ -333,7 +420,9 @@ export default function HomeScreen() {
                     style={[styles.alertBtn, { borderColor: C.primary }]}
                     onPress={alert.action}
                   >
-                    <RNText style={[styles.alertBtnText, { color: C.primary }]}>{alert.actionLabel}</RNText>
+                    <RNText style={[styles.alertBtnText, { color: C.primary }]}>
+                      {alert.actionLabel}
+                    </RNText>
                   </Pressable>
                 )}
               </RNView>
@@ -365,8 +454,17 @@ export default function HomeScreen() {
                   ]}
                   onPress={() => router.push(`/(tabs)/documente/${doc.id}`)}
                 >
-                  <RNView style={[styles.docIcon, { backgroundColor: DOC_ICON_BG[doc.type] ?? '#F5F5F5' }]}>
-                    <Ionicons name={DOC_ICON[doc.type] ?? 'document-outline'} size={20} color={DOC_ICON_COLOR[doc.type] ?? '#757575'} />
+                  <RNView
+                    style={[
+                      styles.docIcon,
+                      { backgroundColor: DOC_ICON_BG[doc.type] ?? '#F5F5F5' },
+                    ]}
+                  >
+                    <Ionicons
+                      name={DOC_ICON[doc.type] ?? 'document-outline'}
+                      size={20}
+                      color={DOC_ICON_COLOR[doc.type] ?? '#757575'}
+                    />
                   </RNView>
                   <RNView style={styles.docContent}>
                     <RNText style={[styles.docTitle, { color: C.text }]} numberOfLines={1}>
@@ -394,7 +492,9 @@ export default function HomeScreen() {
         {recentDocs.length > 0 && (
           <RNView style={styles.section}>
             <RNView style={styles.sectionHeader}>
-              <RNText style={[styles.sectionLabel, { color: C.textSecondary }]}>ADĂUGATE RECENT</RNText>
+              <RNText style={[styles.sectionLabel, { color: C.textSecondary }]}>
+                ADĂUGATE RECENT
+              </RNText>
               <Pressable onPress={() => router.push('/(tabs)/documente')}>
                 <RNText style={styles.sectionLink}>Toate</RNText>
               </Pressable>
@@ -412,8 +512,17 @@ export default function HomeScreen() {
                   ]}
                   onPress={() => router.push(`/(tabs)/documente/${doc.id}`)}
                 >
-                  <RNView style={[styles.docIcon, { backgroundColor: DOC_ICON_BG[doc.type] ?? '#F5F5F5' }]}>
-                    <Ionicons name={DOC_ICON[doc.type] ?? 'document-outline'} size={20} color={DOC_ICON_COLOR[doc.type] ?? '#757575'} />
+                  <RNView
+                    style={[
+                      styles.docIcon,
+                      { backgroundColor: DOC_ICON_BG[doc.type] ?? '#F5F5F5' },
+                    ]}
+                  >
+                    <Ionicons
+                      name={DOC_ICON[doc.type] ?? 'document-outline'}
+                      size={20}
+                      color={DOC_ICON_COLOR[doc.type] ?? '#757575'}
+                    />
                   </RNView>
                   <RNView style={styles.docContent}>
                     <RNText style={[styles.docTitle, { color: C.text }]} numberOfLines={1}>
@@ -440,7 +549,12 @@ export default function HomeScreen() {
         {/* ── Empty state ── */}
         {documents.length === 0 && !loading && (
           <RNView style={styles.emptyWrap}>
-            <Ionicons name="documents-outline" size={72} color={C.textSecondary} style={styles.emptyIcon} />
+            <Ionicons
+              name="documents-outline"
+              size={72}
+              color={C.textSecondary}
+              style={styles.emptyIcon}
+            />
             <RNText style={[styles.emptyTitle, { color: C.text }]}>Niciun document încă</RNText>
             <RNText style={[styles.emptySub, { color: C.textSecondary }]}>
               Adaugă primul tău document apăsând butonul de mai jos.

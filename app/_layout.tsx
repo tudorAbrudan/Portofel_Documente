@@ -4,7 +4,9 @@ import { Stack, useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Notifications from 'expo-notifications';
 import { useState, useEffect, useRef } from 'react';
-import { Linking } from 'react-native';
+import { Linking, DeviceEventEmitter } from 'react-native';
+
+export const ONBOARDING_RESET_EVENT = 'onboarding_reset';
 import 'react-native-reanimated';
 
 import AppLockScreen from '@/components/AppLockScreen';
@@ -64,7 +66,9 @@ function RootLayoutNav() {
         Linking.openURL(data.url);
       }
     });
-    return () => { notifListener.current?.remove(); };
+    return () => {
+      notifListener.current?.remove();
+    };
   }, []);
 
   // Deep link handler: app:///documente/{id} → deschide documentul
@@ -75,12 +79,14 @@ function RootLayoutNav() {
     };
 
     // App pornită din deep link (cold start)
-    Linking.getInitialURL().then(url => { if (url) handleURL(url); });
+    Linking.getInitialURL().then(url => {
+      if (url) handleURL(url);
+    });
 
     // App deja pornită, primește deep link
     const sub = Linking.addEventListener('url', ({ url }) => handleURL(url));
     return () => sub.remove();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -103,6 +109,13 @@ function RootLayoutNav() {
     checkOnboarding();
   }, []);
 
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener(ONBOARDING_RESET_EVENT, () => {
+      setOnboardingDone(false);
+    });
+    return () => sub.remove();
+  }, []);
+
   return (
     <ThemeProvider value={colorScheme === 'dark' ? AppDarkTheme : AppLightTheme}>
       <Stack screenOptions={{ headerShown: false }}>
@@ -116,9 +129,7 @@ function RootLayoutNav() {
           onUnlockPin={appLock.unlockWithPin}
         />
       )}
-      {onboardingDone === false && (
-        <OnboardingWizard onComplete={() => setOnboardingDone(true)} />
-      )}
+      {onboardingDone === false && <OnboardingWizard onComplete={() => setOnboardingDone(true)} />}
     </ThemeProvider>
   );
 }

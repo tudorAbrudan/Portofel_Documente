@@ -1,6 +1,8 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
+import JSZip from 'jszip';
+import type { DocumentType } from '@/types';
 import * as entities from './entities';
 import * as docs from './documents';
 import { getCustomTypes, createCustomType } from './customTypes';
@@ -18,42 +20,55 @@ async function readFileBase64(storedPath: string): Promise<string | null> {
   }
 }
 
-export async function exportBackup(): Promise<void> {
-  const [persons, properties, vehicles, cards, animals, companies, documents, allPages, customTypes] =
-    await Promise.all([
-      entities.getPersons(),
-      entities.getProperties(),
-      entities.getVehicles(),
-      entities.getCards(),
-      entities.getAnimals(),
-      entities.getCompanies(),
-      docs.getDocuments(),
-      docs.getAllDocumentPages(),
-      getCustomTypes(),
-    ]);
-
-  // Colectează toate imaginile ca base64 (cheie = path relativ stocat în DB)
-  const images: Record<string, string> = {};
-
+/**
+ * Colectează path-urile relative unice ale fișierelor asociate documentelor și paginilor.
+ */
+function collectFilePaths(
+  documents: Awaited<ReturnType<typeof docs.getDocuments>>,
+  allPages: Awaited<ReturnType<typeof docs.getAllDocumentPages>>
+): string[] {
+  const paths = new Set<string>();
   for (const doc of documents) {
-    if (doc.file_path) {
-      const b64 = await readFileBase64(doc.file_path);
-      if (b64) {
-        images[toRelativePath(doc.file_path)] = b64;
-      }
-    }
+    if (doc.file_path) paths.add(toRelativePath(doc.file_path));
   }
   for (const page of allPages) {
-    if (page.file_path) {
-      const b64 = await readFileBase64(page.file_path);
-      if (b64) {
-        images[toRelativePath(page.file_path)] = b64;
-      }
-    }
+    if (page.file_path) paths.add(toRelativePath(page.file_path));
   }
+  return Array.from(paths);
+}
 
-  const payload = {
-    version: 3,
+/**
+ * Exportă toate datele ca fișier ZIP conținând:
+ *  - backup.json  (manifest cu entități + documente, fără imagini base64)
+ *  - files/<relativePath>  (pozele și PDF-urile nativ în ZIP)
+ *
+ * Format version: 4
+ */
+export async function exportBackup(): Promise<void> {
+  const [
+    persons,
+    properties,
+    vehicles,
+    cards,
+    animals,
+    companies,
+    documents,
+    allPages,
+    customTypes,
+  ] = await Promise.all([
+    entities.getPersons(),
+    entities.getProperties(),
+    entities.getVehicles(),
+    entities.getCards(),
+    entities.getAnimals(),
+    entities.getCompanies(),
+    docs.getDocuments(),
+    docs.getAllDocumentPages(),
+    getCustomTypes(),
+  ]);
+
+  const manifest = {
+    version: 4,
     exportDate: new Date().toISOString(),
     persons,
     properties,
@@ -64,30 +79,82 @@ export async function exportBackup(): Promise<void> {
     customTypes,
     documents,
     documentPages: allPages,
-    images,
   };
 
-  const json = JSON.stringify(payload, null, 2);
-  const date = new Date().toISOString().slice(0, 10);
-  const filename = `acte_backup_${date}.json`;
-  const path = FileSystem.cacheDirectory + filename;
+  const zip = new JSZip();
+  zip.file('backup.json', JSON.stringify(manifest, null, 2));
 
-  await FileSystem.writeAsStringAsync(path, json, { encoding: FileSystem.EncodingType.UTF8 });
+  const filePaths = collectFilePaths(documents, allPages);
+  for (const relativePath of filePaths) {
+    try {
+      const b64 = await readFileBase64(relativePath);
+      if (b64) {
+        zip.file(`files/${relativePath}`, b64, { base64: true });
+      }
+    } catch {
+      // Fișier inaccesibil — continuă fără el
+    }
+  }
+
+  const zipBase64 = await zip.generateAsync({ type: 'base64' });
+
+  const date = new Date().toISOString().slice(0, 10);
+  const filename = `acte_backup_${date}.zip`;
+  const path = `${FileSystem.cacheDirectory}${filename}`;
+
+  await FileSystem.writeAsStringAsync(path, zipBase64, {
+    encoding: FileSystem.EncodingType.Base64,
+  });
   await Sharing.shareAsync(path, {
-    mimeType: 'application/json',
+    mimeType: 'application/zip',
     dialogTitle: 'Salvează backup',
-    UTI: 'public.json',
+    UTI: 'public.zip-archive',
   });
 }
 
 export interface ImportResult {
   imported: number;
+  skipped: number;
   errors: string[];
 }
 
+/**
+ * Extrage fișierele dintr-un ZIP și le scrie pe disk.
+ * Fișierele lipsă sunt ignorate silențios.
+ */
+async function extractFilesFromZip(zip: JSZip): Promise<void> {
+  const filesFolder = zip.folder('files');
+  if (!filesFolder) return;
+
+  const fileEntries: Array<{ relativePath: string; file: JSZip.JSZipObject }> = [];
+  filesFolder.forEach((relativePath, file) => {
+    if (!file.dir) {
+      fileEntries.push({ relativePath, file });
+    }
+  });
+
+  for (const { relativePath, file } of fileEntries) {
+    try {
+      const b64 = await file.async('base64');
+      // relativePath este relativ față de folderul "files/" din ZIP,
+      // deci corespunde direct cu calea relativă față de documentDirectory
+      const dest = `${FileSystem.documentDirectory}${relativePath}`;
+      const destDir = dest.substring(0, dest.lastIndexOf('/'));
+      await FileSystem.makeDirectoryAsync(destDir, { intermediates: true });
+      await FileSystem.writeAsStringAsync(dest, b64, { encoding: FileSystem.EncodingType.Base64 });
+    } catch {
+      // Fișier individual inaccesibil — continuă
+    }
+  }
+}
+
+/**
+ * Importă datele dintr-un backup ZIP (version 4) sau JSON vechi (version 1-3).
+ * Backward compatibility: backupurile JSON mai vechi sunt importate ca înainte.
+ */
 export async function importBackup(): Promise<ImportResult> {
   const result = await DocumentPicker.getDocumentAsync({
-    type: 'application/json',
+    type: ['application/zip', 'application/json', 'public.zip-archive', 'public.json'],
     copyToCacheDirectory: true,
   });
 
@@ -95,25 +162,135 @@ export async function importBackup(): Promise<ImportResult> {
     throw new Error('Anulat');
   }
 
-  const uri = result.assets[0].uri;
-  const json = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.UTF8 });
-  const payload = JSON.parse(json);
+  const asset = result.assets[0];
+  const uri = asset.uri;
+  const name = asset.name ?? '';
 
-  // Pasul 1: Restaurare imagini (version 3+)
-  if (payload.images && typeof payload.images === 'object') {
-    const dir = `${FileSystem.documentDirectory}documents`;
-    await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
-    for (const [relativePath, base64] of Object.entries(payload.images as Record<string, string>)) {
-      try {
-        const dest = `${FileSystem.documentDirectory}${relativePath}`;
-        await FileSystem.writeAsStringAsync(dest, base64, { encoding: FileSystem.EncodingType.Base64 });
-      } catch {
-        // Skip imagini care nu pot fi restaurate
+  const isZip =
+    name.toLowerCase().endsWith('.zip') ||
+    asset.mimeType === 'application/zip' ||
+    asset.mimeType === 'public.zip-archive';
+
+  let payload: Record<string, unknown>;
+
+  if (isZip) {
+    // --- Format ZIP (version 4) ---
+    let zipBase64: string;
+    try {
+      zipBase64 = await FileSystem.readAsStringAsync(uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+    } catch {
+      throw new Error('Nu s-a putut citi fișierul ZIP.');
+    }
+
+    let zip: JSZip;
+    try {
+      zip = await JSZip.loadAsync(zipBase64, { base64: true });
+    } catch {
+      throw new Error('Fișierul ZIP este invalid sau corupt.');
+    }
+
+    const manifestFile = zip.file('backup.json');
+    if (!manifestFile) {
+      throw new Error('Fișierul ZIP nu conține un manifest valid (backup.json lipsă).');
+    }
+
+    const manifestText = await manifestFile.async('string');
+    try {
+      payload = JSON.parse(manifestText) as Record<string, unknown>;
+    } catch {
+      throw new Error('Manifestul backup.json este invalid.');
+    }
+
+    // Extrage fișierele din ZIP pe disk
+    await extractFilesFromZip(zip);
+  } else {
+    // --- Format JSON vechi (version 1-3) ---
+    const json = await FileSystem.readAsStringAsync(uri, {
+      encoding: FileSystem.EncodingType.UTF8,
+    });
+    try {
+      payload = JSON.parse(json) as Record<string, unknown>;
+    } catch {
+      throw new Error('Fișierul JSON este invalid sau corupt.');
+    }
+
+    // Restaurare imagini din câmpul images (version 3)
+    if (payload.images && typeof payload.images === 'object') {
+      const imagesDir = `${FileSystem.documentDirectory}documents`;
+      await FileSystem.makeDirectoryAsync(imagesDir, { intermediates: true });
+      for (const [relativePath, base64] of Object.entries(
+        payload.images as Record<string, string>
+      )) {
+        try {
+          const dest = `${FileSystem.documentDirectory}${relativePath}`;
+          await FileSystem.writeAsStringAsync(dest, base64, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+        } catch {
+          // Skip imagini care nu pot fi restaurate
+        }
       }
     }
   }
 
+  // --- Încarcă entitățile existente pentru deduplicare ---
+  const [
+    existingPersons,
+    existingProperties,
+    existingVehicles,
+    existingCards,
+    existingAnimals,
+    existingCompanies,
+    existingDocuments,
+    existingCustomTypes,
+  ] = await Promise.all([
+    entities.getPersons(),
+    entities.getProperties(),
+    entities.getVehicles(),
+    entities.getCards(),
+    entities.getAnimals(),
+    entities.getCompanies(),
+    docs.getDocuments(),
+    getCustomTypes(),
+  ]);
+
+  const existingPersonByName = new Map(
+    existingPersons.map(p => [p.name.toLowerCase().trim(), p.id])
+  );
+  const existingPropertyByName = new Map(
+    existingProperties.map(p => [p.name.toLowerCase().trim(), p.id])
+  );
+  const existingVehicleByName = new Map(
+    existingVehicles.map(v => [v.name.toLowerCase().trim(), v.id])
+  );
+  const existingCardByKey = new Map(
+    existingCards.map(c => [`${c.last4}|${c.nickname.toLowerCase().trim()}`, c.id])
+  );
+  const existingAnimalByKey = new Map(
+    existingAnimals.map(a => [
+      `${a.name.toLowerCase().trim()}|${a.species.toLowerCase().trim()}`,
+      a.id,
+    ])
+  );
+  const existingCompanyByCui = new Map(
+    existingCompanies.filter(c => c.cui).map(c => [c.cui!, c.id])
+  );
+  const existingCompanyByName = new Map(
+    existingCompanies.map(c => [c.name.toLowerCase().trim(), c.id])
+  );
+  const existingCustomTypeByName = new Map(
+    existingCustomTypes.map(ct => [ct.name.toLowerCase().trim(), ct.id])
+  );
+  // Document key: type + issue_date + expiry_date
+  const existingDocByKey = new Map(
+    existingDocuments.map(d => [`${d.type}|${d.issue_date ?? ''}|${d.expiry_date ?? ''}`, d.id])
+  );
+
+  // --- Import entități și documente (comun pentru ambele formate) ---
   let imported = 0;
+  let skipped = 0;
   const errors: string[] = [];
 
   const personMap = new Map<string, string>();
@@ -123,112 +300,196 @@ export async function importBackup(): Promise<ImportResult> {
   const animalMap = new Map<string, string>();
   const companyMap = new Map<string, string>();
   const customTypeMap = new Map<string, string>();
-  const docIdMap = new Map<string, string>(); // old ID → new ID
+  const docIdMap = new Map<string, string>();
 
-  for (const p of payload.persons ?? []) {
+  type AnyRecord = Record<string, unknown>;
+
+  for (const p of (payload.persons as AnyRecord[]) ?? []) {
     try {
-      const created = await entities.createPerson(p.name || 'Persoană');
-      if (p.id) personMap.set(p.id, created.id);
-      imported++;
+      const nameKey = ((p.name as string) || '').toLowerCase().trim();
+      const existingId = existingPersonByName.get(nameKey);
+      if (existingId) {
+        if (p.id) personMap.set(p.id as string, existingId);
+        skipped++;
+      } else {
+        const created = await entities.createPerson((p.name as string) || 'Persoană');
+        if (p.id) personMap.set(p.id as string, created.id);
+        existingPersonByName.set(nameKey, created.id);
+        imported++;
+      }
     } catch (e) {
       errors.push(`Persoană "${p.name}": ${e instanceof Error ? e.message : 'eroare'}`);
     }
   }
 
-  for (const pr of payload.properties ?? []) {
+  for (const pr of (payload.properties as AnyRecord[]) ?? []) {
     try {
-      const created = await entities.createProperty(pr.name || 'Proprietate');
-      if (pr.id) propertyMap.set(pr.id, created.id);
-      imported++;
+      const nameKey = ((pr.name as string) || '').toLowerCase().trim();
+      const existingId = existingPropertyByName.get(nameKey);
+      if (existingId) {
+        if (pr.id) propertyMap.set(pr.id as string, existingId);
+        skipped++;
+      } else {
+        const created = await entities.createProperty((pr.name as string) || 'Proprietate');
+        if (pr.id) propertyMap.set(pr.id as string, created.id);
+        existingPropertyByName.set(nameKey, created.id);
+        imported++;
+      }
     } catch (e) {
       errors.push(`Proprietate "${pr.name}": ${e instanceof Error ? e.message : 'eroare'}`);
     }
   }
 
-  for (const v of payload.vehicles ?? []) {
+  for (const v of (payload.vehicles as AnyRecord[]) ?? []) {
     try {
-      const created = await entities.createVehicle(v.name || 'Vehicul');
-      if (v.id) vehicleMap.set(v.id, created.id);
-      imported++;
+      const nameKey = ((v.name as string) || '').toLowerCase().trim();
+      const existingId = existingVehicleByName.get(nameKey);
+      if (existingId) {
+        if (v.id) vehicleMap.set(v.id as string, existingId);
+        skipped++;
+      } else {
+        const created = await entities.createVehicle((v.name as string) || 'Vehicul');
+        if (v.id) vehicleMap.set(v.id as string, created.id);
+        existingVehicleByName.set(nameKey, created.id);
+        imported++;
+      }
     } catch (e) {
       errors.push(`Vehicul "${v.name}": ${e instanceof Error ? e.message : 'eroare'}`);
     }
   }
 
-  for (const c of payload.cards ?? []) {
+  for (const c of (payload.cards as AnyRecord[]) ?? []) {
     try {
-      const created = await entities.createCard(c.nickname || 'Card', c.last4 || '****', c.expiry);
-      if (c.id) cardMap.set(c.id, created.id);
-      imported++;
+      const cardKey = `${(c.last4 as string) || ''}|${((c.nickname as string) || '').toLowerCase().trim()}`;
+      const existingId = existingCardByKey.get(cardKey);
+      if (existingId) {
+        if (c.id) cardMap.set(c.id as string, existingId);
+        skipped++;
+      } else {
+        const created = await entities.createCard(
+          (c.nickname as string) || 'Card',
+          (c.last4 as string) || '****',
+          c.expiry as string | undefined
+        );
+        if (c.id) cardMap.set(c.id as string, created.id);
+        existingCardByKey.set(cardKey, created.id);
+        imported++;
+      }
     } catch (e) {
       errors.push(`Card "${c.nickname}": ${e instanceof Error ? e.message : 'eroare'}`);
     }
   }
 
-  for (const a of payload.animals ?? []) {
+  for (const a of (payload.animals as AnyRecord[]) ?? []) {
     try {
-      const created = await entities.createAnimal(a.name || 'Animal', a.species || '');
-      if (a.id) animalMap.set(a.id, created.id);
-      imported++;
+      const animalKey = `${((a.name as string) || '').toLowerCase().trim()}|${((a.species as string) || '').toLowerCase().trim()}`;
+      const existingId = existingAnimalByKey.get(animalKey);
+      if (existingId) {
+        if (a.id) animalMap.set(a.id as string, existingId);
+        skipped++;
+      } else {
+        const created = await entities.createAnimal(
+          (a.name as string) || 'Animal',
+          (a.species as string) || ''
+        );
+        if (a.id) animalMap.set(a.id as string, created.id);
+        existingAnimalByKey.set(animalKey, created.id);
+        imported++;
+      }
     } catch (e) {
       errors.push(`Animal "${a.name}": ${e instanceof Error ? e.message : 'eroare'}`);
     }
   }
 
-  for (const co of payload.companies ?? []) {
+  for (const co of (payload.companies as AnyRecord[]) ?? []) {
     try {
-      const created = await entities.createCompany(co.name || 'Firmă', co.cui, co.reg_com);
-      if (co.id) companyMap.set(co.id, created.id);
-      imported++;
+      const cui = co.cui as string | undefined;
+      const nameKey = ((co.name as string) || '').toLowerCase().trim();
+      const existingId =
+        (cui && existingCompanyByCui.get(cui)) ?? existingCompanyByName.get(nameKey);
+      if (existingId) {
+        if (co.id) companyMap.set(co.id as string, existingId);
+        skipped++;
+      } else {
+        const created = await entities.createCompany(
+          (co.name as string) || 'Firmă',
+          cui,
+          co.reg_com as string | undefined
+        );
+        if (co.id) companyMap.set(co.id as string, created.id);
+        if (cui) existingCompanyByCui.set(cui, created.id);
+        existingCompanyByName.set(nameKey, created.id);
+        imported++;
+      }
     } catch (e) {
       errors.push(`Firmă "${co.name}": ${e instanceof Error ? e.message : 'eroare'}`);
     }
   }
 
-  for (const ct of payload.customTypes ?? []) {
+  for (const ct of (payload.customTypes as AnyRecord[]) ?? []) {
     try {
-      const created = await createCustomType(ct.name || 'Tip');
-      if (ct.id) customTypeMap.set(ct.id, created.id);
-      imported++;
+      const nameKey = ((ct.name as string) || '').toLowerCase().trim();
+      const existingId = existingCustomTypeByName.get(nameKey);
+      if (existingId) {
+        if (ct.id) customTypeMap.set(ct.id as string, existingId);
+        skipped++;
+      } else {
+        const created = await createCustomType((ct.name as string) || 'Tip');
+        if (ct.id) customTypeMap.set(ct.id as string, created.id);
+        existingCustomTypeByName.set(nameKey, created.id);
+        imported++;
+      }
     } catch (e) {
       errors.push(`Tip personalizat "${ct.name}": ${e instanceof Error ? e.message : 'eroare'}`);
     }
   }
 
-  for (const d of payload.documents ?? []) {
+  for (const d of (payload.documents as AnyRecord[]) ?? []) {
     try {
-      // Normalizează file_path la relativ (pentru backupuri vechi cu path-uri absolute)
-      const filePath = d.file_path ? toRelativePath(d.file_path) : undefined;
+      const docKey = `${d.type as string}|${(d.issue_date as string) ?? ''}|${(d.expiry_date as string) ?? ''}`;
+      const existingDocId = existingDocByKey.get(docKey);
+      if (existingDocId) {
+        if (d.id) docIdMap.set(d.id as string, existingDocId);
+        skipped++;
+        continue;
+      }
+      const filePath = d.file_path ? toRelativePath(d.file_path as string) : undefined;
       const created = await docs.createDocument({
-        type: d.type,
-        custom_type_id: d.custom_type_id ? (customTypeMap.get(d.custom_type_id) ?? undefined) : undefined,
-        issue_date: d.issue_date || undefined,
-        expiry_date: d.expiry_date || undefined,
-        note: d.note || undefined,
+        type: d.type as DocumentType,
+        custom_type_id: d.custom_type_id
+          ? (customTypeMap.get(d.custom_type_id as string) ?? undefined)
+          : undefined,
+        issue_date: (d.issue_date as string) || undefined,
+        expiry_date: (d.expiry_date as string) || undefined,
+        note: (d.note as string) || undefined,
         file_path: filePath || undefined,
-        ocr_text: d.ocr_text || undefined,
-        metadata: d.metadata || undefined,
-        person_id: d.person_id ? personMap.get(d.person_id) : undefined,
-        property_id: d.property_id ? propertyMap.get(d.property_id) : undefined,
-        vehicle_id: d.vehicle_id ? vehicleMap.get(d.vehicle_id) : undefined,
-        card_id: d.card_id ? cardMap.get(d.card_id) : undefined,
-        animal_id: d.animal_id ? animalMap.get(d.animal_id) : undefined,
-        company_id: d.company_id ? companyMap.get(d.company_id) : undefined,
+        ocr_text: (d.ocr_text as string) || undefined,
+        metadata: d.metadata
+          ? typeof d.metadata === 'string'
+            ? (JSON.parse(d.metadata) as Record<string, string>)
+            : (d.metadata as Record<string, string>)
+          : undefined,
+        person_id: d.person_id ? personMap.get(d.person_id as string) : undefined,
+        property_id: d.property_id ? propertyMap.get(d.property_id as string) : undefined,
+        vehicle_id: d.vehicle_id ? vehicleMap.get(d.vehicle_id as string) : undefined,
+        card_id: d.card_id ? cardMap.get(d.card_id as string) : undefined,
+        animal_id: d.animal_id ? animalMap.get(d.animal_id as string) : undefined,
+        company_id: d.company_id ? companyMap.get(d.company_id as string) : undefined,
       });
-      if (d.id) docIdMap.set(d.id, created.id);
+      if (d.id) docIdMap.set(d.id as string, created.id);
+      existingDocByKey.set(docKey, created.id);
       imported++;
     } catch (e) {
       errors.push(`Document "${d.type}": ${e instanceof Error ? e.message : 'eroare'}`);
     }
   }
 
-  // Restaurare pagini suplimentare (document_pages)
-  for (const page of payload.documentPages ?? []) {
+  for (const page of (payload.documentPages as AnyRecord[]) ?? []) {
     try {
       if (!page.document_id || !page.file_path) continue;
-      const newDocId = docIdMap.get(page.document_id);
+      const newDocId = docIdMap.get(page.document_id as string);
       if (!newDocId) continue;
-      const filePath = toRelativePath(page.file_path);
+      const filePath = toRelativePath(page.file_path as string);
       await docs.addDocumentPage(newDocId, filePath);
       imported++;
     } catch (e) {
@@ -236,5 +497,5 @@ export async function importBackup(): Promise<ImportResult> {
     }
   }
 
-  return { imported, errors };
+  return { imported, skipped, errors };
 }
