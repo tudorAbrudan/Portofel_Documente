@@ -1,5 +1,12 @@
 import { useState } from 'react';
-import { StyleSheet, Pressable, Alert, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
+import {
+  StyleSheet,
+  Pressable,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ActivityIndicator,
+} from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { Text, View, ThemedTextInput } from '@/components/Themed';
@@ -20,9 +27,19 @@ const ALL_ENTITY_TYPES: { key: EntityType; label: string }[] = [
 
 export default function AddEntityScreen() {
   const params = useLocalSearchParams<{ type?: string }>();
-  const [chosenType, setChosenType] = useState<EntityType | null>((params.type as EntityType) || null);
+  const [chosenType, setChosenType] = useState<EntityType | null>(
+    (params.type as EntityType) || null
+  );
   const type = chosenType || 'person';
-  const { createPerson, createProperty, createVehicle, createCard, createAnimal, createCompany, refresh } = useEntities();
+  const {
+    createPerson,
+    createProperty,
+    createVehicle,
+    createCard,
+    createAnimal,
+    createCompany,
+    refresh,
+  } = useEntities();
   const { visibleEntityTypes } = useVisibilitySettings();
   const ENTITY_TYPES = ALL_ENTITY_TYPES.filter(t => visibleEntityTypes.includes(t.key));
 
@@ -79,7 +96,8 @@ export default function AddEntityScreen() {
       else if (type === 'property') await createProperty(name.trim());
       else if (type === 'vehicle') await createVehicle(name.trim());
       else if (type === 'animal') await createAnimal(name.trim(), species.trim() || 'câine');
-      else if (type === 'company') await createCompany(name.trim(), cui.trim() || undefined, regCom.trim() || undefined);
+      else if (type === 'company')
+        await createCompany(name.trim(), cui.trim() || undefined, regCom.trim() || undefined);
       else await createCard(nickname.trim(), last4.trim() || '****', expiry.trim() || undefined);
       await refresh();
       router.back();
@@ -104,14 +122,16 @@ export default function AddEntityScreen() {
           {visibleEntityTypes.includes('vehicle') && (
             <Pressable
               style={({ pressed }) => [styles.wizardButton, pressed && styles.buttonPressed]}
-              onPress={() => router.push('/(tabs)/entitati/wizard-masina')}>
+              onPress={() => router.push('/(tabs)/entitati/wizard-masina')}
+            >
               <Text style={styles.wizardButtonText}>Adaugă mașină (wizard)</Text>
             </Pressable>
           )}
           {visibleEntityTypes.includes('property') && (
             <Pressable
               style={({ pressed }) => [styles.wizardButton, pressed && styles.buttonPressed]}
-              onPress={() => router.push('/(tabs)/entitati/wizard-proprietate')}>
+              onPress={() => router.push('/(tabs)/entitati/wizard-proprietate')}
+            >
               <Text style={styles.wizardButtonText}>Adaugă proprietate (wizard)</Text>
             </Pressable>
           )}
@@ -122,7 +142,8 @@ export default function AddEntityScreen() {
             <Pressable
               key={key}
               style={({ pressed }) => [styles.typeButton, pressed && styles.buttonPressed]}
-              onPress={() => setChosenType(key)}>
+              onPress={() => setChosenType(key)}
+            >
               <Text style={styles.typeButtonText}>{label}</Text>
             </Pressable>
           ))}
@@ -132,19 +153,32 @@ export default function AddEntityScreen() {
   }
 
   return (
-    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
       <View style={styles.inner}>
         {!isCard && (
           <>
             <Text style={styles.label}>Nume</Text>
             <ThemedTextInput
-            style={styles.input}
-            placeholder={type === 'company' ? 'Denumire firmă (ex. ABC SRL)' : type === 'person' ? 'Nume persoană' : type === 'vehicle' ? 'Mașină (ex. Dacia Logan)' : type === 'animal' ? 'Nume animal (ex. Rex)' : 'Proprietate (ex. Apartament X)'}
-            placeholderTextColor="#999"
-            value={name}
-            onChangeText={setName}
-            editable={!loading}
-          />
+              style={styles.input}
+              placeholder={
+                type === 'company'
+                  ? 'Denumire firmă (ex. ABC SRL)'
+                  : type === 'person'
+                    ? 'Nume persoană'
+                    : type === 'vehicle'
+                      ? 'Mașină (ex. Dacia Logan)'
+                      : type === 'animal'
+                        ? 'Nume animal (ex. Rex)'
+                        : 'Proprietate (ex. Apartament X)'
+              }
+              placeholderTextColor="#999"
+              value={name}
+              onChangeText={setName}
+              editable={!loading}
+            />
           </>
         )}
         {isCompany && (
@@ -187,11 +221,13 @@ export default function AddEntityScreen() {
             <Pressable
               style={({ pressed }) => [styles.scanButton, pressed && styles.buttonPressed]}
               onPress={scanCard}
-              disabled={ocrLoading || loading}>
-              {ocrLoading
-                ? <ActivityIndicator color="#fff" />
-                : <Text style={styles.scanButtonText}>Scanează cardul (OCR)</Text>
-              }
+              disabled={ocrLoading || loading}
+            >
+              {ocrLoading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.scanButtonText}>Scanează cardul (OCR)</Text>
+              )}
             </Pressable>
             <Text style={styles.label}>Nickname (ex. Card personal)</Text>
             <ThemedTextInput
@@ -208,7 +244,7 @@ export default function AddEntityScreen() {
               placeholder="1234"
               placeholderTextColor="#999"
               value={last4}
-              onChangeText={(t) => setLast4(t.replace(/\D/g, '').slice(0, 4))}
+              onChangeText={t => setLast4(t.replace(/\D/g, '').slice(0, 4))}
               keyboardType="number-pad"
               editable={!loading}
             />
@@ -227,7 +263,8 @@ export default function AddEntityScreen() {
         <Pressable
           style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
           onPress={handleSubmit}
-          disabled={loading}>
+          disabled={loading}
+        >
           <Text style={styles.buttonText}>{loading ? 'Se salvează...' : 'Salvează'}</Text>
         </Pressable>
       </View>

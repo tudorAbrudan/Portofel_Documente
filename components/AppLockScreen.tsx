@@ -1,5 +1,14 @@
 import { useState } from 'react';
-import { StyleSheet, View, Text, Pressable, TextInput, Alert, KeyboardAvoidingView, Platform } from 'react-native';
+import {
+  StyleSheet,
+  View,
+  Text,
+  Pressable,
+  TextInput,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+} from 'react-native';
 import { SymbolView } from 'expo-symbols';
 import { primary } from '@/theme/colors';
 
@@ -9,7 +18,11 @@ interface AppLockScreenProps {
   onUnlockPin: (pin: string) => Promise<boolean>;
 }
 
-export default function AppLockScreen({ biometricAvailable, onUnlockBiometric, onUnlockPin }: AppLockScreenProps) {
+export default function AppLockScreen({
+  biometricAvailable,
+  onUnlockBiometric,
+  onUnlockPin,
+}: AppLockScreenProps) {
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -41,7 +54,10 @@ export default function AppLockScreen({ biometricAvailable, onUnlockBiometric, o
   };
 
   return (
-    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
       <View style={styles.inner}>
         <Text style={styles.title}>Aplicația e blocată</Text>
         {biometricAvailable && (
@@ -59,7 +75,7 @@ export default function AppLockScreen({ biometricAvailable, onUnlockBiometric, o
           <TextInput
             style={styles.pinInput}
             value={pin}
-            onChangeText={(t) => {
+            onChangeText={t => {
               setPin(t.replace(/\D/g, '').slice(0, 8));
               setError('');
             }}
@@ -71,7 +87,11 @@ export default function AppLockScreen({ biometricAvailable, onUnlockBiometric, o
             editable={!loading}
             onSubmitEditing={handlePinSubmit}
           />
-          <Pressable style={[styles.pinBtn, loading && styles.pinBtnDisabled]} onPress={handlePinSubmit} disabled={loading || pin.length < 4}>
+          <Pressable
+            style={[styles.pinBtn, loading && styles.pinBtnDisabled]}
+            onPress={handlePinSubmit}
+            disabled={loading || pin.length < 4}
+          >
             <Text style={styles.pinBtnText}>Deschide</Text>
           </Pressable>
         </View>

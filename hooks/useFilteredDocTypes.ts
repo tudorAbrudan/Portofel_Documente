@@ -20,9 +20,9 @@ export function useFilteredDocTypes(): {
   const { visibleDocTypes, loading } = useVisibilitySettings();
 
   const docTypeOptions = useMemo<DocTypeOption[]>(() => {
-    return STANDARD_DOC_TYPES
-      .filter(type => visibleDocTypes.includes(type) || type === 'altul')
-      .map(type => ({ value: type, label: DOCUMENT_TYPE_LABELS[type] }));
+    return STANDARD_DOC_TYPES.filter(
+      type => visibleDocTypes.includes(type) || type === 'altul'
+    ).map(type => ({ value: type, label: DOCUMENT_TYPE_LABELS[type] }));
   }, [visibleDocTypes]);
 
   return { docTypeOptions, visibleDocTypes, loading };

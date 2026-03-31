@@ -1,5 +1,5 @@
 import { db, generateId } from './db';
-import type { Document, DocumentPage, DocumentType } from '@/types';
+import type { Document, DocumentPage, DocumentType, DocumentEntityLink, EntityType } from '@/types';
 
 export interface CreateDocumentInput {
   type: DocumentType;
@@ -8,6 +8,7 @@ export interface CreateDocumentInput {
   expiry_date?: string;
   note?: string;
   file_path?: string;
+  // Legacy single-entity (backward compat — scriem și în junction table)
   person_id?: string;
   property_id?: string;
   vehicle_id?: string;
@@ -17,6 +18,8 @@ export interface CreateDocumentInput {
   auto_delete?: string;
   ocr_text?: string;
   metadata?: Record<string, string>;
+  // Multi-entity links suplimentare
+  extra_entity_links?: DocumentEntityLink[];
 }
 
 type Row = {
@@ -46,6 +49,54 @@ type PageRow = {
   file_path: string;
   created_at: string;
 };
+
+// ─── Junction table helpers ───────────────────────────────────────────────────
+
+async function getEntityLinks(documentId: string): Promise<DocumentEntityLink[]> {
+  const rows = await db.getAllAsync<{ entity_type: string; entity_id: string }>(
+    'SELECT entity_type, entity_id FROM document_entities WHERE document_id = ?',
+    [documentId]
+  );
+  return rows.map(r => ({ entityType: r.entity_type as EntityType, entityId: r.entity_id }));
+}
+
+async function saveEntityLinks(documentId: string, links: DocumentEntityLink[]): Promise<void> {
+  // Șterge linkurile existente
+  await db.runAsync('DELETE FROM document_entities WHERE document_id = ?', [documentId]);
+  // Inserează noile linkuri
+  for (const link of links) {
+    await db.runAsync(
+      'INSERT INTO document_entities (id, document_id, entity_type, entity_id) VALUES (?, ?, ?, ?)',
+      [generateId(), documentId, link.entityType, link.entityId]
+    );
+  }
+}
+
+function buildEntityLinksFromInput(input: {
+  person_id?: string;
+  property_id?: string;
+  vehicle_id?: string;
+  card_id?: string;
+  animal_id?: string;
+  company_id?: string;
+  extra_entity_links?: DocumentEntityLink[];
+}): DocumentEntityLink[] {
+  const links: DocumentEntityLink[] = [];
+  if (input.person_id) links.push({ entityType: 'person', entityId: input.person_id });
+  if (input.vehicle_id) links.push({ entityType: 'vehicle', entityId: input.vehicle_id });
+  if (input.property_id) links.push({ entityType: 'property', entityId: input.property_id });
+  if (input.card_id) links.push({ entityType: 'card', entityId: input.card_id });
+  if (input.animal_id) links.push({ entityType: 'animal', entityId: input.animal_id });
+  if (input.company_id) links.push({ entityType: 'company', entityId: input.company_id });
+  // Adaugă linkuri extra (fără duplicate)
+  for (const extra of input.extra_entity_links ?? []) {
+    const exists = links.some(
+      l => l.entityType === extra.entityType && l.entityId === extra.entityId
+    );
+    if (!exists) links.push(extra);
+  }
+  return links;
+}
 
 function mapRow(r: Row, pages?: DocumentPage[]): Document {
   return {
@@ -180,6 +231,13 @@ export async function createDocument(input: CreateDocumentInput): Promise<Docume
       created_at,
     ]
   );
+
+  // Salvează în junction table
+  const entityLinks = buildEntityLinksFromInput(input);
+  if (entityLinks.length > 0) {
+    await saveEntityLinks(id, entityLinks);
+  }
+
   return {
     id,
     type: input.type,
@@ -197,6 +255,7 @@ export async function createDocument(input: CreateDocumentInput): Promise<Docume
     company_id: input.company_id,
     auto_delete: input.auto_delete,
     ocr_text: input.ocr_text,
+    entity_links: entityLinks,
     created_at,
   };
 }
@@ -219,6 +278,8 @@ export interface UpdateDocumentInput {
   animal_id?: string;
   auto_delete?: string;
   metadata?: Record<string, string>;
+  // Pentru update multi-entity: dacă prezent, rescrie junction table
+  entity_links?: DocumentEntityLink[];
 }
 
 export async function updateDocument(id: string, input: UpdateDocumentInput): Promise<void> {
@@ -237,6 +298,21 @@ export async function updateDocument(id: string, input: UpdateDocumentInput): Pr
       id,
     ]
   );
+  // Actualizează junction table dacă s-au trimis linkuri explicite
+  if (input.entity_links !== undefined) {
+    await saveEntityLinks(id, input.entity_links);
+    // Sincronizăm și coloanele legacy pentru compat
+    const personId = input.entity_links.find(l => l.entityType === 'person')?.entityId ?? null;
+    const vehicleId = input.entity_links.find(l => l.entityType === 'vehicle')?.entityId ?? null;
+    const propertyId = input.entity_links.find(l => l.entityType === 'property')?.entityId ?? null;
+    const cardId = input.entity_links.find(l => l.entityType === 'card')?.entityId ?? null;
+    const animalId = input.entity_links.find(l => l.entityType === 'animal')?.entityId ?? null;
+    const companyId = input.entity_links.find(l => l.entityType === 'company')?.entityId ?? null;
+    await db.runAsync(
+      'UPDATE documents SET person_id=?, vehicle_id=?, property_id=?, card_id=?, animal_id=?, company_id=? WHERE id=?',
+      [personId, vehicleId, propertyId, cardId, animalId, companyId, id]
+    );
+  }
 }
 
 export async function linkDocumentToEntity(
@@ -262,6 +338,75 @@ export async function linkDocumentToEntity(
       id,
     ]
   );
+  // Sincronizăm și junction table
+  const links = buildEntityLinksFromInput(entity);
+  await saveEntityLinks(id, links);
+}
+
+export async function addEntityLinkToDocument(
+  documentId: string,
+  link: DocumentEntityLink
+): Promise<void> {
+  // Verificăm dacă linkul există deja
+  const existing = await db.getFirstAsync<{ id: string }>(
+    'SELECT id FROM document_entities WHERE document_id = ? AND entity_type = ? AND entity_id = ?',
+    [documentId, link.entityType, link.entityId]
+  );
+  if (existing) return;
+
+  await db.runAsync(
+    'INSERT INTO document_entities (id, document_id, entity_type, entity_id) VALUES (?, ?, ?, ?)',
+    [generateId(), documentId, link.entityType, link.entityId]
+  );
+  // Actualizăm și coloana legacy dacă e prima entitate de acel tip
+  const colMap: Record<EntityType, string> = {
+    person: 'person_id',
+    vehicle: 'vehicle_id',
+    property: 'property_id',
+    card: 'card_id',
+    animal: 'animal_id',
+    company: 'company_id',
+  };
+  const col = colMap[link.entityType];
+  const current = await db.getFirstAsync<Record<string, string | null>>(
+    `SELECT ${col} FROM documents WHERE id = ?`,
+    [documentId]
+  );
+  if (current && current[col] === null) {
+    await db.runAsync(`UPDATE documents SET ${col} = ? WHERE id = ?`, [link.entityId, documentId]);
+  }
+}
+
+export async function removeEntityLinkFromDocument(
+  documentId: string,
+  link: DocumentEntityLink
+): Promise<void> {
+  await db.runAsync(
+    'DELETE FROM document_entities WHERE document_id = ? AND entity_type = ? AND entity_id = ?',
+    [documentId, link.entityType, link.entityId]
+  );
+  // Actualizăm coloana legacy cu primul link rămas (sau null)
+  const remaining = await db.getFirstAsync<{ entity_id: string } | null>(
+    'SELECT entity_id FROM document_entities WHERE document_id = ? AND entity_type = ? LIMIT 1',
+    [documentId, link.entityType]
+  );
+  const colMap: Record<EntityType, string> = {
+    person: 'person_id',
+    vehicle: 'vehicle_id',
+    property: 'property_id',
+    card: 'card_id',
+    animal: 'animal_id',
+    company: 'company_id',
+  };
+  const col = colMap[link.entityType];
+  await db.runAsync(`UPDATE documents SET ${col} = ? WHERE id = ?`, [
+    remaining?.entity_id ?? null,
+    documentId,
+  ]);
+}
+
+export async function getDocumentEntityLinks(documentId: string): Promise<DocumentEntityLink[]> {
+  return getEntityLinks(documentId);
 }
 
 export async function addDocumentPage(documentId: string, filePath: string): Promise<void> {

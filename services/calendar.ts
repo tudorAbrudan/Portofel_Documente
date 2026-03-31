@@ -5,7 +5,13 @@ import type { DocumentType } from '@/types';
 // expo-calendar necesită build nativ (expo prebuild + expo run:ios).
 // Importăm cu require pentru a nu crăpa app-ul dacă modulul nativ nu e linkat.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const CalendarModule = (() => { try { return require('expo-calendar'); } catch { return null; } })();
+const CalendarModule = (() => {
+  try {
+    return require('expo-calendar');
+  } catch {
+    return null;
+  }
+})();
 
 const REMINDER_DAYS_BEFORE = 14;
 
@@ -76,7 +82,9 @@ export async function addExpiryCalendarEvent(opts: CalendarEventOptions): Promis
       asigraUrl ? `Compară oferte: ${asigraUrl}` : null,
       deepLink ? `Deschide în Acte: ${deepLink}` : null,
       'Adăugat de Acte – Documente Personale.',
-    ].filter(Boolean).join('\n');
+    ]
+      .filter(Boolean)
+      .join('\n');
     const notes = noteLines;
 
     const [year, month, day] = opts.expiryDate.split('-').map(Number);
@@ -104,9 +112,9 @@ export function isCalendarAvailable(): boolean {
 }
 
 export interface EventCalendarOptions {
-  title: string;          // ex: "Concert Coldplay"
-  eventDate: string;      // AAAA-LL-ZZ sau ZZ.LL.AAAA
-  venue?: string;         // locație / rută
+  title: string; // ex: "Concert Coldplay"
+  eventDate: string; // AAAA-LL-ZZ sau ZZ.LL.AAAA
+  venue?: string; // locație / rută
   note?: string;
   documentId?: string;
 }
@@ -129,7 +137,9 @@ export async function addEventToCalendar(opts: EventCalendarOptions): Promise<st
     } else {
       const m = opts.eventDate.match(/^(\d{2})[.\/-](\d{2})[.\/-](\d{4})$/);
       if (!m) return null;
-      day = Number(m[1]); month = Number(m[2]); year = Number(m[3]);
+      day = Number(m[1]);
+      month = Number(m[2]);
+      year = Number(m[3]);
     }
 
     const startDate = new Date(year, month - 1, day, 10, 0, 0);
@@ -141,7 +151,9 @@ export async function addEventToCalendar(opts: EventCalendarOptions): Promise<st
       opts.note ? `Notă: ${opts.note}` : null,
       deepLink ? `Deschide în Acte: ${deepLink}` : null,
       'Adăugat de Acte – Documente Personale.',
-    ].filter(Boolean).join('\n');
+    ]
+      .filter(Boolean)
+      .join('\n');
 
     const eventId = await CalendarModule.createEventAsync(calendarId, {
       title: opts.title,
@@ -149,8 +161,8 @@ export async function addEventToCalendar(opts: EventCalendarOptions): Promise<st
       startDate,
       endDate,
       alarms: [
-        { relativeOffset: -24 * 60 },  // 1 zi înainte
-        { relativeOffset: -2 * 60 },   // 2 ore înainte
+        { relativeOffset: -24 * 60 }, // 1 zi înainte
+        { relativeOffset: -2 * 60 }, // 2 ore înainte
       ],
       url: opts.documentId ? `app:///documente/${opts.documentId}` : undefined,
       timeZone: 'Europe/Bucharest',

@@ -4,8 +4,12 @@ import { ALL_ENTITY_TYPES, STANDARD_DOC_TYPES } from '@/types';
 import * as settings from '@/services/settings';
 
 export function useVisibilitySettings() {
-  const [visibleEntityTypes, setVisibleEntityTypesState] = useState<EntityType[]>([...ALL_ENTITY_TYPES]);
-  const [visibleDocTypes, setVisibleDocTypesState] = useState<DocumentType[]>([...STANDARD_DOC_TYPES]);
+  const [visibleEntityTypes, setVisibleEntityTypesState] = useState<EntityType[]>([
+    ...ALL_ENTITY_TYPES,
+  ]);
+  const [visibleDocTypes, setVisibleDocTypesState] = useState<DocumentType[]>([
+    ...STANDARD_DOC_TYPES,
+  ]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 

@@ -35,7 +35,7 @@ export default function WizardMasinaScreen() {
   const [loading, setLoading] = useState(false);
 
   function toggleDoc(type: DocumentType) {
-    setSelected((prev) => {
+    setSelected(prev => {
       const next = new Set(prev);
       if (next.has(type)) {
         next.delete(type);
@@ -47,7 +47,7 @@ export default function WizardMasinaScreen() {
   }
 
   function setExpiry(type: DocumentType, value: string) {
-    setExpiries((prev) => ({ ...prev, [type]: value }));
+    setExpiries(prev => ({ ...prev, [type]: value }));
   }
 
   async function handleSave() {
@@ -72,7 +72,10 @@ export default function WizardMasinaScreen() {
   }
 
   return (
-    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView
+      style={styles.flex}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
       <ScrollView style={styles.flex} contentContainerStyle={styles.content}>
         {/* Step 1 */}
         <View style={styles.stepBlock}>
@@ -90,19 +93,28 @@ export default function WizardMasinaScreen() {
         {/* Step 2 + 3 combined */}
         <View style={styles.stepBlock}>
           <Text style={styles.stepTitle}>2. Documente de adăugat</Text>
-          <Text style={styles.hint}>Bifează documentele dorite și introdu data expirării (opțional).</Text>
+          <Text style={styles.hint}>
+            Bifează documentele dorite și introdu data expirării (opțional).
+          </Text>
           {DOC_OPTIONS.map(({ type, label }) => {
             const isChecked = selected.has(type);
             return (
               <View key={type} style={styles.docRow}>
                 <Pressable
-                  style={({ pressed }) => [styles.checkbox, isChecked && styles.checkboxChecked, pressed && styles.checkboxPressed]}
-                  onPress={() => toggleDoc(type)}>
+                  style={({ pressed }) => [
+                    styles.checkbox,
+                    isChecked && styles.checkboxChecked,
+                    pressed && styles.checkboxPressed,
+                  ]}
+                  onPress={() => toggleDoc(type)}
+                >
                   {isChecked && <Text style={styles.checkmark}>✓</Text>}
                 </Pressable>
                 <View style={styles.docInfo}>
                   <Pressable onPress={() => toggleDoc(type)}>
-                    <Text style={[styles.docLabel, isChecked && styles.docLabelActive]}>{label}</Text>
+                    <Text style={[styles.docLabel, isChecked && styles.docLabelActive]}>
+                      {label}
+                    </Text>
                   </Pressable>
                   {isChecked && (
                     <ThemedTextInput
@@ -110,7 +122,7 @@ export default function WizardMasinaScreen() {
                       placeholder="Data expirare (AAAA-LL-ZZ)"
                       placeholderTextColor="#aaa"
                       value={expiries[type] ?? ''}
-                      onChangeText={(v) => setExpiry(type, v)}
+                      onChangeText={v => setExpiry(type, v)}
                       editable={!loading}
                     />
                   )}
@@ -121,10 +133,17 @@ export default function WizardMasinaScreen() {
         </View>
 
         <Pressable
-          style={({ pressed }) => [styles.saveButton, pressed && styles.saveButtonPressed, loading && styles.saveButtonDisabled]}
+          style={({ pressed }) => [
+            styles.saveButton,
+            pressed && styles.saveButtonPressed,
+            loading && styles.saveButtonDisabled,
+          ]}
           onPress={handleSave}
-          disabled={loading}>
-          <Text style={styles.saveButtonText}>{loading ? 'Se salvează...' : 'Salvează mașina'}</Text>
+          disabled={loading}
+        >
+          <Text style={styles.saveButtonText}>
+            {loading ? 'Se salvează...' : 'Salvează mașina'}
+          </Text>
         </Pressable>
       </ScrollView>
     </KeyboardAvoidingView>
