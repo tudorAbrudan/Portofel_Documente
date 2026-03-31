@@ -1,9 +1,8 @@
 import { getPersons, getProperties, getVehicles, getCards, getAnimals } from './entities';
 import { getDocuments } from './documents';
 import { DOCUMENT_TYPE_LABELS } from '@/types';
-
-const MISTRAL_API_URL = 'https://api.mistral.ai/v1/chat/completions';
-const MISTRAL_API_KEY = process.env.EXPO_PUBLIC_MISTRAL_API_KEY ?? '';
+import { sendAiRequest } from './aiProvider';
+import type { AiMessage } from './aiProvider';
 
 export interface ChatMessage {
   role: 'user' | 'assistant';
@@ -22,22 +21,31 @@ async function buildContext(): Promise<string> {
 
   const lines: string[] = ['=== DATE APLICAȚIE ==='];
 
-  if (persons.length) lines.push(`Persoane: ${persons.map((p) => p.name).join(', ')}`);
-  if (properties.length) lines.push(`Proprietăți: ${properties.map((p) => p.name).join(', ')}`);
-  if (vehicles.length) lines.push(`Vehicule: ${vehicles.map((v) => v.name).join(', ')}`);
+  if (persons.length) {
+    const personStrings = persons.map(p => {
+      const parts: string[] = [p.name];
+      if (p.phone) parts.push(`tel: ${p.phone}`);
+      if (p.email) parts.push(`email: ${p.email}`);
+      if (p.iban) parts.push(`IBAN: ${p.iban}`);
+      return parts.length > 1 ? `${p.name} (${parts.slice(1).join(', ')})` : p.name;
+    });
+    lines.push(`Persoane: ${personStrings.join(', ')}`);
+  }
+  if (properties.length) lines.push(`Proprietăți: ${properties.map(p => p.name).join(', ')}`);
+  if (vehicles.length) lines.push(`Vehicule: ${vehicles.map(v => v.name).join(', ')}`);
   if (cards.length)
-    lines.push(`Carduri: ${cards.map((c) => `${c.nickname} (****${c.last4})`).join(', ')}`);
+    lines.push(`Carduri: ${cards.map(c => `${c.nickname} (****${c.last4})`).join(', ')}`);
   if (animals.length)
-    lines.push(`Animale: ${animals.map((a) => `${a.name} (${a.species})`).join(', ')}`);
+    lines.push(`Animale: ${animals.map(a => `${a.name} (${a.species})`).join(', ')}`);
 
   lines.push('\nDocumente:');
   for (const doc of documents) {
     const entity =
-      persons.find((p) => p.id === doc.person_id)?.name ??
-      vehicles.find((v) => v.id === doc.vehicle_id)?.name ??
-      properties.find((p) => p.id === doc.property_id)?.name ??
-      cards.find((c) => c.id === doc.card_id)?.nickname ??
-      animals.find((a) => a.id === doc.animal_id)?.name ??
+      persons.find(p => p.id === doc.person_id)?.name ??
+      vehicles.find(v => v.id === doc.vehicle_id)?.name ??
+      properties.find(p => p.id === doc.property_id)?.name ??
+      cards.find(c => c.id === doc.card_id)?.nickname ??
+      animals.find(a => a.id === doc.animal_id)?.name ??
       null;
     const label = DOCUMENT_TYPE_LABELS[doc.type] ?? doc.type;
     const expiry = doc.expiry_date ? ` | expiră: ${doc.expiry_date}` : '';
@@ -54,7 +62,9 @@ async function buildContext(): Promise<string> {
           .filter(([, v]) => v)
           .map(([k, v]) => `${k}: ${v}`);
         if (metaParts.length) meta = ` | ${metaParts.join(', ')}`;
-      } catch { /* metadata coruptă */ }
+      } catch {
+        /* metadata coruptă */
+      }
     }
 
     // Text OCR complet (trunchiat la 800 de caractere pentru context)
@@ -68,14 +78,7 @@ async function buildContext(): Promise<string> {
   return lines.join('\n');
 }
 
-interface MistralResponse {
-  choices: Array<{ message: { content: string } }>;
-}
-
-export async function sendMessage(
-  userMessage: string,
-  history: ChatMessage[]
-): Promise<string> {
+export async function sendMessage(userMessage: string, history: ChatMessage[]): Promise<string> {
   const context = await buildContext();
 
   const systemPrompt = `Ești un asistent pentru aplicația de documente personale. Răspunzi în română.
@@ -83,37 +86,52 @@ Ai acces la datele utilizatorului:
 
 ${context}
 
-Când răspunzi:
+## Reguli generale
 - Fii concis și util
-- Dacă întrebarea e despre documente/entități, bazează-te pe datele de mai sus
-- Când menționezi un document specific, include ID-ul lui în format [ID:xxx] ca să poată fi deschis
-- Nu inventa date care nu există în context`;
+- Bazează-te DOAR pe datele de mai sus; nu inventa date care nu există
+- Când menționezi un document specific, include ID-ul în format [ID:xxx] ca să poată fi deschis
 
-  const messages = [
+## Formate speciale — returnează EXACT formatul de mai jos când e cerut
+
+### Check-in avion / date pașaport
+Când cere "check-in", "boarding", "date pașaport" pentru o persoană:
+Nume: <nume familie>
+Prenume: <prenume>
+Data nașterii: <ZZ.LL.AAAA>
+Număr pașaport: <număr>
+Data emitere: <ZZ.LL.AAAA>
+Data expirare: <ZZ.LL.AAAA>
+Naționalitate: Română
+
+### Date buletin / CI
+Când cere "date buletin", "CI", "act identitate" pentru o persoană:
+Nume: <nume familie>
+Prenume: <prenume>
+Data nașterii: <ZZ.LL.AAAA>
+Serie și număr: <serie + număr>
+CNP: <cnp>
+Data emitere: <ZZ.LL.AAAA>
+Data expirare: <ZZ.LL.AAAA>
+
+### Date pentru RCA (din talon + carte auto)
+Când cere "date pentru RCA", "date talon pentru RCA", "completare RCA":
+Număr înmatriculare: <plate>
+Serie șasiu (VIN): <vin>
+Marcă: <marca>
+Model: <model>
+An fabricație: <an din OCR>
+Combustibil: <combustibil din OCR>
+Capacitate cilindrică: <cm3 din OCR dacă există>
+Putere: <kW/CP din OCR dacă există>
+
+### IBAN / contact persoană
+Când cere "IBAN", "cont bancar", "telefon", "email" pentru o persoană — returnează direct valoarea, fără explicații lungi.`;
+
+  const messages: AiMessage[] = [
     { role: 'system', content: systemPrompt },
-    ...history.map((m) => ({ role: m.role, content: m.content })),
+    ...history.map(m => ({ role: m.role, content: m.content })),
     { role: 'user', content: userMessage },
   ];
 
-  const response = await fetch(MISTRAL_API_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${MISTRAL_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: 'mistral-small-latest',
-      messages,
-      max_tokens: 500,
-      temperature: 0.3,
-    }),
-  });
-
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`Mistral API error: ${response.status} – ${err}`);
-  }
-
-  const data = (await response.json()) as MistralResponse;
-  return data.choices[0]?.message?.content ?? 'Fără răspuns.';
+  return sendAiRequest(messages, 500);
 }

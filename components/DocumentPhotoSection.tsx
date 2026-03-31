@@ -4,10 +4,15 @@ import {
   Image,
   Pressable,
   ActivityIndicator,
+  Platform,
   useWindowDimensions,
+  useColorScheme,
 } from 'react-native';
+import { WebView } from 'react-native-webview';
 import { Text, View } from '@/components/Themed';
 import { primary } from '@/theme/colors';
+import Colors from '@/constants/Colors';
+import { isPdfFile } from '@/services/pdfExtractor';
 
 export interface PhotoPage {
   id: string;
@@ -38,62 +43,82 @@ export function DocumentPhotoSection({
   onFullscreen,
 }: Props) {
   const { width: screenWidth } = useWindowDimensions();
+  const scheme = (useColorScheme() ?? 'light') as 'light' | 'dark';
+  const C = Colors[scheme];
   const [ocrExpanded, setOcrExpanded] = useState(false);
 
   return (
     <View style={styles.container}>
-      {pages.map((page, idx) => (
-        <View key={page.id} style={styles.imageWrap}>
-          {pages.length > 1 && (
-            <Text style={styles.pageLabel}>
-              Pagina {idx + 1} / {pages.length}
-            </Text>
-          )}
-          <View style={styles.imageContainer}>
-            <Image
-              source={{ uri: page.uri }}
-              style={[styles.image, { width: screenWidth - 40 }]}
-              resizeMode="contain"
-            />
-            <Pressable
-              style={styles.fullscreenBtn}
-              onPress={() => onFullscreen(page.uri)}
-            >
-              <Text style={styles.fullscreenBtnText}>⤢</Text>
-            </Pressable>
-          </View>
-          {/* Rotate / delete bar — doar în modul editare */}
-          {isEditing && (
-            <View style={styles.rotateBar}>
-              <Pressable
-                style={[styles.rotateBtn, styles.rotateBtnBorderRight]}
-                onPress={() => onRotate(page.id, -90)}
-              >
-                <Text style={styles.rotateBtnText}>↺  Stânga</Text>
-              </Pressable>
-              <Pressable
-                style={[styles.rotateBtn, styles.rotateBtnBorderRight]}
-                onPress={() => onRotate(page.id, 90)}
-              >
-                <Text style={styles.rotateBtnText}>↻  Dreapta</Text>
-              </Pressable>
-              <Pressable
-                style={styles.rotateBtn}
-                onPress={() => onDelete(page.id)}
-              >
-                <Text style={[styles.rotateBtnText, styles.deleteText]}>Șterge</Text>
-              </Pressable>
+      {pages.map((page, idx) => {
+        const pageIsPdf = isPdfFile(page.uri) || isPdfFile(page.id);
+        return (
+          <View key={page.id} style={styles.imageWrap}>
+            {pages.length > 1 && (
+              <Text style={styles.pageLabel}>
+                Pagina {idx + 1} / {pages.length}
+              </Text>
+            )}
+            <View style={[styles.imageContainer, { width: screenWidth - 40 }]}>
+              {pageIsPdf ? (
+                Platform.OS === 'ios' ? (
+                  <WebView
+                    source={{
+                      uri: page.uri.startsWith('file://') ? page.uri : `file://${page.uri}`,
+                    }}
+                    style={[styles.pdfWebView, { width: screenWidth - 40 }]}
+                    originWhitelist={['file://*', '*']}
+                    allowFileAccess
+                  />
+                ) : (
+                  <View style={[styles.pdfPlaceholder, { width: screenWidth - 40 }]}>
+                    <Text style={styles.pdfIcon}>📄</Text>
+                    <Text style={styles.pdfLabel}>Document PDF</Text>
+                    <Text style={styles.pdfSubLabel}>Vizualizare disponibilă după salvare</Text>
+                  </View>
+                )
+              ) : (
+                <Image
+                  source={{ uri: page.uri }}
+                  style={[styles.image, { width: screenWidth - 40 }]}
+                  resizeMode="contain"
+                />
+              )}
+              {!pageIsPdf && (
+                <Pressable style={styles.fullscreenBtn} onPress={() => onFullscreen(page.uri)}>
+                  <Text style={styles.fullscreenBtnText}>⤢</Text>
+                </Pressable>
+              )}
             </View>
-          )}
-        </View>
-      ))}
+            {/* Rotate / delete bar — doar în modul editare */}
+            {isEditing && (
+              <View style={styles.rotateBar}>
+                <Pressable
+                  style={[styles.rotateBtn, styles.rotateBtnBorderRight]}
+                  onPress={() => onRotate(page.id, -90)}
+                >
+                  <Text style={styles.rotateBtnText}>↺ Stânga</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.rotateBtn, styles.rotateBtnBorderRight]}
+                  onPress={() => onRotate(page.id, 90)}
+                >
+                  <Text style={styles.rotateBtnText}>↻ Dreapta</Text>
+                </Pressable>
+                <Pressable style={styles.rotateBtn} onPress={() => onDelete(page.id)}>
+                  <Text style={[styles.rotateBtnText, styles.deleteText]}>Șterge</Text>
+                </Pressable>
+              </View>
+            )}
+          </View>
+        );
+      })}
 
       {/* Add page + OCR — doar în modul editare */}
       {isEditing && (
         <View style={styles.photoActionsRow}>
           <Pressable style={styles.photoActionBtn} onPress={onAddPage}>
             <Text style={styles.photoActionBtnText}>
-              {pages.length === 0 ? '+ Adaugă poză' : '+ Pagină nouă'}
+              {pages.length === 0 ? '+ Adaugă fișier' : '+ Fișier nou'}
             </Text>
           </Pressable>
           {pages.length > 0 && (
@@ -118,20 +143,16 @@ export function DocumentPhotoSection({
       )}
 
       {ocrText ? (
-        <View style={styles.ocrSection}>
-          <Pressable
-            onPress={() => setOcrExpanded(v => !v)}
-            style={styles.ocrToggleRow}
-          >
-            <Text style={styles.ocrToggleLabel}>
-              Text complet extras (OCR)
-            </Text>
-            <Text style={styles.ocrToggleChevron}>
-              {ocrExpanded ? '▲ Ascunde' : '▼ Arată'}
-            </Text>
+        <View style={[styles.ocrSection, { borderColor: C.border }]}>
+          <Pressable onPress={() => setOcrExpanded(v => !v)} style={styles.ocrToggleRow}>
+            <Text style={styles.ocrToggleLabel}>Text complet extras (OCR)</Text>
+            <Text style={styles.ocrToggleChevron}>{ocrExpanded ? '▲ Ascunde' : '▼ Arată'}</Text>
           </Pressable>
           {ocrExpanded && (
-            <Text style={styles.ocrText} selectable>
+            <Text
+              style={[styles.ocrText, { backgroundColor: C.background, color: C.text }]}
+              selectable
+            >
               {ocrText}
             </Text>
           )}
@@ -158,6 +179,24 @@ const styles = StyleSheet.create({
   },
   imageContainer: { position: 'relative' },
   image: { height: 260 },
+  pdfWebView: {
+    height: 420,
+    borderRadius: 8,
+  },
+  pdfPlaceholder: {
+    height: 180,
+    backgroundColor: '#f8faf4',
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#e2ebd4',
+    borderStyle: 'dashed',
+  },
+  pdfIcon: { fontSize: 40 },
+  pdfLabel: { fontSize: 16, fontWeight: '600', color: '#333' },
+  pdfSubLabel: { fontSize: 12, color: '#888', textAlign: 'center', paddingHorizontal: 16 },
   fullscreenBtn: {
     position: 'absolute',
     top: 8,

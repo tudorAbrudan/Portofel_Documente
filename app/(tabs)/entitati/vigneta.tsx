@@ -1,4 +1,11 @@
-import { StyleSheet, ScrollView, View as RNView, Text as RNText, Pressable, Linking } from 'react-native';
+import {
+  StyleSheet,
+  ScrollView,
+  View as RNView,
+  Text as RNText,
+  Pressable,
+  Linking,
+} from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -41,11 +48,21 @@ export default function VignetaScreen() {
         style={[styles.infoBanner, { backgroundColor: C.card, borderColor: C.border }]}
         onPress={() => Linking.openURL(VIGNETA_URL)}
       >
-        <Ionicons name="information-circle-outline" size={18} color={C.textSecondary} style={{ marginRight: 8, flexShrink: 0 }} />
+        <Ionicons
+          name="information-circle-outline"
+          size={18}
+          color={C.textSecondary}
+          style={{ marginRight: 8, flexShrink: 0 }}
+        />
         <RNText style={[styles.infoBannerText, { color: C.textSecondary }]}>
           Datele pot fi depășite. Verifică informații actualizate înainte de plecare.
         </RNText>
-        <Ionicons name="open-outline" size={14} color={C.primary} style={{ marginLeft: 8, flexShrink: 0 }} />
+        <Ionicons
+          name="open-outline"
+          size={14}
+          color={C.primary}
+          style={{ marginLeft: 8, flexShrink: 0 }}
+        />
       </Pressable>
 
       <RNText style={[styles.sectionTitle, { color: primary }]}>VIGNETĂ OBLIGATORIE</RNText>
@@ -63,7 +80,7 @@ export default function VignetaScreen() {
   );
 }
 
-function RequiredCard({ country, C }: { country: VignetaCountry; C: typeof Colors['light'] }) {
+function RequiredCard({ country, C }: { country: VignetaCountry; C: (typeof Colors)['light'] }) {
   return (
     <RNView style={[styles.card, styles.cardRequired]}>
       <RNView style={styles.cardHeader}>
@@ -84,10 +101,7 @@ function RequiredCard({ country, C }: { country: VignetaCountry; C: typeof Color
         <RNText style={[styles.note, { color: '#555' }]}>{country.note}</RNText>
       ) : null}
       {country.buyUrl ? (
-        <Pressable
-          style={styles.buyBtn}
-          onPress={() => Linking.openURL(country.buyUrl!)}
-        >
+        <Pressable style={styles.buyBtn} onPress={() => Linking.openURL(country.buyUrl!)}>
           <Ionicons name="open-outline" size={13} color={primary} style={{ marginRight: 4 }} />
           <RNText style={styles.buyBtnText}>Cumpără online</RNText>
         </Pressable>
@@ -96,7 +110,7 @@ function RequiredCard({ country, C }: { country: VignetaCountry; C: typeof Color
   );
 }
 
-function OptionalCard({ country, C }: { country: VignetaCountry; C: typeof Colors['light'] }) {
+function OptionalCard({ country, C }: { country: VignetaCountry; C: (typeof Colors)['light'] }) {
   return (
     <RNView style={[styles.card, { backgroundColor: C.card, borderColor: C.border }]}>
       <RNView style={styles.cardHeader}>

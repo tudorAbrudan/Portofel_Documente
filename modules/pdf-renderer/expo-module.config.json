@@ -1,0 +1,7 @@
+{
+  "platforms": ["ios"],
+  "ios": {
+    "modules": ["PdfRendererModule"]
+  },
+  "podspecPath": "PdfRenderer.podspec"
+}

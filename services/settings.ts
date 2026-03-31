@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 import type { EntityType, DocumentType } from '@/types';
-import { ALL_ENTITY_TYPES, STANDARD_DOC_TYPES } from '@/types';
+import { ALL_ENTITY_TYPES, STANDARD_DOC_TYPES, DEFAULT_VISIBLE_DOC_TYPES } from '@/types';
 
 const KEY_NOTIF_DAYS = 'settings_notif_days';
 const KEY_APP_LOCK_ENABLED = 'app_lock_enabled';
@@ -79,12 +79,12 @@ export async function setVisibleEntityTypes(types: EntityType[]): Promise<void> 
 
 export async function getVisibleDocTypes(): Promise<DocumentType[]> {
   const v = await AsyncStorage.getItem(KEY_VISIBLE_DOC_TYPES);
-  if (!v) return [...STANDARD_DOC_TYPES];
+  if (!v) return [...DEFAULT_VISIBLE_DOC_TYPES];
   try {
     const parsed = JSON.parse(v) as DocumentType[];
-    return parsed.length > 0 ? parsed : [...STANDARD_DOC_TYPES];
+    return parsed.length > 0 ? parsed : [...DEFAULT_VISIBLE_DOC_TYPES];
   } catch {
-    return [...STANDARD_DOC_TYPES];
+    return [...DEFAULT_VISIBLE_DOC_TYPES];
   }
 }
 
@@ -103,4 +103,10 @@ export async function isOnboardingDone(): Promise<boolean> {
 
 export async function setOnboardingDone(): Promise<void> {
   await AsyncStorage.setItem(KEY_ONBOARDING_DONE, 'true');
+}
+
+export async function resetOnboarding(): Promise<void> {
+  await AsyncStorage.removeItem(KEY_ONBOARDING_DONE);
+  await AsyncStorage.setItem(KEY_VISIBLE_DOC_TYPES, JSON.stringify([...DEFAULT_VISIBLE_DOC_TYPES]));
+  await AsyncStorage.setItem(KEY_VISIBLE_ENTITY_TYPES, JSON.stringify([...ALL_ENTITY_TYPES]));
 }

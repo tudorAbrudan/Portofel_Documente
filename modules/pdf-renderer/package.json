@@ -1,0 +1,12 @@
+{
+  "name": "pdf-renderer",
+  "version": "1.0.0",
+  "description": "Renders PDF pages to JPEG using iOS PDFKit",
+  "main": "src/index",
+  "types": "src/index",
+  "ios": {
+    "modules": [
+      "PdfRendererModule"
+    ]
+  }
+}

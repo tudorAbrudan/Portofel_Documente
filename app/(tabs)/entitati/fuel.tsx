@@ -171,25 +171,21 @@ export default function FuelScreen() {
   }
 
   function handleDeleteRecord(record: FuelRecord) {
-    Alert.alert(
-      'Șterge înregistrare',
-      `Ștergi bonul din ${record.date}?`,
-      [
-        { text: 'Anulare', style: 'cancel' },
-        {
-          text: 'Șterge',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteFuelRecord(record.id);
-              await load();
-            } catch {
-              Alert.alert('Eroare', 'Nu s-a putut șterge înregistrarea.');
-            }
-          },
+    Alert.alert('Șterge înregistrare', `Ștergi bonul din ${record.date}?`, [
+      { text: 'Anulare', style: 'cancel' },
+      {
+        text: 'Șterge',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await deleteFuelRecord(record.id);
+            await load();
+          } catch {
+            Alert.alert('Eroare', 'Nu s-a putut șterge înregistrarea.');
+          }
         },
-      ]
-    );
+      },
+    ]);
   }
 
   return (
@@ -234,8 +230,8 @@ export default function FuelScreen() {
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}>
-
+        showsVerticalScrollIndicator={false}
+      >
         {/* Setări revizie */}
         <View style={[styles.settingsSection, { backgroundColor: colors.card }]}>
           <Text style={styles.sectionTitle}>Setări revizie</Text>
@@ -267,7 +263,8 @@ export default function FuelScreen() {
           <Pressable
             style={({ pressed }) => [styles.saveSettingsBtn, pressed && styles.btnPressed]}
             onPress={handleSaveSettings}
-            disabled={settingsSaving}>
+            disabled={settingsSaving}
+          >
             <Text style={styles.saveSettingsBtnText}>
               {settingsSaving ? 'Se salvează...' : 'Salvează setări'}
             </Text>
@@ -277,15 +274,13 @@ export default function FuelScreen() {
         {/* Lista înregistrări */}
         <Text style={styles.sectionTitle}>Istoric bonuri</Text>
 
-        {loading && (
-          <ActivityIndicator color={primary} style={{ marginVertical: 20 }} />
-        )}
+        {loading && <ActivityIndicator color={primary} style={{ marginVertical: 20 }} />}
 
         {!loading && records.length === 0 && (
           <Text style={styles.empty}>Nicio înregistrare. Adaugă primul bon.</Text>
         )}
 
-        {records.map((record) => (
+        {records.map(record => (
           <Pressable
             key={record.id}
             style={({ pressed }) => [
@@ -293,7 +288,8 @@ export default function FuelScreen() {
               { backgroundColor: colors.card },
               pressed && styles.btnPressed,
             ]}
-            onLongPress={() => handleDeleteRecord(record)}>
+            onLongPress={() => handleDeleteRecord(record)}
+          >
             <View style={styles.recordHeader}>
               <Text style={styles.recordDate}>{record.date}</Text>
               {record.price !== undefined && (
@@ -316,7 +312,8 @@ export default function FuelScreen() {
       {/* Buton adaugă bon */}
       <Pressable
         style={({ pressed }) => [styles.fab, pressed && styles.fabPressed]}
-        onPress={openModal}>
+        onPress={openModal}
+      >
         <Text style={styles.fabText}>+ Adaugă bon</Text>
       </Pressable>
 
@@ -325,10 +322,12 @@ export default function FuelScreen() {
         visible={modalVisible}
         animationType="slide"
         transparent
-        onRequestClose={() => setModalVisible(false)}>
+        onRequestClose={() => setModalVisible(false)}
+      >
         <KeyboardAvoidingView
           style={styles.modalOverlay}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Bon motorină</Text>
 
@@ -336,7 +335,8 @@ export default function FuelScreen() {
             <Pressable
               style={({ pressed }) => [styles.ocrBtn, pressed && styles.btnPressed]}
               onPress={handleScanReceipt}
-              disabled={mLoading}>
+              disabled={mLoading}
+            >
               <Text style={styles.ocrBtnText}>
                 {mLoading ? 'Se procesează...' : '📷 Fotografiază bonul (OCR)'}
               </Text>
@@ -389,16 +389,16 @@ export default function FuelScreen() {
               <Pressable
                 style={({ pressed }) => [styles.modalCancelBtn, pressed && styles.btnPressed]}
                 onPress={() => setModalVisible(false)}
-                disabled={mLoading}>
+                disabled={mLoading}
+              >
                 <Text style={styles.modalCancelText}>Anulare</Text>
               </Pressable>
               <Pressable
                 style={({ pressed }) => [styles.modalSaveBtn, pressed && styles.btnPressed]}
                 onPress={handleSaveRecord}
-                disabled={mLoading}>
-                <Text style={styles.modalSaveText}>
-                  {mLoading ? 'Se salvează...' : 'Salvează'}
-                </Text>
+                disabled={mLoading}
+              >
+                <Text style={styles.modalSaveText}>{mLoading ? 'Se salvează...' : 'Salvează'}</Text>
               </Pressable>
             </View>
           </View>

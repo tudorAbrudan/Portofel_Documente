@@ -43,7 +43,7 @@ export interface FuelInfo {
   liters?: number;
   km?: number;
   price?: number;
-  date?: string;  // AAAA-LL-ZZ dacă găsit
+  date?: string; // AAAA-LL-ZZ dacă găsit
 }
 
 /**
@@ -52,7 +52,7 @@ export interface FuelInfo {
  */
 export function extractFuelInfo(text: string): FuelInfo {
   const result: FuelInfo = {};
-  const normalized = text.replace(/,/g, '.');  // normalizează virgulă → punct
+  const normalized = text.replace(/,/g, '.'); // normalizează virgulă → punct
 
   // Litri: "50.23 L", "50.23l", "Cantitate: 50.23", "50.23 litri"
   const litersPatterns = [
@@ -62,7 +62,10 @@ export function extractFuelInfo(text: string): FuelInfo {
   ];
   for (const p of litersPatterns) {
     const m = normalized.match(p);
-    if (m) { result.liters = parseFloat(m[1]); break; }
+    if (m) {
+      result.liters = parseFloat(m[1]);
+      break;
+    }
   }
 
   // Preț total: "250.50 RON", "Total: 250.50", "Suma: 250.50 lei"
@@ -73,7 +76,10 @@ export function extractFuelInfo(text: string): FuelInfo {
   ];
   for (const p of pricePatterns) {
     const m = normalized.match(p);
-    if (m) { result.price = parseFloat(m[1]); break; }
+    if (m) {
+      result.price = parseFloat(m[1]);
+      break;
+    }
   }
 
   // KM odometru: "KM: 125430", "km 125430", număr de 5-6 cifre precedat de km/KM
@@ -84,7 +90,10 @@ export function extractFuelInfo(text: string): FuelInfo {
   ];
   for (const p of kmPatterns) {
     const m = normalized.match(p);
-    if (m) { result.km = parseInt(m[1], 10); break; }
+    if (m) {
+      result.km = parseInt(m[1], 10);
+      break;
+    }
   }
 
   // Data: DD.MM.YYYY sau DD/MM/YYYY → convertit la AAAA-LL-ZZ
@@ -108,7 +117,9 @@ export function extractInvoiceInfo(text: string): InvoiceInfo {
   const result: InvoiceInfo = {};
 
   // Nr. factură: "Nr." sau "Factura nr." sau "Invoice"
-  const invoiceMatch = text.match(/(?:factur[aă]\s*nr\.?\s*|nr\.?\s*factur[aă]\s*|invoice\s*(?:no\.?|nr\.?)\s*)([A-Z0-9\-\/]+)/i);
+  const invoiceMatch = text.match(
+    /(?:factur[aă]\s*nr\.?\s*|nr\.?\s*factur[aă]\s*|invoice\s*(?:no\.?|nr\.?)\s*)([A-Z0-9\-\/]+)/i
+  );
   if (invoiceMatch) result.invoice_number = invoiceMatch[1].trim();
 
   // Sumă total
@@ -119,7 +130,10 @@ export function extractInvoiceInfo(text: string): InvoiceInfo {
   ];
   for (const p of amountPatterns) {
     const m = text.match(p);
-    if (m) { result.amount = m[1].replace(',', '.'); break; }
+    if (m) {
+      result.amount = m[1].replace(',', '.');
+      break;
+    }
   }
 
   // Scadentă: "Scadentă la", "Data scadenței"
@@ -158,8 +172,8 @@ export interface TalonInfo {
   masa_totala?: string;
   norma_euro?: string;
   proprietar?: string;
-  itp_expiry_date?: string;  // format MM/YYYY, din ștampila RAR
-  itp_expiry_iso?: string;   // format YYYY-MM-DD pentru câmpul expiry_date
+  itp_expiry_date?: string; // format MM/YYYY, din ștampila RAR
+  itp_expiry_iso?: string; // format YYYY-MM-DD pentru câmpul expiry_date
 }
 
 /**
@@ -175,8 +189,8 @@ export function extractTalonInfo(text: string): TalonInfo {
   r.plate = extractPlateNumber(text);
 
   // VIN: 17 caractere alfanumerice (fără I, O, Q — dar OCR poate introduce erori)
-  const vinMatch = text.match(/\b([A-HJ-NPR-Z0-9]{17})\b/)
-    ?? text.match(/\bE\s*[:\s]\s*([A-Z0-9]{17})\b/i);
+  const vinMatch =
+    text.match(/\b([A-HJ-NPR-Z0-9]{17})\b/) ?? text.match(/\bE\s*[:\s]\s*([A-Z0-9]{17})\b/i);
   if (vinMatch) r.vin = vinMatch[1];
 
   // Marcă și model — câmp D.1 conține "MARCA / TIP" sau doar marca
@@ -193,25 +207,29 @@ export function extractTalonInfo(text: string): TalonInfo {
   }
 
   // Capacitate cilindrică — câmp P.1 (cm³)
-  const ccMatch = text.match(/P\.?1\s*[:\s]\s*(\d{3,5})/i)
-    ?? text.match(/(\d{3,5})\s*cm.?3/i);
+  const ccMatch = text.match(/P\.?1\s*[:\s]\s*(\d{3,5})/i) ?? text.match(/(\d{3,5})\s*cm.?3/i);
   if (ccMatch) r.capacitate_cilindrica = ccMatch[1];
 
   // Putere maximă — câmp P.2 (kW)
-  const kwMatch = text.match(/P\.?2\s*[:\s]\s*(\d{2,4})/i)
-    ?? text.match(/(\d{2,4})\s*kW/i);
+  const kwMatch = text.match(/P\.?2\s*[:\s]\s*(\d{2,4})/i) ?? text.match(/(\d{2,4})\s*kW/i);
   if (kwMatch) r.putere_kw = kwMatch[1];
 
   // Combustibil — câmp P.3
-  const fuelMatch = text.match(/P\.?3\s*[:\s]*\n?\s*(BENZIN[AĂÃ]?|DIESEL|ELECTRIC|HYBRID|GPL|GNC|CNG|LPG|MOTORIN[AĂÃ]?)/i)
-    ?? text.match(/\b(BENZIN[AĂÃ]?|DIESEL|ELECTRIC|HYBRID|GPL|GNC|MOTORIN[AĂÃ]?)\b/i);
+  const fuelMatch =
+    text.match(
+      /P\.?3\s*[:\s]*\n?\s*(BENZIN[AĂÃ]?|DIESEL|ELECTRIC|HYBRID|GPL|GNC|CNG|LPG|MOTORIN[AĂÃ]?)/i
+    ) ?? text.match(/\b(BENZIN[AĂÃ]?|DIESEL|ELECTRIC|HYBRID|GPL|GNC|MOTORIN[AĂÃ]?)\b/i);
   if (fuelMatch) {
     const f = fuelMatch[1].toUpperCase();
-    r.combustibil = f.startsWith('BENZIN') ? 'Benzină'
-      : f.startsWith('MOTORIN') || f === 'DIESEL' ? 'Diesel'
-      : f === 'ELECTRIC' ? 'Electric'
-      : f === 'HYBRID' ? 'Hybrid'
-      : f;
+    r.combustibil = f.startsWith('BENZIN')
+      ? 'Benzină'
+      : f.startsWith('MOTORIN') || f === 'DIESEL'
+        ? 'Diesel'
+        : f === 'ELECTRIC'
+          ? 'Electric'
+          : f === 'HYBRID'
+            ? 'Hybrid'
+            : f;
   }
 
   // Culoare — câmp R
@@ -227,8 +245,8 @@ export function extractTalonInfo(text: string): TalonInfo {
   if (weightMatch) r.masa_totala = weightMatch[1];
 
   // Normă Euro — câmp V.7 sau text "EURO N"
-  const euroMatch = text.match(/V\.?7\s*[:\s]*\n?\s*(EURO\s*[0-9IVX]+)/i)
-    ?? text.match(/\b(EURO\s*[0-9IVX]+)\b/i);
+  const euroMatch =
+    text.match(/V\.?7\s*[:\s]*\n?\s*(EURO\s*[0-9IVX]+)/i) ?? text.match(/\b(EURO\s*[0-9IVX]+)\b/i);
   if (euroMatch) r.norma_euro = euroMatch[1].replace(/\s+/, ' ');
 
   // Data primei înmatriculări — câmp B (DD.MM.YYYY)
@@ -240,17 +258,16 @@ export function extractTalonInfo(text: string): TalonInfo {
   }
 
   // Proprietar — câmp C.1.1 (persoană fizică) sau C.2.1 (persoană juridică)
-  const ownerMatch = text.match(/C\.?1\.?1\s*[:\s]*\n?\s*([A-ZĂÂÎȘȚ][A-ZĂÂÎȘȚ\s\-]{2,50})/im)
-    ?? text.match(/C\.?2\.?1\s*[:\s]*\n?\s*([A-ZĂÂÎȘȚ][A-ZĂÂÎȘȚ\s\-]{2,50})/im);
+  const ownerMatch =
+    text.match(/C\.?1\.?1\s*[:\s]*\n?\s*([A-ZĂÂÎȘȚ][A-ZĂÂÎȘȚ\s\-]{2,50})/im) ??
+    text.match(/C\.?2\.?1\s*[:\s]*\n?\s*([A-ZĂÂÎȘȚ][A-ZĂÂÎȘȚ\s\-]{2,50})/im);
   if (ownerMatch) r.proprietar = ownerMatch[1].trim();
 
   // Data expirare ITP — ștampila RAR, format MM/YYYY sau MM.YYYY
   // Căutare lângă cuvinte cheie: ITP, INSPECȚIE, RAR
-  const itpKwMatch = text.match(
-    /(?:ITP|INSPEC[TȚ]IE|RAR)[^\n]*\n?\s*(0[1-9]|1[0-2])\s*[.\/\s]\s*(20\d{2})/i
-  ) ?? text.match(
-    /(0[1-9]|1[0-2])\s*[.\/\s]\s*(20\d{2})\s*(?:ITP|INSPEC[TȚ]IE|RAR)/i
-  );
+  const itpKwMatch =
+    text.match(/(?:ITP|INSPEC[TȚ]IE|RAR)[^\n]*\n?\s*(0[1-9]|1[0-2])\s*[.\/\s]\s*(20\d{2})/i) ??
+    text.match(/(0[1-9]|1[0-2])\s*[.\/\s]\s*(20\d{2})\s*(?:ITP|INSPEC[TȚ]IE|RAR)/i);
   if (itpKwMatch) {
     r.itp_expiry_date = `${itpKwMatch[1]}/${itpKwMatch[2]}`;
   } else {
@@ -271,17 +288,17 @@ export function extractTalonInfo(text: string): TalonInfo {
 }
 
 export interface DocumentInfo {
-  cnp?: string;          // 13 cifre
-  expiry_date?: string;  // format AAAA-LL-ZZ
-  issue_date?: string;   // format AAAA-LL-ZZ
-  series?: string;       // seria documentului (ex. "RR 123456", "RT123456")
-  name?: string;         // NUME + PRENUME concatenate
-  rawText?: string;      // textul brut pentru debugging
+  cnp?: string; // 13 cifre
+  expiry_date?: string; // format AAAA-LL-ZZ
+  issue_date?: string; // format AAAA-LL-ZZ
+  series?: string; // seria documentului (ex. "RR 123456", "RT123456")
+  name?: string; // NUME + PRENUME concatenate
+  rawText?: string; // textul brut pentru debugging
 }
 
 interface MrzData {
-  dob?: string;       // AAAA-LL-ZZ
-  expiry?: string;    // AAAA-LL-ZZ
+  dob?: string; // AAAA-LL-ZZ
+  expiry?: string; // AAAA-LL-ZZ
   documentNumber?: string;
 }
 
@@ -300,7 +317,8 @@ function parseMrz(text: string): MrzData {
   }
 
   // MRZ: linii de 20+ caractere conținând doar litere mari, cifre și '<'
-  const mrzLines = text.split('\n')
+  const mrzLines = text
+    .split('\n')
     .map(l => l.replace(/\s/g, ''))
     .filter(l => /^[A-Z0-9<]{20,}$/.test(l));
 
@@ -339,7 +357,10 @@ function parseMrz(text: string): MrzData {
  */
 export function extractDocumentInfo(text: string): DocumentInfo {
   const result: DocumentInfo = { rawText: text };
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  const lines = text
+    .split('\n')
+    .map(l => l.trim())
+    .filter(Boolean);
 
   // Parsare MRZ — sursă de adevăr pentru DOB și expiry pe buletin
   const mrz = parseMrz(text);
@@ -363,10 +384,16 @@ export function extractDocumentInfo(text: string): DocumentInfo {
   for (let i = 0; i < lines.length; i++) {
     if (expiryKeywords.test(lines[i])) {
       const dateOnSame = parseDate(lines[i]);
-      if (dateOnSame) { result.expiry_date = dateOnSame; break; }
+      if (dateOnSame) {
+        result.expiry_date = dateOnSame;
+        break;
+      }
       if (i + 1 < lines.length) {
         const dateNext = parseDate(lines[i + 1]);
-        if (dateNext) { result.expiry_date = dateNext; break; }
+        if (dateNext) {
+          result.expiry_date = dateNext;
+          break;
+        }
       }
     }
   }
@@ -384,10 +411,16 @@ export function extractDocumentInfo(text: string): DocumentInfo {
   for (let i = 0; i < lines.length; i++) {
     if (issueKeywords.test(lines[i])) {
       const dateOnSame = parseDate(lines[i]);
-      if (dateOnSame) { result.issue_date = dateOnSame; break; }
+      if (dateOnSame) {
+        result.issue_date = dateOnSame;
+        break;
+      }
       if (i + 1 < lines.length) {
         const dateNext = parseDate(lines[i + 1]);
-        if (dateNext) { result.issue_date = dateNext; break; }
+        if (dateNext) {
+          result.issue_date = dateNext;
+          break;
+        }
       }
     }
   }
@@ -398,10 +431,7 @@ export function extractDocumentInfo(text: string): DocumentInfo {
     const parsedDates = allDates.map(m => `${m[3]}-${m[2]}-${m[1]}`);
     const uniqueDates = [...new Set(parsedDates)].sort();
     // Exclude expiry și DOB din MRZ
-    const candidates = uniqueDates.filter(d =>
-      d !== result.expiry_date &&
-      d !== mrz.dob
-    );
+    const candidates = uniqueDates.filter(d => d !== result.expiry_date && d !== mrz.dob);
     if (candidates.length > 0) {
       // Ia cea mai recentă dată dintre candidați (probabil data emiterii)
       result.issue_date = candidates[candidates.length - 1];
@@ -418,14 +448,29 @@ export function extractDocumentInfo(text: string): DocumentInfo {
   if (seriesMatch) result.series = `${seriesMatch[1]} ${seriesMatch[2]}`;
 
   // Nume: caută linii cu text ALL CAPS de minim 3 caractere, ignorând cuvinte comune
-  const ignoredWords = new Set(['ROMANIA', 'ROMÂNÂ', 'CARTE', 'IDENTITATE', 'BULETIN', 'CNP', 'SERIA', 'NR', 'SEX', 'MF', 'M', 'F']);
+  const ignoredWords = new Set([
+    'ROMANIA',
+    'ROMÂNÂ',
+    'CARTE',
+    'IDENTITATE',
+    'BULETIN',
+    'CNP',
+    'SERIA',
+    'NR',
+    'SEX',
+    'MF',
+    'M',
+    'F',
+  ]);
   const capsLines = lines.filter(l => {
     const words = l.split(/\s+/);
-    return words.length >= 1 &&
+    return (
+      words.length >= 1 &&
       words.every(w => /^[A-ZĂÂÎȘȚ\-]+$/.test(w)) &&
       l.length >= 4 &&
       !ignoredWords.has(l.toUpperCase().trim()) &&
-      !/^\d+$/.test(l);
+      !/^\d+$/.test(l)
+    );
   });
   // Primele 1-2 linii ALL CAPS care nu sunt CNP/serie sunt probabil Nume + Prenume
   const nameLines = capsLines.filter(l => !/\d/.test(l)).slice(0, 2);
@@ -450,7 +495,8 @@ export function detectDocumentType(text: string): DocumentType | null {
   if (/vignet[aă]|rovinieta/.test(t)) return 'vigneta';
   if (/carte de identitate a vehiculului|\bciv\b/.test(t)) return 'carte_auto';
   if (/\btalon\b|certificat de [îi]nmatriculare/.test(t)) return 'talon';
-  if (/act de proprietate|contract de v[âa]nzare[\-\s]cump[aă]rare/.test(t)) return 'act_proprietate';
+  if (/act de proprietate|contract de v[âa]nzare[\-\s]cump[aă]rare/.test(t))
+    return 'act_proprietate';
   if (/num[aă]r cadastral|extras de carte funciar[aă]/.test(t)) return 'cadastru';
   if (/asigurare.*dezastre|politi[aă] pad|\bpad\b/.test(t)) return 'pad';
   if (/factur[aă]|invoice/.test(t)) return 'factura';
@@ -482,7 +528,8 @@ export function formatOcrSummary(text: string, info: DocumentInfo): string {
   if (info.expiry_date) parts.push(`Expiră: ${info.expiry_date}`);
   // Fallback: dacă nu avem date structurate, pune text brut filtrat (fără linii MRZ)
   if (parts.length === 0 && text.trim()) {
-    const clean = text.split('\n')
+    const clean = text
+      .split('\n')
       .map(l => l.trim())
       .filter(l => l.length > 2 && !/^[A-Z0-9<]{10,}$/.test(l.replace(/\s/g, '')))
       .join(' ')

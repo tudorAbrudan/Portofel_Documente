@@ -9,6 +9,7 @@ import {
   Switch,
   Linking,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
@@ -17,6 +18,7 @@ import AppLockPinModal from '@/components/AppLockPinModal';
 import {
   ALL_ENTITY_TYPES,
   STANDARD_DOC_TYPES,
+  DEFAULT_VISIBLE_DOC_TYPES,
   ENTITY_DOCUMENT_TYPES,
   DOCUMENT_TYPE_LABELS,
 } from '@/types';
@@ -29,7 +31,7 @@ import {
 import { primary } from '@/theme/colors';
 import { radius, spacing } from '@/theme/layout';
 
-const TOTAL_STEPS = 7;
+const TOTAL_STEPS = 8;
 
 const WELCOME = 0;
 const SECURITY = 1;
@@ -37,7 +39,11 @@ const ENTITIES = 2;
 const DOCS = 3;
 const NOTIFICATIONS = 4;
 const BACKUP = 5;
-const SUMMARY = 6;
+const AI_STEP = 6;
+const SUMMARY = 7;
+
+const AI_CONSENT_KEY = 'ai_assistant_consent_accepted';
+const MISTRAL_CONSOLE_URL = 'https://console.mistral.ai/api-keys';
 
 const NOTIF_DAY_OPTIONS = [7, 14, 30] as const;
 
@@ -86,6 +92,8 @@ function stepTitle(step: number): string {
       return 'Notificări expirări';
     case BACKUP:
       return 'Backup';
+    case AI_STEP:
+      return 'Asistent AI';
     case SUMMARY:
       return 'Rezumat';
     default:
@@ -106,7 +114,9 @@ function stepSubtitle(step: number): string {
     case NOTIFICATIONS:
       return 'Primești remindere locale pe telefon — fără server, fără cont online.';
     case BACKUP:
-      return 'Exportul periodic îți protejează datele la schimbare de telefon sau reinstalare.';
+      return 'Exportul periodic (fișier ZIP) îți protejează datele la schimbare de telefon sau reinstalare.';
+    case AI_STEP:
+      return 'Complet opțional. Datele tale rămân pe dispozitiv — AI-ul e activat doar când îl folosești.';
     case SUMMARY:
       return 'Verifică setările. Poți modifica totul din Setări oricând.';
     default:
@@ -121,11 +131,14 @@ export default function OnboardingWizard({ onComplete }: Props) {
 
   const [step, setStep] = useState(WELCOME);
   const [selectedEntities, setSelectedEntities] = useState<EntityType[]>([...ALL_ENTITY_TYPES]);
-  const [selectedDocTypes, setSelectedDocTypes] = useState<DocumentType[]>([...STANDARD_DOC_TYPES]);
+  const [selectedDocTypes, setSelectedDocTypes] = useState<DocumentType[]>([
+    ...DEFAULT_VISIBLE_DOC_TYPES,
+  ]);
   const [pushEnabled, setPushEnabled] = useState(true);
   const [notifDays, setNotifDays] = useState(7);
   const [lockEnabled, setLockEnabled] = useState(false);
   const [pinModalVisible, setPinModalVisible] = useState(false);
+  const [aiEnabled, setAiEnabled] = useState(true);
 
   useEffect(() => {
     settings.getPushEnabled().then(setPushEnabled);
@@ -152,11 +165,14 @@ export default function OnboardingWizard({ onComplete }: Props) {
   }
 
   function goNextFromEntities() {
-    const recommendedDocs = new Set<DocumentType>();
+    // Pre-selecție: intersecție dintre DEFAULT_VISIBLE_DOC_TYPES și tipurile aferente entităților alese
+    const entityDocs = new Set<DocumentType>();
     selectedEntities.forEach(entity => {
-      ENTITY_DOCUMENT_TYPES[entity].forEach(doc => recommendedDocs.add(doc));
+      ENTITY_DOCUMENT_TYPES[entity].forEach(doc => entityDocs.add(doc));
     });
-    setSelectedDocTypes(Array.from(recommendedDocs));
+    const preselected = DEFAULT_VISIBLE_DOC_TYPES.filter(doc => entityDocs.has(doc));
+    // Dacă nu reiese nimic, fallback la DEFAULT_VISIBLE_DOC_TYPES
+    setSelectedDocTypes(preselected.length > 0 ? preselected : [...DEFAULT_VISIBLE_DOC_TYPES]);
     setStep(DOCS);
   }
 
@@ -176,6 +192,7 @@ export default function OnboardingWizard({ onComplete }: Props) {
     await settings.setPushEnabled(pushEnabled);
     await settings.setNotificationDays(notifDays);
     await scheduleExpirationReminders();
+    await AsyncStorage.setItem(AI_CONSENT_KEY, aiEnabled ? 'true' : 'false');
     await settings.setOnboardingDone();
     onComplete();
   }
@@ -200,14 +217,59 @@ export default function OnboardingWizard({ onComplete }: Props) {
     if (step > WELCOME) setStep(s => s - 1);
   }
 
-  const relevantDocTypes = STANDARD_DOC_TYPES.filter(doc =>
-    selectedEntities.some(entity => ENTITY_DOCUMENT_TYPES[entity].includes(doc))
-  );
-  const otherDocTypes = STANDARD_DOC_TYPES.filter(doc => !relevantDocTypes.includes(doc));
+  const DOC_GROUPS: { label: string; types: DocumentType[] }[] = [
+    {
+      label: 'Identitate',
+      types: ['buletin', 'pasaport', 'permis_auto'],
+    },
+    {
+      label: 'Vehicule',
+      types: ['talon', 'carte_auto', 'rca', 'casco', 'itp', 'vigneta'],
+    },
+    {
+      label: 'Proprietate',
+      types: ['act_proprietate', 'cadastru', 'impozit_proprietate', 'pad', 'stingator_incendiu'],
+    },
+    {
+      label: 'Financiar',
+      types: [
+        'factura',
+        'contract',
+        'card',
+        'garantie',
+        'abonament',
+        'bon_cumparaturi',
+        'bon_parcare',
+      ],
+    },
+    {
+      label: 'Medical',
+      types: ['reteta_medicala', 'analize_medicale'],
+    },
+    {
+      label: 'Animale',
+      types: ['vaccin_animal', 'deparazitare', 'vizita_vet'],
+    },
+    {
+      label: 'Firmă',
+      types: [
+        'certificat_inregistrare',
+        'autorizatie_activitate',
+        'act_constitutiv',
+        'certificat_tva',
+        'asigurare_profesionala',
+      ],
+    },
+    {
+      label: 'Altele',
+      types: ['bilet', 'altul'],
+    },
+  ];
 
   const welcomeBullets = [
     'Datele și fișierele stau pe acest dispozitiv (SQLite, local). Nu există cont online obligatoriu.',
-    'Poți folosi asistentul AI doar dacă accepți explicit — altfel aplicația funcționează offline.',
+    'Poți atașa fotografii, scan-uri și fișiere PDF la orice document — totul rămâne local.',
+    'Asistentul AI (chat) este opțional: îl activezi explicit din tabul Asistent. Poate fi configurat sau dezactivat oricând din Setări → Date și confidențialitate.',
     'Exportul de backup (JSON) este opțional și sub controlul tău (Drive, iCloud, Fișiere).',
   ];
 
@@ -321,60 +383,53 @@ export default function OnboardingWizard({ onComplete }: Props) {
 
         {step === DOCS && (
           <>
-            {relevantDocTypes.length > 0 && (
-              <>
-                <Text style={[styles.groupLabel, { color: C.textSecondary }]}>RECOMANDATE</Text>
-                <View style={styles.chipRow}>
-                  {relevantDocTypes.map(docType => {
-                    const isSelected = selectedDocTypes.includes(docType);
-                    return (
-                      <Pressable
-                        key={docType}
-                        style={[
-                          styles.chip,
-                          isSelected
-                            ? [styles.chipActive, { borderColor: C.primary }]
-                            : { borderColor: C.border, backgroundColor: C.card },
-                        ]}
-                        onPress={() => toggleDocType(docType)}
-                      >
-                        <Text style={[styles.chipText, { color: isSelected ? '#fff' : C.text }]}>
-                          {DOCUMENT_TYPE_LABELS[docType]}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
+            {DOC_GROUPS.map((group, gi) => {
+              const groupTypes = group.types.filter(t => STANDARD_DOC_TYPES.includes(t));
+              if (groupTypes.length === 0) return null;
+              const isDefaultGroup = groupTypes.some(t => DEFAULT_VISIBLE_DOC_TYPES.includes(t));
+              return (
+                <View key={group.label}>
+                  <View style={styles.groupLabelRow}>
+                    <Text style={[styles.groupLabel, { color: C.textSecondary }]}>
+                      {group.label.toUpperCase()}
+                    </Text>
+                    {!isDefaultGroup && (
+                      <Text style={[styles.groupOptional, { color: C.textSecondary }]}>
+                        opțional
+                      </Text>
+                    )}
+                  </View>
+                  <View
+                    style={[styles.chipRow, gi < DOC_GROUPS.length - 1 && { marginBottom: 12 }]}
+                  >
+                    {groupTypes.map(docType => {
+                      const isSelected = selectedDocTypes.includes(docType);
+                      const isDefault = DEFAULT_VISIBLE_DOC_TYPES.includes(docType);
+                      return (
+                        <Pressable
+                          key={docType}
+                          style={[
+                            styles.chip,
+                            isSelected
+                              ? [styles.chipActive, { borderColor: C.primary }]
+                              : {
+                                  borderColor: isDefault ? C.border : C.border,
+                                  backgroundColor: C.card,
+                                  opacity: isDefault ? 1 : 0.7,
+                                },
+                          ]}
+                          onPress={() => toggleDocType(docType)}
+                        >
+                          <Text style={[styles.chipText, { color: isSelected ? '#fff' : C.text }]}>
+                            {DOCUMENT_TYPE_LABELS[docType]}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
                 </View>
-              </>
-            )}
-            {otherDocTypes.length > 0 && (
-              <>
-                <Text style={[styles.groupLabel, { color: C.textSecondary, marginTop: 16 }]}>
-                  ALTELE
-                </Text>
-                <View style={styles.chipRow}>
-                  {otherDocTypes.map(docType => {
-                    const isSelected = selectedDocTypes.includes(docType);
-                    return (
-                      <Pressable
-                        key={docType}
-                        style={[
-                          styles.chip,
-                          isSelected
-                            ? [styles.chipActive, { borderColor: C.primary }]
-                            : { borderColor: C.border, backgroundColor: C.card },
-                        ]}
-                        onPress={() => toggleDocType(docType)}
-                      >
-                        <Text style={[styles.chipText, { color: isSelected ? '#fff' : C.text }]}>
-                          {DOCUMENT_TYPE_LABELS[docType]}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              </>
-            )}
+              );
+            })}
           </>
         )}
 
@@ -439,6 +494,78 @@ export default function OnboardingWizard({ onComplete }: Props) {
           </View>
         )}
 
+        {step === AI_STEP && (
+          <View style={styles.aiBlock}>
+            {/* Toggle principal */}
+            <View
+              style={[
+                styles.aiToggleCard,
+                { backgroundColor: C.card, borderColor: aiEnabled ? C.primary : C.border },
+              ]}
+            >
+              <View style={styles.aiToggleText}>
+                <Text style={[styles.aiToggleLabel, { color: C.text }]}>Activez Asistentul AI</Text>
+                <Text style={[styles.aiToggleSub, { color: C.textSecondary }]}>
+                  Chat cu documentele tale + scanare OCR cu AI + completare automată câmpuri
+                </Text>
+              </View>
+              <Switch
+                value={aiEnabled}
+                onValueChange={setAiEnabled}
+                trackColor={{ false: '#ccc', true: primary }}
+              />
+            </View>
+
+            {/* Ce face AI */}
+            <View style={[styles.aiInfoCard, { backgroundColor: C.card, borderColor: C.border }]}>
+              <Text style={[styles.aiInfoTitle, { color: C.text }]}>
+                Ce poate face Asistentul AI
+              </Text>
+              {[
+                'Răspunde la întrebări despre documentele tale (ex: „Când expiră RCA-ul?")',
+                'Completează automat câmpurile la scanarea unui document (OCR + AI)',
+                'Identifică tipul documentului și entitatea asociată',
+              ].map((line, i) => (
+                <View key={i} style={styles.bulletRow}>
+                  <Text style={[styles.bulletDot, { color: C.primary }]}>•</Text>
+                  <Text style={[styles.bulletText, { color: C.text }]}>{line}</Text>
+                </View>
+              ))}
+            </View>
+
+            {/* Limite și cheie proprie */}
+            <View style={[styles.aiInfoCard, { backgroundColor: C.card, borderColor: C.border }]}>
+              <Text style={[styles.aiInfoTitle, { color: C.text }]}>Utilizare gratuită</Text>
+              <Text style={[styles.aiLimitText, { color: C.text }]}>
+                Dosar AI include <Text style={{ fontWeight: '700' }}>20 interogări/zi</Text> gratuit
+                (chatbot + scanare OCR). Poți folosi{' '}
+                <Text style={{ fontWeight: '700' }}>nelimitat</Text> cu propria cheie API Mistral
+                (gratuită).
+              </Text>
+              <Pressable
+                onPress={() => Linking.openURL(MISTRAL_CONSOLE_URL)}
+                style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1, marginTop: 8 }]}
+              >
+                <Text style={[styles.link, { color: C.primary }]}>
+                  Obține cheie gratuită → mistral.ai
+                </Text>
+              </Pressable>
+              <Text style={[styles.aiKeyHint, { color: C.textSecondary }]}>
+                După ce ai cheia, o adaugi în Setări → Asistent AI și nu mai ai limită.
+              </Text>
+            </View>
+
+            {/* Date trimise */}
+            <Text style={[styles.aiPrivacyNote, { color: C.textSecondary }]}>
+              Când folosești AI-ul (chat sau scanare OCR), textul extras și lista entităților (nume,
+              tipuri) sunt trimise la Mistral AI. Fotografiile, PIN-ul și datele sensibile NU sunt
+              trimise. Cu propria cheie API (gratuită de pe mistral.ai), poți controla exact ce
+              provider procesează datele. Consimțământul poate fi revocat oricând din Setări → Date
+              și confidențialitate.
+            </Text>
+          </View>
+        )}
+
         {step === SUMMARY && (
           <View style={[styles.summaryCard, { backgroundColor: C.card, borderColor: C.border }]}>
             <Text style={[styles.summaryLine, { color: C.text }]}>
@@ -456,6 +583,10 @@ export default function OnboardingWizard({ onComplete }: Props) {
             <Text style={[styles.summaryLine, { color: C.text }]}>
               <Text style={styles.summaryKey}>Blocare aplicație: </Text>
               {lockEnabled ? 'Activă (PIN / biometrie)' : 'Nu'}
+            </Text>
+            <Text style={[styles.summaryLine, { color: C.text }]}>
+              <Text style={styles.summaryKey}>Asistent AI: </Text>
+              {aiEnabled ? 'Activat (20 interogări/zi gratuit)' : 'Dezactivat'}
             </Text>
           </View>
         )}
@@ -502,7 +633,7 @@ export default function OnboardingWizard({ onComplete }: Props) {
           ]}
           onPress={handleFooterPrimary}
         >
-          <Text style={styles.btnNextText}>{step === SUMMARY ? 'Începe' : 'Continuă'}</Text>
+          <Text style={styles.btnNextText}>{step === SUMMARY ? 'Finalizează' : 'Continuă'}</Text>
         </Pressable>
       </View>
 
@@ -608,12 +739,21 @@ const styles = StyleSheet.create({
   checkboxActive: { backgroundColor: primary, borderColor: primary },
   checkmark: { color: '#fff', fontSize: 13, fontWeight: '700' },
 
+  groupLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
   groupLabel: {
     fontSize: 11,
     fontWeight: '600',
     letterSpacing: 0.6,
-    marginBottom: 10,
     textTransform: 'uppercase',
+  },
+  groupOptional: {
+    fontSize: 11,
+    fontStyle: 'italic',
   },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 4 },
   chip: {
@@ -656,6 +796,30 @@ const styles = StyleSheet.create({
   },
   summaryLine: { fontSize: 15, lineHeight: 22 },
   summaryKey: { fontWeight: '700' },
+
+  // AI step
+  aiBlock: { gap: 16 },
+  aiToggleCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: radius.lg,
+    borderWidth: 2,
+    padding: 16,
+    gap: 12,
+  },
+  aiToggleText: { flex: 1 },
+  aiToggleLabel: { fontSize: 17, fontWeight: '700', marginBottom: 4 },
+  aiToggleSub: { fontSize: 13, lineHeight: 18 },
+  aiInfoCard: {
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    padding: 16,
+    gap: 8,
+  },
+  aiInfoTitle: { fontSize: 15, fontWeight: '700', marginBottom: 4 },
+  aiLimitText: { fontSize: 14, lineHeight: 20 },
+  aiKeyHint: { fontSize: 12, lineHeight: 18, marginTop: 4 },
+  aiPrivacyNote: { fontSize: 12, lineHeight: 18, fontStyle: 'italic' },
 
   footer: {
     flexDirection: 'row',

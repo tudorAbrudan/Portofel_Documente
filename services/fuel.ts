@@ -3,7 +3,7 @@ import { db, generateId } from './db';
 export interface FuelRecord {
   id: string;
   vehicle_id: string;
-  date: string;         // AAAA-LL-ZZ
+  date: string; // AAAA-LL-ZZ
   liters?: number;
   km_total?: number;
   price?: number;
@@ -12,19 +12,19 @@ export interface FuelRecord {
 
 export interface VehicleFuelSettings {
   vehicle_id: string;
-  service_km_interval: number;  // km între revizii, default 10000
+  service_km_interval: number; // km între revizii, default 10000
   last_service_km?: number;
   last_service_date?: string;
 }
 
 export interface FuelStats {
   totalRecords: number;
-  avgConsumptionL100?: number;   // L/100km calculat din ultimele înregistrări
+  avgConsumptionL100?: number; // L/100km calculat din ultimele înregistrări
   totalLiters: number;
   totalCost: number;
-  latestKm?: number;             // cel mai recent km_total
-  needsService: boolean;         // km_total > last_service_km + service_km_interval
-  kmUntilService?: number;       // câți km mai sunt până la revizie (negativ = depășit)
+  latestKm?: number; // cel mai recent km_total
+  needsService: boolean; // km_total > last_service_km + service_km_interval
+  kmUntilService?: number; // câți km mai sunt până la revizie (negativ = depășit)
 }
 
 type FuelRow = {
@@ -72,7 +72,15 @@ export async function addFuelRecord(
   const created_at = new Date().toISOString();
   await db.runAsync(
     'INSERT INTO fuel_records (id, vehicle_id, date, liters, km_total, price, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    [id, vehicleId, record.date, record.liters ?? null, record.km_total ?? null, record.price ?? null, created_at]
+    [
+      id,
+      vehicleId,
+      record.date,
+      record.liters ?? null,
+      record.km_total ?? null,
+      record.price ?? null,
+      created_at,
+    ]
   );
   return { id, vehicle_id: vehicleId, ...record, created_at };
 }
@@ -97,7 +105,10 @@ export async function getFuelSettings(vehicleId: string): Promise<VehicleFuelSet
   };
 }
 
-export async function saveFuelSettings(vehicleId: string, settings: Partial<VehicleFuelSettings>): Promise<void> {
+export async function saveFuelSettings(
+  vehicleId: string,
+  settings: Partial<VehicleFuelSettings>
+): Promise<void> {
   const updated_at = new Date().toISOString();
   // Upsert
   const existing = await db.getFirstAsync<{ vehicle_id: string }>(

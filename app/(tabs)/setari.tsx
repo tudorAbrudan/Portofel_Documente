@@ -11,6 +11,8 @@ import {
   Platform,
   Modal,
   Linking,
+  DeviceEventEmitter,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
@@ -21,12 +23,15 @@ import { PRIVACY_URL, SUPPORT_URL } from '@/constants/AppLinks';
 import AppLockPinModal from '@/components/AppLockPinModal';
 import { primary } from '@/theme/colors';
 import * as settings from '@/services/settings';
+import * as aiProvider from '@/services/aiProvider';
+import type { AiProviderType } from '@/services/aiProvider';
 import { scheduleExpirationReminders } from '@/services/notifications';
 import { exportBackup, importBackup } from '@/services/backup';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { db } from '@/services/db';
 import { useCustomTypes } from '@/hooks/useCustomTypes';
 import { useVisibilitySettings } from '@/hooks/useVisibilitySettings';
+import { ONBOARDING_RESET_EVENT } from '@/app/_layout';
 import {
   ALL_ENTITY_TYPES,
   STANDARD_DOC_TYPES,
@@ -106,9 +111,10 @@ ${APP_NAME} stochează local, pe dispozitivul dumneavoastră:
 Nu există server propriu, nu există cont de utilizator, nu există analiză de trafic, nu există reclame, nu există trackere.
 
 3. ASISTENT AI OPȚIONAL – SERVICIU TERȚ
-Dacă alegeți să utilizați funcția de asistent AI, după acordul dumneavoastră explicit, anumite date sunt transmise către Mistral AI (mistral.ai), un serviciu terț de inteligență artificială:
-• Ce se trimite: denumiri entități (persoane, vehicule, proprietăți, carduri, animale), tipuri documente, date de expirare și emitere, note, date de identificare (serie acte, CNP, nr. înmatriculare, nr. înregistrare și alte câmpuri completate)
-• Ce NU se trimite: fotografii ale documentelor, numărul CVV, PIN-ul aplicației
+Dacă alegeți să utilizați funcția de asistent AI (chat sau scanare OCR), după acordul dumneavoastră explicit, anumite date sunt transmise către Mistral AI (mistral.ai), un serviciu terț de inteligență artificială:
+• Ce se trimite: textul extras din documente (OCR), denumiri entități (persoane, vehicule, proprietăți, carduri, animale), tipuri documente, date de expirare și emitere, note, date de identificare (serie acte, CNP, nr. înmatriculare, nr. înregistrare și alte câmpuri completate)
+• Ce NU se trimite: fotografii ale documentelor, numărul CVV, PIN-ul aplicației, datele sensibile
+• Cu propria cheie API (gratuită de pe mistral.ai), puteți controla exact ce provider procesează datele
 • Transmiterea are loc EXCLUSIV cu consimțământul explicit acordat anterior
 • Consimțământul poate fi revocat oricând din Setări → Date și confidențialitate
 • Politica de confidențialitate Mistral AI: https://mistral.ai/terms
@@ -124,12 +130,12 @@ Aveți dreptul la:
 • Acces – toate datele sunt vizibile direct în aplicație
 • Rectificare – puteți edita orice dată oricând
 • Ștergere – folosiți funcția „Șterge toate datele" din Setări
-• Portabilitate – exportați datele ca fișier JSON din funcția Backup
+• Portabilitate – exportați datele ca fișier ZIP din funcția Backup
 • Retragerea consimțământului AI – Setări → Date și confidențialitate → Revocare consimțământ AI
 • Opoziție – dezinstalați aplicația
 
 7. BACKUP ÎN CLOUD
-Dacă utilizați funcția de export backup, fișierul JSON ajunge în aplicația Files / iCloud Drive / Google Drive conform alegerii dumneavoastră. Politica de confidențialitate a acestor servicii le aparține.
+Dacă utilizați funcția de export backup, fișierul ZIP ajunge în aplicația Files / iCloud Drive / Google Drive conform alegerii dumneavoastră. Politica de confidențialitate a acestor servicii le aparține.
 
 8. SECURITATE
 Datele sunt protejate prin:
@@ -240,6 +246,17 @@ export default function SetariScreen() {
   const [privacyVisible, setPrivacyVisible] = useState(false);
   const [aiConsentGiven, setAiConsentGiven] = useState(false);
 
+  // ── AI Provider ─────────────────────────────────────────────────────────────
+  const [aiModalVisible, setAiModalVisible] = useState(false);
+  const [aiProviderType, setAiProviderType] = useState<AiProviderType>('mistral');
+  const [aiProviderUrl, setAiProviderUrl] = useState('');
+  const [aiProviderModel, setAiProviderModel] = useState('');
+  const [aiApiKey, setAiApiKey] = useState('');
+  const [aiTestStatus, setAiTestStatus] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle');
+  const [aiTestMessage, setAiTestMessage] = useState('');
+  const [backupExporting, setBackupExporting] = useState(false);
+  const [backupImporting, setBackupImporting] = useState(false);
+
   useEffect(() => {
     settings.getNotificationDays().then(setNotifDays);
     settings.getPushEnabled().then(setPushEnabled);
@@ -247,6 +264,12 @@ export default function SetariScreen() {
     AsyncStorage.getItem('ai_assistant_consent_accepted').then(v =>
       setAiConsentGiven(v === 'true')
     );
+    aiProvider.getAiConfig().then(cfg => {
+      setAiProviderType(cfg.type);
+      setAiProviderUrl(cfg.url);
+      setAiProviderModel(cfg.model);
+      setAiApiKey(cfg.apiKey);
+    });
   }, []);
 
   // ── App lock ─────────────────────────────────────────────────────────────────
@@ -279,35 +302,45 @@ export default function SetariScreen() {
 
   // ── Backup ───────────────────────────────────────────────────────────────────
   const handleExportBackup = async () => {
+    setBackupExporting(true);
     try {
       await exportBackup();
     } catch (e) {
       Alert.alert('Eroare', e instanceof Error ? e.message : 'Export eșuat');
+    } finally {
+      setBackupExporting(false);
     }
   };
 
   const handleImportBackup = async () => {
     Alert.alert(
       'Import backup',
-      'Vor fi adăugate înregistrări noi (pot apărea duplicate). Continui?',
+      'Vor fi importate înregistrările noi. Entitățile și documentele deja existente vor fi ignorate automat.',
       [
         { text: 'Anulare', style: 'cancel' },
         {
           text: 'Importă',
           onPress: async () => {
+            setBackupImporting(true);
             try {
-              const { imported, errors } = await importBackup();
+              const { imported, skipped, errors } = await importBackup();
+              const skippedNote = skipped > 0 ? `\n${skipped} deja existente (ignorate).` : '';
               if (errors.length > 0) {
                 Alert.alert(
                   'Import parțial',
-                  `${imported} înregistrări importate.\n\nErori:\n${errors.slice(0, 5).join('\n')}`
+                  `${imported} înregistrări importate.${skippedNote}\n\nErori:\n${errors.slice(0, 5).join('\n')}`
                 );
               } else {
-                Alert.alert('Succes', `${imported} înregistrări importate cu succes.`);
+                Alert.alert(
+                  'Succes',
+                  `${imported} înregistrări importate cu succes.${skippedNote}`
+                );
               }
             } catch (e) {
               if ((e as Error)?.message === 'Anulat') return;
               Alert.alert('Eroare', e instanceof Error ? e.message : 'Import eșuat');
+            } finally {
+              setBackupImporting(false);
             }
           },
         },
@@ -366,6 +399,75 @@ export default function SetariScreen() {
     updateVisibleDocTypes(next);
   };
 
+  // ── AI Provider ─────────────────────────────────────────────────────────────
+  const handleAiProviderSelect = (type: AiProviderType) => {
+    setAiProviderType(type);
+    const defaults = aiProvider.PROVIDER_DEFAULTS[type];
+    setAiProviderUrl(defaults.url);
+    setAiProviderModel(defaults.model);
+    setAiTestStatus('idle');
+    setAiTestMessage('');
+  };
+
+  const handleSaveAiConfig = async () => {
+    try {
+      await aiProvider.saveAiConfig({
+        type: aiProviderType,
+        url: aiProviderUrl,
+        model: aiProviderModel,
+      });
+      await aiProvider.saveAiApiKey(aiApiKey);
+      setAiModalVisible(false);
+    } catch (e) {
+      Alert.alert('Eroare', e instanceof Error ? e.message : 'Nu s-a putut salva configurația');
+    }
+  };
+
+  const handleTestAiConnection = async () => {
+    setAiTestStatus('loading');
+    setAiTestMessage('');
+    try {
+      // Salvăm temporar config-ul curent pentru test
+      await aiProvider.saveAiConfig({
+        type: aiProviderType,
+        url: aiProviderUrl,
+        model: aiProviderModel,
+      });
+      await aiProvider.saveAiApiKey(aiApiKey);
+      await aiProvider.sendAiRequest([{ role: 'user', content: 'test' }], 10);
+      setAiTestStatus('ok');
+      setAiTestMessage('Conexiune reușită!');
+    } catch (e) {
+      setAiTestStatus('error');
+      setAiTestMessage(e instanceof Error ? e.message : 'Eroare necunoscută');
+    }
+  };
+
+  // ── Onboarding ───────────────────────────────────────────────────────────────
+  const handleResetOnboarding = () => {
+    Alert.alert(
+      'Reluare onboarding',
+      'Ești sigur? Setările de vizibilitate vor fi resetate la valorile implicite. Documentele și entitățile tale rămân nemodificate.',
+      [
+        { text: 'Anulare', style: 'cancel' },
+        {
+          text: 'Resetează și reia',
+          onPress: async () => {
+            try {
+              await settings.resetOnboarding();
+              DeviceEventEmitter.emit(ONBOARDING_RESET_EVENT);
+            } catch (e) {
+              Alert.alert(
+                'Eroare',
+                e instanceof Error ? e.message : 'Nu s-a putut reseta onboarding-ul'
+              );
+            }
+          },
+        },
+      ]
+    );
+  };
+
   // ── GDPR ─────────────────────────────────────────────────────────────────────
   const handleDeleteAllData = () => {
     Alert.alert('Atenție', 'Vrei să ștergi TOATE datele? Aceasta este ireversibilă.', [
@@ -408,40 +510,75 @@ export default function SetariScreen() {
     });
   };
 
-  const handleRevokeAiConsent = () => {
-    Alert.alert(
-      'Revocare consimțământ AI',
-      'Ești sigur că vrei să revoci consimțământul pentru asistentul AI? La următoarea accesare vei fi din nou informat și ți se va cere acordul.',
-      [
-        { text: 'Anulează', style: 'cancel' },
-        {
-          text: 'Revocare',
-          style: 'destructive',
-          onPress: async () => {
-            await AsyncStorage.removeItem('ai_assistant_consent_accepted');
-            setAiConsentGiven(false);
-            Alert.alert('Revocat', 'Consimțământul pentru asistentul AI a fost revocat.');
+  const handleToggleAiConsent = () => {
+    if (aiConsentGiven) {
+      Alert.alert(
+        'Revocare consimțământ AI',
+        'Ești sigur că vrei să revoci consimțământul? Asistentul AI (chat și scanare OCR) nu va mai funcționa.',
+        [
+          { text: 'Anulează', style: 'cancel' },
+          {
+            text: 'Revocare',
+            style: 'destructive',
+            onPress: async () => {
+              await AsyncStorage.removeItem('ai_assistant_consent_accepted');
+              setAiConsentGiven(false);
+              Alert.alert('Revocat', 'Consimțământul a fost revocat.');
+            },
           },
-        },
-      ]
-    );
+        ]
+      );
+    } else {
+      Alert.alert(
+        'Activează asistentul AI',
+        'Când folosești AI-ul (chat sau scanare OCR), textul extras și lista entităților sunt trimise la Mistral AI. Fotografiile și PIN-ul NU sunt trimise.\n\nAccepți?',
+        [
+          { text: 'Anulează', style: 'cancel' },
+          {
+            text: 'Activează',
+            onPress: async () => {
+              await AsyncStorage.setItem('ai_assistant_consent_accepted', 'true');
+              setAiConsentGiven(true);
+              Alert.alert('Activat', 'Asistentul AI este acum activ.');
+            },
+          },
+        ]
+      );
+    }
   };
 
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
     <RNView style={[styles.container, { backgroundColor: C.background }]}>
-      {/* ── Header ── */}
-      <RNView
-        style={[styles.header, { backgroundColor: C.background, paddingTop: insets.top + 8 }]}
-      >
-        <RNText style={[styles.headerTitle, { color: C.text }]}>Setări</RNText>
-      </RNView>
-
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingTop: insets.top + 16 }]}
         showsVerticalScrollIndicator={false}
       >
+        {/* ── Securitate ── */}
+        <RNText style={[styles.sectionLabel, { color: C.textSecondary }]}>SECURITATE</RNText>
+        <RNView style={[styles.card, { backgroundColor: C.card, shadowColor: C.cardShadow }]}>
+          <RNView style={styles.rowLast}>
+            <RNView style={styles.rowLeft}>
+              <RNView style={[styles.rowIcon, { backgroundColor: '#FCE4EC' }]}>
+                <Ionicons name="lock-closed-outline" size={18} color="#C62828" />
+              </RNView>
+              <RNView style={styles.rowLabelWrap}>
+                <RNText style={[styles.rowLabel, { color: C.text }]}>Blocare aplicație</RNText>
+                <RNText style={[styles.rowSub, { color: C.textSecondary }]}>
+                  Face ID / Touch ID / PIN
+                </RNText>
+              </RNView>
+            </RNView>
+            <Switch
+              value={appLockEnabled}
+              onValueChange={handleAppLockToggle}
+              trackColor={{ false: '#ccc', true: primary }}
+              thumbColor="#fff"
+            />
+          </RNView>
+        </RNView>
+
         {/* ── Notificări ── */}
         <RNText style={[styles.sectionLabel, { color: C.textSecondary }]}>NOTIFICĂRI</RNText>
         <RNView style={[styles.card, { backgroundColor: C.card, shadowColor: C.cardShadow }]}>
@@ -485,57 +622,82 @@ export default function SetariScreen() {
         </RNText>
         <RNView style={[styles.card, { backgroundColor: C.card, shadowColor: C.cardShadow }]}>
           <RNText style={[styles.hint, { color: C.textSecondary }]}>
-            Exportă toate datele și pozele ca fișier JSON și salvează-l în iCloud Drive sau Files.
-            La schimbarea telefonului, importă fișierul pentru a restaura complet datele și pozele.
+            Exportă toate datele și pozele ca fișier ZIP și salvează-l în iCloud Drive sau Files. La
+            schimbarea telefonului, importă fișierul pentru a restaura complet datele și pozele.
           </RNText>
           <Pressable
-            style={({ pressed }) => [styles.btn, { opacity: pressed ? 0.85 : 1 }]}
+            style={({ pressed }) => [
+              styles.btn,
+              { opacity: pressed || backupExporting ? 0.85 : 1 },
+            ]}
             onPress={handleExportBackup}
+            disabled={backupExporting}
           >
-            <Ionicons name="cloud-upload-outline" size={18} color="#fff" style={styles.btnIcon} />
-            <RNText style={styles.btnText}>Exportă backup (JSON)</RNText>
+            {backupExporting ? (
+              <ActivityIndicator size="small" color="#fff" style={styles.btnIcon} />
+            ) : (
+              <Ionicons name="cloud-upload-outline" size={18} color="#fff" style={styles.btnIcon} />
+            )}
+            <RNText style={styles.btnText}>
+              {backupExporting ? 'Se exportă...' : 'Exportă backup (ZIP)'}
+            </RNText>
           </Pressable>
           <Pressable
             style={({ pressed }) => [
               styles.btnOutline,
-              { borderColor: primary, opacity: pressed ? 0.85 : 1 },
+              { borderColor: primary, opacity: pressed || backupImporting ? 0.85 : 1 },
             ]}
             onPress={handleImportBackup}
+            disabled={backupImporting}
           >
-            <Ionicons
-              name="cloud-download-outline"
-              size={18}
-              color={primary}
-              style={styles.btnIcon}
-            />
+            {backupImporting ? (
+              <ActivityIndicator size="small" color={primary} style={styles.btnIcon} />
+            ) : (
+              <Ionicons
+                name="cloud-download-outline"
+                size={18}
+                color={primary}
+                style={styles.btnIcon}
+              />
+            )}
             <RNText style={[styles.btnOutlineText, { color: primary }]}>
-              Importă din fișier JSON
+              {backupImporting ? 'Se importă...' : 'Importă din fișier backup'}
             </RNText>
           </Pressable>
         </RNView>
 
-        {/* ── Securitate ── */}
-        <RNText style={[styles.sectionLabel, { color: C.textSecondary }]}>SECURITATE</RNText>
+        {/* ── Asistent AI ── */}
+        <RNText style={[styles.sectionLabel, { color: C.textSecondary }]}>ASISTENT AI</RNText>
         <RNView style={[styles.card, { backgroundColor: C.card, shadowColor: C.cardShadow }]}>
-          <RNView style={styles.rowLast}>
+          <InfoRow
+            icon="sparkles-outline"
+            iconBg="#EDE7F6"
+            iconColor="#4527A0"
+            label="Provider AI"
+            sub={aiProvider.PROVIDER_DEFAULTS[aiProviderType].label}
+            onPress={() => setAiModalVisible(true)}
+            scheme={scheme}
+          />
+          <Pressable style={styles.rowLast} onPress={handleToggleAiConsent}>
             <RNView style={styles.rowLeft}>
-              <RNView style={[styles.rowIcon, { backgroundColor: '#FCE4EC' }]}>
-                <Ionicons name="lock-closed-outline" size={18} color="#C62828" />
+              <RNView style={[styles.rowIcon, { backgroundColor: '#EDE7F6' }]}>
+                <Ionicons name="chatbubble-ellipses-outline" size={18} color="#4527A0" />
               </RNView>
               <RNView style={styles.rowLabelWrap}>
-                <RNText style={[styles.rowLabel, { color: C.text }]}>Blocare aplicație</RNText>
-                <RNText style={[styles.rowSub, { color: C.textSecondary }]}>
-                  Face ID / Touch ID / PIN
+                <RNText style={[styles.rowLabel, { color: C.text }]}>
+                  Consimțământ asistent AI
+                </RNText>
+                <RNText
+                  style={[styles.rowSub, { color: aiConsentGiven ? '#4CAF50' : C.textSecondary }]}
+                >
+                  {aiConsentGiven
+                    ? '✓ Acordat – apasă pentru revocare'
+                    : 'Neacordat – apasă pentru activare'}
                 </RNText>
               </RNView>
             </RNView>
-            <Switch
-              value={appLockEnabled}
-              onValueChange={handleAppLockToggle}
-              trackColor={{ false: '#ccc', true: primary }}
-              thumbColor="#fff"
-            />
-          </RNView>
+            <Ionicons name="chevron-forward" size={16} color={C.textSecondary} />
+          </Pressable>
         </RNView>
 
         {/* ── Vizibilitate entități ── */}
@@ -688,26 +850,6 @@ export default function SetariScreen() {
               </RNView>
             </RNView>
           </RNView>
-          <RNView style={[styles.row, { borderBottomColor: C.border }]}>
-            <RNView style={styles.rowLeft}>
-              <RNView style={[styles.rowIcon, { backgroundColor: '#EDE7F6' }]}>
-                <Ionicons name="sparkles-outline" size={18} color="#4527A0" />
-              </RNView>
-              <RNView style={styles.rowLabelWrap}>
-                <RNText style={[styles.rowLabel, { color: C.text }]}>
-                  Consimțământ asistent AI
-                </RNText>
-                <RNText style={[styles.rowSub, { color: C.textSecondary }]}>
-                  {aiConsentGiven ? 'Acordat – apasă pentru revocare' : 'Nerevocat / neacordat'}
-                </RNText>
-              </RNView>
-            </RNView>
-            {aiConsentGiven && (
-              <Pressable onPress={handleRevokeAiConsent} hitSlop={8}>
-                <Ionicons name="chevron-forward" size={16} color={C.textSecondary} />
-              </Pressable>
-            )}
-          </RNView>
           <RNView style={styles.rowLast}>
             <RNView style={styles.rowLeft}>
               <RNView style={[styles.rowIcon, { backgroundColor: '#FCE4EC' }]}>
@@ -803,7 +945,7 @@ export default function SetariScreen() {
               </RNView>
             </RNView>
           </RNView>
-          <RNView style={styles.rowLast}>
+          <RNView style={[styles.row, { borderBottomColor: C.border }]}>
             <RNView style={styles.rowLeft}>
               <RNView style={[styles.rowIcon, { backgroundColor: '#FFF3E0' }]}>
                 <Ionicons name="construct-outline" size={18} color="#E65100" />
@@ -816,6 +958,16 @@ export default function SetariScreen() {
               </RNView>
             </RNView>
           </RNView>
+          <InfoRow
+            icon="rocket-outline"
+            iconBg="#E8F5E9"
+            iconColor={primary}
+            label="Reluare onboarding"
+            sub="Resetează setările de vizibilitate la valorile implicite"
+            onPress={handleResetOnboarding}
+            isLast
+            scheme={scheme}
+          />
         </RNView>
 
         <RNView style={styles.bottomPad} />
@@ -838,6 +990,236 @@ export default function SetariScreen() {
         onClose={() => setPrivacyVisible(false)}
         scheme={scheme}
       />
+
+      {/* ── Modal configurare AI ── */}
+      <Modal
+        visible={aiModalVisible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setAiModalVisible(false)}
+      >
+        <RNView style={[styles.legalContainer, { backgroundColor: C.background }]}>
+          <RNView
+            style={[styles.legalHeader, { backgroundColor: C.card, borderBottomColor: C.border }]}
+          >
+            <RNText style={[styles.legalTitle, { color: C.text }]}>Configurare Asistent AI</RNText>
+            <Pressable
+              onPress={() => setAiModalVisible(false)}
+              hitSlop={12}
+              style={styles.legalClose}
+            >
+              <Ionicons name="close" size={22} color={C.textSecondary} />
+            </Pressable>
+          </RNView>
+
+          <ScrollView
+            style={styles.legalScroll}
+            contentContainerStyle={[styles.legalContent, { gap: 20 }]}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            {/* Selector provider */}
+            <RNView>
+              <RNText style={[styles.aiLabel, { color: C.textSecondary }]}>Provider</RNText>
+              <RNView style={styles.chipRow}>
+                {(Object.keys(aiProvider.PROVIDER_DEFAULTS) as AiProviderType[]).map(type => (
+                  <Pressable
+                    key={type}
+                    style={[
+                      styles.chip,
+                      aiProviderType === type
+                        ? [styles.chipActive, { borderColor: primary }]
+                        : { borderColor: C.border },
+                    ]}
+                    onPress={() => handleAiProviderSelect(type)}
+                  >
+                    <RNText
+                      style={[
+                        styles.chipText,
+                        { color: aiProviderType === type ? '#fff' : C.textSecondary },
+                      ]}
+                    >
+                      {aiProvider.PROVIDER_DEFAULTS[type].label}
+                    </RNText>
+                  </Pressable>
+                ))}
+              </RNView>
+            </RNView>
+
+            {/* Descriere builtin */}
+            {aiProviderType === 'builtin' && (
+              <RNView
+                style={[
+                  styles.aiInput,
+                  styles.aiInputReadonly,
+                  {
+                    borderColor: C.border,
+                    backgroundColor: C.background,
+                    flexDirection: 'column',
+                    height: 'auto',
+                    paddingVertical: 12,
+                  },
+                ]}
+              >
+                <RNText
+                  style={[styles.aiInputReadonlyText, { color: C.textSecondary, lineHeight: 20 }]}
+                >
+                  Utilizează serviciul AI inclus în aplicație (Mistral AI). Nu este necesară o cheie
+                  API personală.
+                </RNText>
+              </RNView>
+            )}
+
+            {/* URL editabil doar pentru custom */}
+            {aiProviderType === 'custom' && (
+              <RNView>
+                <RNText style={[styles.aiLabel, { color: C.textSecondary }]}>URL API</RNText>
+                <TextInput
+                  style={[
+                    styles.aiInput,
+                    { color: C.text, borderColor: C.border, backgroundColor: C.card },
+                  ]}
+                  value={aiProviderUrl}
+                  onChangeText={text => {
+                    setAiProviderUrl(text);
+                    setAiTestStatus('idle');
+                  }}
+                  placeholder="https://…"
+                  placeholderTextColor={C.textSecondary}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="url"
+                />
+              </RNView>
+            )}
+
+            {/* URL readonly pentru mistral/openai */}
+            {(aiProviderType === 'mistral' || aiProviderType === 'openai') && (
+              <RNView>
+                <RNText style={[styles.aiLabel, { color: C.textSecondary }]}>URL API</RNText>
+                <RNView
+                  style={[
+                    styles.aiInput,
+                    styles.aiInputReadonly,
+                    { borderColor: C.border, backgroundColor: C.background },
+                  ]}
+                >
+                  <RNText style={[styles.aiInputReadonlyText, { color: C.textSecondary }]}>
+                    {aiProviderUrl}
+                  </RNText>
+                </RNView>
+              </RNView>
+            )}
+
+            {/* Cheie API — ascunsă pentru builtin */}
+            {aiProviderType !== 'builtin' && (
+              <RNView>
+                <RNText style={[styles.aiLabel, { color: C.textSecondary }]}>Cheie API</RNText>
+                <TextInput
+                  style={[
+                    styles.aiInput,
+                    { color: C.text, borderColor: C.border, backgroundColor: C.card },
+                  ]}
+                  value={aiApiKey}
+                  onChangeText={text => {
+                    setAiApiKey(text);
+                    setAiTestStatus('idle');
+                  }}
+                  placeholder="••••••••••"
+                  placeholderTextColor={C.textSecondary}
+                  secureTextEntry
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </RNView>
+            )}
+
+            {/* Model — ascuns pentru builtin */}
+            {aiProviderType !== 'builtin' && (
+              <RNView>
+                <RNText style={[styles.aiLabel, { color: C.textSecondary }]}>Model</RNText>
+                <TextInput
+                  style={[
+                    styles.aiInput,
+                    { color: C.text, borderColor: C.border, backgroundColor: C.card },
+                  ]}
+                  value={aiProviderModel}
+                  onChangeText={text => {
+                    setAiProviderModel(text);
+                    setAiTestStatus('idle');
+                  }}
+                  placeholder="ex: mistral-small-latest"
+                  placeholderTextColor={C.textSecondary}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </RNView>
+            )}
+
+            {/* Testare conexiune */}
+            <Pressable
+              style={({ pressed }) => [
+                styles.btnOutline,
+                { borderColor: primary, opacity: pressed ? 0.8 : 1 },
+              ]}
+              onPress={handleTestAiConnection}
+              disabled={aiTestStatus === 'loading'}
+            >
+              <Ionicons
+                name={
+                  aiTestStatus === 'ok'
+                    ? 'checkmark-circle-outline'
+                    : aiTestStatus === 'error'
+                      ? 'close-circle-outline'
+                      : 'wifi-outline'
+                }
+                size={18}
+                color={
+                  aiTestStatus === 'ok' ? '#2E7D32' : aiTestStatus === 'error' ? '#C62828' : primary
+                }
+                style={styles.btnIcon}
+              />
+              <RNText
+                style={[
+                  styles.btnOutlineText,
+                  {
+                    color:
+                      aiTestStatus === 'ok'
+                        ? '#2E7D32'
+                        : aiTestStatus === 'error'
+                          ? '#C62828'
+                          : primary,
+                  },
+                ]}
+              >
+                {aiTestStatus === 'loading'
+                  ? 'Se testează…'
+                  : aiTestStatus === 'ok'
+                    ? 'Conexiune OK'
+                    : aiTestStatus === 'error'
+                      ? 'Eroare conexiune'
+                      : 'Testează conexiunea'}
+              </RNText>
+            </Pressable>
+            {aiTestMessage ? (
+              <RNText
+                style={[styles.aiHint, { color: aiTestStatus === 'error' ? '#C62828' : '#2E7D32' }]}
+              >
+                {aiTestMessage}
+              </RNText>
+            ) : null}
+
+            {/* Salvare */}
+            <Pressable
+              style={({ pressed }) => [styles.btn, { opacity: pressed ? 0.85 : 1 }]}
+              onPress={handleSaveAiConfig}
+            >
+              <Ionicons name="save-outline" size={18} color="#fff" style={styles.btnIcon} />
+              <RNText style={styles.btnText}>Salvează</RNText>
+            </Pressable>
+          </ScrollView>
+        </RNView>
+      </Modal>
 
       <AppLockPinModal
         visible={appLockPinModal}
@@ -1035,4 +1417,32 @@ const styles = StyleSheet.create({
   legalScroll: { flex: 1 },
   legalContent: { padding: 20, paddingBottom: 40 },
   legalText: { fontSize: 14, lineHeight: 22 },
+
+  // Stiluri modal AI
+  aiLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.4,
+    marginBottom: 6,
+    textTransform: 'uppercase',
+  },
+  aiInput: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+  },
+  aiInputReadonly: {
+    justifyContent: 'center',
+    minHeight: 42,
+  },
+  aiInputReadonlyText: {
+    fontSize: 14,
+  },
+  aiHint: {
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 4,
+  },
 });

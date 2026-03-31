@@ -9,7 +9,7 @@ export function useAppLock() {
   const [biometricAvailable, setBiometricAvailable] = useState(false);
 
   useEffect(() => {
-    settings.getAppLockEnabled().then((enabled) => {
+    settings.getAppLockEnabled().then(enabled => {
       setLockEnabledState(enabled);
       if (enabled) setLocked(true);
     });
@@ -17,8 +17,11 @@ export function useAppLock() {
 
   useEffect(() => {
     if (!lockEnabled) return;
-    LocalAuthentication.hasHardwareAsync().then((has) => {
-      if (has) LocalAuthentication.supportedAuthenticationTypesAsync().then(() => setBiometricAvailable(true));
+    LocalAuthentication.hasHardwareAsync().then(has => {
+      if (has)
+        LocalAuthentication.supportedAuthenticationTypesAsync().then(() =>
+          setBiometricAvailable(true)
+        );
     });
   }, [lockEnabled]);
 

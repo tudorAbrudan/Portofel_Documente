@@ -33,9 +33,15 @@ import {
 } from '@/services/documents';
 import { scheduleExpirationReminders } from '@/services/notifications';
 import { addExpiryCalendarEvent, isCalendarAvailable } from '@/services/calendar';
-import { extractText, extractDocumentInfo, detectDocumentType, formatOcrSummary } from '@/services/ocr';
+import {
+  extractText,
+  extractDocumentInfo,
+  detectDocumentType,
+  formatOcrSummary,
+} from '@/services/ocr';
 import { extractFieldsForType } from '@/services/ocrExtractors';
 import { toFileUri } from '@/services/fileUtils';
+import { isPdfFile, extractTextFromPdf } from '@/services/pdfExtractor';
 import { DOCUMENT_TYPE_LABELS, getDocumentLabel } from '@/types';
 import type { Document as DocType, DocumentType } from '@/types';
 import { useCustomTypes } from '@/hooks/useCustomTypes';
@@ -128,11 +134,10 @@ export default function EditDocumentScreen() {
     if (!page) return;
     const sourceUri = rotatedUris[page.file_path] ?? toFileUri(page.file_path);
     try {
-      const result = await ImageManipulator.manipulateAsync(
-        sourceUri,
-        [{ rotate: degrees }],
-        { compress: 0.9, format: ImageManipulator.SaveFormat.JPEG }
-      );
+      const result = await ImageManipulator.manipulateAsync(sourceUri, [{ rotate: degrees }], {
+        compress: 0.9,
+        format: ImageManipulator.SaveFormat.JPEG,
+      });
       setRotatedUris(prev => ({ ...prev, [page.file_path]: result.uri }));
       const absoluteUri = toFileUri(page.file_path);
       const dest = absoluteUri.startsWith('file://') ? absoluteUri.slice(7) : absoluteUri;
@@ -186,10 +191,13 @@ export default function EditDocumentScreen() {
       const filename = `doc_${Date.now()}.jpg`;
       const relativePath = `documents/${filename}`;
       const dest = `${FileSystem.documentDirectory}${relativePath}`;
-      await FileSystem.makeDirectoryAsync(`${FileSystem.documentDirectory}documents`, { intermediates: true });
-      const normalized = await ImageManipulator.manipulateAsync(
-        uri, [], { compress: 0.92, format: ImageManipulator.SaveFormat.JPEG }
-      );
+      await FileSystem.makeDirectoryAsync(`${FileSystem.documentDirectory}documents`, {
+        intermediates: true,
+      });
+      const normalized = await ImageManipulator.manipulateAsync(uri, [], {
+        compress: 0.92,
+        format: ImageManipulator.SaveFormat.JPEG,
+      });
       await FileSystem.copyAsync({ from: normalized.uri, to: dest });
       if (!doc.file_path) {
         await updateDocument(doc.id, {
@@ -217,8 +225,14 @@ export default function EditDocumentScreen() {
         text: 'Cameră',
         onPress: async () => {
           const { status } = await ImagePicker.requestCameraPermissionsAsync();
-          if (status !== 'granted') { Alert.alert('Permisiune', 'Este nevoie de acces la cameră.'); return; }
-          const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 1 });
+          if (status !== 'granted') {
+            Alert.alert('Permisiune', 'Este nevoie de acces la cameră.');
+            return;
+          }
+          const result = await ImagePicker.launchCameraAsync({
+            mediaTypes: ['images'],
+            quality: 1,
+          });
           if (!result.canceled && result.assets[0]) await saveAndAddPage(result.assets[0].uri);
         },
       },
@@ -226,8 +240,14 @@ export default function EditDocumentScreen() {
         text: 'Galerie',
         onPress: async () => {
           const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-          if (status !== 'granted') { Alert.alert('Permisiune', 'Este nevoie de acces la galerie.'); return; }
-          const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 1 });
+          if (status !== 'granted') {
+            Alert.alert('Permisiune', 'Este nevoie de acces la galerie.');
+            return;
+          }
+          const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ['images'],
+            quality: 1,
+          });
           if (!result.canceled && result.assets[0]) await saveAndAddPage(result.assets[0].uri);
         },
       },
@@ -237,7 +257,9 @@ export default function EditDocumentScreen() {
 
   // ── OCR ──────────────────────────────────────────────────────────────────
 
-  async function ocrWithAutoRotate(storedPath: string): Promise<{ text: string; rotated: boolean }> {
+  async function ocrWithAutoRotate(
+    storedPath: string
+  ): Promise<{ text: string; rotated: boolean }> {
     const fileUri = toFileUri(storedPath);
     let { text } = await extractText(fileUri);
     if (text.trim().length >= 30) return { text, rotated: false };
@@ -245,9 +267,10 @@ export default function EditDocumentScreen() {
     let bestText = text;
     let bestUri = fileUri;
     for (const deg of [90, 270, 180]) {
-      const r = await ImageManipulator.manipulateAsync(
-        fileUri, [{ rotate: deg }], { compress: 0.92, format: ImageManipulator.SaveFormat.JPEG }
-      );
+      const r = await ImageManipulator.manipulateAsync(fileUri, [{ rotate: deg }], {
+        compress: 0.92,
+        format: ImageManipulator.SaveFormat.JPEG,
+      });
       const { text: rotText } = await extractText(r.uri);
       if (rotText.trim().length > bestText.trim().length) {
         bestText = rotText;
@@ -273,27 +296,38 @@ export default function EditDocumentScreen() {
       const info = extractDocumentInfo(text);
       const summary = formatOcrSummary(text, info);
       const updates: Parameters<typeof updateDocument>[1] = {
-        type: (detectedType && detectedType !== 'altul' && detectedType !== 'custom') ? detectedType : currentDoc.type,
+        type:
+          detectedType && detectedType !== 'altul' && detectedType !== 'custom'
+            ? detectedType
+            : currentDoc.type,
         issue_date: info.issue_date ?? currentDoc.issue_date,
         expiry_date: info.expiry_date ?? currentDoc.expiry_date,
-        note: (!currentDoc.note && summary) ? summary : currentDoc.note,
+        note: !currentDoc.note && summary ? summary : currentDoc.note,
         file_path: currentDoc.file_path,
         auto_delete: currentDoc.auto_delete,
       };
       await updateDocument(currentDoc.id, updates);
       const existingOcr = currentDoc.ocr_text ?? '';
-      await setDocumentOcrText(currentDoc.id, existingOcr ? `${existingOcr}\n\n---\n\n${text}` : text);
+      await setDocumentOcrText(
+        currentDoc.id,
+        existingOcr ? `${existingOcr}\n\n---\n\n${text}` : text
+      );
       const updated = await getDocumentById(currentDoc.id);
       setDoc(updated);
       if (updated) {
         setType(updated.type);
         if (updated.issue_date) setIssueDate(updated.issue_date);
-        if (updated.expiry_date) { setExpiryDate(updated.expiry_date); expiryDateRef.current = updated.expiry_date; }
+        if (updated.expiry_date) {
+          setExpiryDate(updated.expiry_date);
+          expiryDateRef.current = updated.expiry_date;
+        }
         if (!note && updated.note) setNote(updated.note);
         if (updated.metadata) setMetadata(prev => ({ ...updated.metadata!, ...prev }));
       }
       if (rotated) setRotatedUris({});
-    } catch { /* OCR opțional */ }
+    } catch {
+      /* OCR opțional */
+    }
   }
 
   const handleOcr = async () => {
@@ -307,10 +341,17 @@ export default function EditDocumentScreen() {
       let anyRotated = false;
       for (const page of allPages) {
         try {
-          const { text, rotated } = await ocrWithAutoRotate(page.file_path);
-          if (text.trim()) texts.push(text);
-          if (rotated) anyRotated = true;
-        } catch { /* pagina nu a putut fi scanată */ }
+          if (isPdfFile(page.file_path)) {
+            const pdfText = await extractTextFromPdf(toFileUri(page.file_path));
+            if (pdfText.trim()) texts.push(pdfText);
+          } else {
+            const { text, rotated } = await ocrWithAutoRotate(page.file_path);
+            if (text.trim()) texts.push(text);
+            if (rotated) anyRotated = true;
+          }
+        } catch {
+          /* pagina nu a putut fi scanată */
+        }
       }
       if (anyRotated) setRotatedUris({});
 
@@ -322,27 +363,44 @@ export default function EditDocumentScreen() {
 
       const info = extractDocumentInfo(combinedText);
       const summary = formatOcrSummary(combinedText, info);
-      const extracted = doc ? extractFieldsForType(doc.type, combinedText) : { metadata: {} };
+      const detectedType = detectDocumentType(combinedText);
+      const typeChanged =
+        detectedType &&
+        detectedType !== 'altul' &&
+        detectedType !== 'custom' &&
+        detectedType !== doc?.type;
+      const effectiveType = (typeChanged ? detectedType : doc?.type) ?? 'altul';
+      const extracted = extractFieldsForType(effectiveType, combinedText);
       const newExpiry = extracted.expiry_date ?? info.expiry_date;
       const newIssue = extracted.issue_date ?? info.issue_date;
 
       const found: string[] = [];
-      Object.entries(extracted.metadata).slice(0, 5).forEach(([, v]) => found.push(`• ${v}`));
+      Object.entries(extracted.metadata)
+        .slice(0, 5)
+        .forEach(([, v]) => found.push(`• ${v}`));
       if (newExpiry) found.push(`📅 Expiră: ${newExpiry}`);
       if (newIssue) found.push(`📅 Emis: ${newIssue}`);
 
       const pageLabel = `${allPages.length} ${allPages.length === 1 ? 'pagină' : 'pagini'}`;
-      const message = found.length > 0
-        ? `Găsit din ${pageLabel}:\n\n${found.join('\n')}`
-        : `Text extras din ${pageLabel}:\n\n${combinedText.slice(0, 400)}${combinedText.length > 400 ? '…' : ''}`;
+      const typeNote = typeChanged ? `\n\n📋 Tip detectat: ${effectiveType}` : '';
+      const message =
+        found.length > 0
+          ? `Găsit din ${pageLabel}:${typeNote}\n\n${found.join('\n')}`
+          : `Text extras din ${pageLabel}:${typeNote}\n\n${combinedText.slice(0, 400)}${combinedText.length > 400 ? '…' : ''}`;
 
       Alert.alert('Procesare OCR', message, [
         { text: 'Închide', style: 'cancel' },
-        found.length > 0
+        found.length > 0 || typeChanged
           ? {
-              text: 'Aplică pe document',
+              text: typeChanged
+                ? `Aplică (schimbă tipul în ${effectiveType})`
+                : 'Aplică pe document',
               onPress: async () => {
-                if (newExpiry) { setExpiryDate(newExpiry); expiryDateRef.current = newExpiry; }
+                if (typeChanged) setType(effectiveType as DocumentType);
+                if (newExpiry) {
+                  setExpiryDate(newExpiry);
+                  expiryDateRef.current = newExpiry;
+                }
                 if (newIssue) setIssueDate(newIssue);
                 if (!note && summary) setNote(summary);
                 setMetadata(prev => ({ ...extracted.metadata, ...prev }));
@@ -372,8 +430,12 @@ export default function EditDocumentScreen() {
   // ── Entity ────────────────────────────────────────────────────────────────
 
   async function handleLinkEntity(entity: {
-    person_id?: string; property_id?: string; vehicle_id?: string;
-    card_id?: string; animal_id?: string; company_id?: string;
+    person_id?: string;
+    property_id?: string;
+    vehicle_id?: string;
+    card_id?: string;
+    animal_id?: string;
+    company_id?: string;
   }) {
     if (!doc) return;
     await linkDocumentToEntity(doc.id, entity);
@@ -411,7 +473,13 @@ export default function EditDocumentScreen() {
             {
               text: 'Adaugă',
               onPress: async () => {
-                const calId = await addExpiryCalendarEvent({ docType: type, expiryDate: finalExpiry, entityName: undefined, documentId: doc.id, note: note.trim() || undefined });
+                const calId = await addExpiryCalendarEvent({
+                  docType: type,
+                  expiryDate: finalExpiry,
+                  entityName: undefined,
+                  documentId: doc.id,
+                  note: note.trim() || undefined,
+                });
                 if (!calId) Alert.alert('Eroare', 'Nu s-a putut accesa calendarul.');
                 router.back();
               },
@@ -433,7 +501,8 @@ export default function EditDocumentScreen() {
 
   let entityName: string | null = null;
   if (doc?.person_id) entityName = persons.find(p => p.id === doc.person_id)?.name ?? null;
-  else if (doc?.property_id) entityName = properties.find(p => p.id === doc.property_id)?.name ?? null;
+  else if (doc?.property_id)
+    entityName = properties.find(p => p.id === doc.property_id)?.name ?? null;
   else if (doc?.vehicle_id) entityName = vehicles.find(v => v.id === doc.vehicle_id)?.name ?? null;
   else if (doc?.card_id) {
     const c = cards.find(c => c.id === doc.card_id);
@@ -485,10 +554,7 @@ export default function EditDocumentScreen() {
 
           {/* 2. TIP DOCUMENT */}
           <Text style={styles.label}>Tip document</Text>
-          <Pressable
-            style={styles.typeToggleRow}
-            onPress={() => setTypePickerVisible(v => !v)}
-          >
+          <Pressable style={styles.typeToggleRow} onPress={() => setTypePickerVisible(v => !v)}>
             <Text style={styles.typeToggleCurrent}>
               {type === 'custom'
                 ? (customTypes.find(c => c.id === customTypeId)?.name ?? 'Tip personalizat')
@@ -502,7 +568,11 @@ export default function EditDocumentScreen() {
                 <Pressable
                   key={value}
                   style={[styles.typeChip, type === value && styles.typeChipActive]}
-                  onPress={() => { setType(value); setCustomTypeId(null); setTypePickerVisible(false); }}
+                  onPress={() => {
+                    setType(value);
+                    setCustomTypeId(null);
+                    setTypePickerVisible(false);
+                  }}
                 >
                   <Text style={[styles.typeChipText, type === value && styles.typeChipTextActive]}>
                     {label}
@@ -512,10 +582,22 @@ export default function EditDocumentScreen() {
               {customTypes.map(ct => (
                 <Pressable
                   key={ct.id}
-                  style={[styles.typeChip, type === 'custom' && customTypeId === ct.id && styles.typeChipActive]}
-                  onPress={() => { setType('custom'); setCustomTypeId(ct.id); setTypePickerVisible(false); }}
+                  style={[
+                    styles.typeChip,
+                    type === 'custom' && customTypeId === ct.id && styles.typeChipActive,
+                  ]}
+                  onPress={() => {
+                    setType('custom');
+                    setCustomTypeId(ct.id);
+                    setTypePickerVisible(false);
+                  }}
                 >
-                  <Text style={[styles.typeChipText, type === 'custom' && customTypeId === ct.id && styles.typeChipTextActive]}>
+                  <Text
+                    style={[
+                      styles.typeChipText,
+                      type === 'custom' && customTypeId === ct.id && styles.typeChipTextActive,
+                    ]}
+                  >
                     {ct.name}
                   </Text>
                 </Pressable>
@@ -558,27 +640,42 @@ export default function EditDocumentScreen() {
           <DatePickerField
             label="Data expirare (opțional)"
             value={expiryDate}
-            onChange={v => { expiryDateRef.current = v; setExpiryDate(v); }}
+            onChange={v => {
+              expiryDateRef.current = v;
+              setExpiryDate(v);
+            }}
             disabled={saving}
           />
 
           {/* 6. AUTO-ȘTERGERE */}
           <Text style={styles.label}>Auto-ștergere (opțional)</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow} style={styles.chipsScroll}>
-            {([
-              ...(expiryDate ? [{ label: 'La expirare', value: 'expiry' }] : []),
-              { label: 'Niciodată', value: null },
-              { label: '30 zile', value: '30d' },
-              { label: '90 zile', value: '90d' },
-              { label: '180 zile', value: '180d' },
-              { label: '1 an', value: '365d' },
-            ] as { label: string; value: string | null }[]).map(opt => (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.chipsRow}
+            style={styles.chipsScroll}
+          >
+            {(
+              [
+                ...(expiryDate ? [{ label: 'La expirare', value: 'expiry' }] : []),
+                { label: 'Niciodată', value: null },
+                { label: '30 zile', value: '30d' },
+                { label: '90 zile', value: '90d' },
+                { label: '180 zile', value: '180d' },
+                { label: '1 an', value: '365d' },
+              ] as { label: string; value: string | null }[]
+            ).map(opt => (
               <Pressable
                 key={opt.value ?? 'never'}
                 style={[styles.typeChip, autoDelete === opt.value && styles.typeChipActive]}
                 onPress={() => setAutoDelete(opt.value)}
               >
-                <Text style={[styles.typeChipText, autoDelete === opt.value && styles.typeChipTextActive]}>
+                <Text
+                  style={[
+                    styles.typeChipText,
+                    autoDelete === opt.value && styles.typeChipTextActive,
+                  ]}
+                >
                   {opt.label}
                 </Text>
               </Pressable>
@@ -611,9 +708,11 @@ export default function EditDocumentScreen() {
               onPress={handleSave}
               disabled={saving}
             >
-              {saving
-                ? <ActivityIndicator color="#fff" />
-                : <Text style={styles.btnPrimaryText}>Salvează</Text>}
+              {saving ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.btnPrimaryText}>Salvează</Text>
+              )}
             </Pressable>
           </View>
         </ScrollView>
@@ -657,8 +756,11 @@ export default function EditDocumentScreen() {
                 <>
                   <Text style={styles.entityGroupLabel}>Persoane</Text>
                   {persons.map(p => (
-                    <Pressable key={p.id} style={[styles.entityPickerRow, { borderBottomColor: colors.border }]}
-                      onPress={() => handleLinkEntity({ person_id: p.id })}>
+                    <Pressable
+                      key={p.id}
+                      style={[styles.entityPickerRow, { borderBottomColor: colors.border }]}
+                      onPress={() => handleLinkEntity({ person_id: p.id })}
+                    >
                       <Text style={styles.entityPickerText}>{p.name}</Text>
                     </Pressable>
                   ))}
@@ -668,8 +770,11 @@ export default function EditDocumentScreen() {
                 <>
                   <Text style={styles.entityGroupLabel}>Vehicule</Text>
                   {vehicles.map(v => (
-                    <Pressable key={v.id} style={[styles.entityPickerRow, { borderBottomColor: colors.border }]}
-                      onPress={() => handleLinkEntity({ vehicle_id: v.id })}>
+                    <Pressable
+                      key={v.id}
+                      style={[styles.entityPickerRow, { borderBottomColor: colors.border }]}
+                      onPress={() => handleLinkEntity({ vehicle_id: v.id })}
+                    >
                       <Text style={styles.entityPickerText}>{v.name}</Text>
                     </Pressable>
                   ))}
@@ -679,8 +784,11 @@ export default function EditDocumentScreen() {
                 <>
                   <Text style={styles.entityGroupLabel}>Proprietăți</Text>
                   {properties.map(p => (
-                    <Pressable key={p.id} style={[styles.entityPickerRow, { borderBottomColor: colors.border }]}
-                      onPress={() => handleLinkEntity({ property_id: p.id })}>
+                    <Pressable
+                      key={p.id}
+                      style={[styles.entityPickerRow, { borderBottomColor: colors.border }]}
+                      onPress={() => handleLinkEntity({ property_id: p.id })}
+                    >
                       <Text style={styles.entityPickerText}>{p.name}</Text>
                     </Pressable>
                   ))}
@@ -690,9 +798,14 @@ export default function EditDocumentScreen() {
                 <>
                   <Text style={styles.entityGroupLabel}>Carduri</Text>
                   {cards.map(c => (
-                    <Pressable key={c.id} style={[styles.entityPickerRow, { borderBottomColor: colors.border }]}
-                      onPress={() => handleLinkEntity({ card_id: c.id })}>
-                      <Text style={styles.entityPickerText}>{c.nickname ?? ''} ····{c.last4}</Text>
+                    <Pressable
+                      key={c.id}
+                      style={[styles.entityPickerRow, { borderBottomColor: colors.border }]}
+                      onPress={() => handleLinkEntity({ card_id: c.id })}
+                    >
+                      <Text style={styles.entityPickerText}>
+                        {c.nickname ?? ''} ····{c.last4}
+                      </Text>
                     </Pressable>
                   ))}
                 </>
@@ -701,8 +814,11 @@ export default function EditDocumentScreen() {
                 <>
                   <Text style={styles.entityGroupLabel}>Animale</Text>
                   {animals.map(a => (
-                    <Pressable key={a.id} style={[styles.entityPickerRow, { borderBottomColor: colors.border }]}
-                      onPress={() => handleLinkEntity({ animal_id: a.id })}>
+                    <Pressable
+                      key={a.id}
+                      style={[styles.entityPickerRow, { borderBottomColor: colors.border }]}
+                      onPress={() => handleLinkEntity({ animal_id: a.id })}
+                    >
                       <Text style={styles.entityPickerText}>{a.name}</Text>
                     </Pressable>
                   ))}
@@ -712,17 +828,17 @@ export default function EditDocumentScreen() {
                 <>
                   <Text style={styles.entityGroupLabel}>Firme</Text>
                   {companies.map(c => (
-                    <Pressable key={c.id} style={[styles.entityPickerRow, { borderBottomColor: colors.border }]}
-                      onPress={() => handleLinkEntity({ company_id: c.id })}>
+                    <Pressable
+                      key={c.id}
+                      style={[styles.entityPickerRow, { borderBottomColor: colors.border }]}
+                      onPress={() => handleLinkEntity({ company_id: c.id })}
+                    >
                       <Text style={styles.entityPickerText}>{c.name}</Text>
                     </Pressable>
                   ))}
                 </>
               )}
-              <Pressable
-                style={styles.entityPickerRowDanger}
-                onPress={() => handleLinkEntity({})}
-              >
+              <Pressable style={styles.entityPickerRowDanger} onPress={() => handleLinkEntity({})}>
                 <Text style={styles.entityPickerDangerText}>Elimină legătura</Text>
               </Pressable>
             </ScrollView>
@@ -757,36 +873,58 @@ const styles = StyleSheet.create({
   inputMultiline: { minHeight: 80 },
   typeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 },
   typeChip: {
-    paddingVertical: 8, paddingHorizontal: 14,
-    borderRadius: 20, borderWidth: 1, borderColor: '#ccc',
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#ccc',
   },
   typeChipActive: { backgroundColor: primary, borderColor: primary },
   typeChipText: { fontSize: 14 },
   typeChipTextActive: { color: '#fff', fontWeight: '500' },
   typeToggleRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    borderWidth: 1, borderColor: '#e0e0e0', borderRadius: 10,
-    paddingHorizontal: 14, paddingVertical: 12, marginBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 12,
   },
   typeToggleCurrent: { fontSize: 15, fontWeight: '500', flex: 1 },
   typeToggleChevron: { fontSize: 13, color: primary, fontWeight: '500' },
   entityRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    borderWidth: 1, borderColor: '#e0e0e0', borderRadius: 12,
-    paddingHorizontal: 16, paddingVertical: 14, marginBottom: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    marginBottom: 20,
   },
   entityValue: { fontSize: 15, flex: 1 },
   entityPlaceholder: { opacity: 0.4 },
   entityEditHint: { fontSize: 13, color: primary, fontWeight: '500' },
   actionRow: { flexDirection: 'row', gap: 12, marginTop: 8 },
   btnOutline: {
-    flex: 1, paddingVertical: 15, borderRadius: 12,
-    borderWidth: 1, borderColor: primary, alignItems: 'center',
+    flex: 1,
+    paddingVertical: 15,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: primary,
+    alignItems: 'center',
   },
   btnOutlineText: { color: primary, fontSize: 16, fontWeight: '500' },
   btnPrimary: {
-    flex: 1, paddingVertical: 15, borderRadius: 12,
-    backgroundColor: primary, alignItems: 'center',
+    flex: 1,
+    paddingVertical: 15,
+    borderRadius: 12,
+    backgroundColor: primary,
+    alignItems: 'center',
   },
   btnPrimaryText: { color: '#fff', fontSize: 16, fontWeight: '600' },
   btnDisabled: { opacity: 0.5 },
@@ -796,28 +934,48 @@ const styles = StyleSheet.create({
   fsOverlay: { flex: 1, backgroundColor: '#000' },
   fsScrollContent: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   fsCloseBtn: {
-    position: 'absolute', top: 52, right: 20,
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center',
+    position: 'absolute',
+    top: 52,
+    right: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   fsCloseBtnText: { color: '#fff', fontSize: 20, fontWeight: '600' },
   // Entity overlay
   overlay: {
-    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center', alignItems: 'center', padding: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
   },
   overlayBox: {
-    borderRadius: 16, padding: 20,
-    width: '100%', maxHeight: '80%',
+    borderRadius: 16,
+    padding: 20,
+    width: '100%',
+    maxHeight: '80%',
   },
   overlayTitle: { fontSize: 17, fontWeight: '700', marginBottom: 16 },
   entityGroupLabel: {
-    fontSize: 11, fontWeight: '700', textTransform: 'uppercase',
-    opacity: 0.5, letterSpacing: 0.5, marginTop: 12, marginBottom: 4,
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    opacity: 0.5,
+    letterSpacing: 0.5,
+    marginTop: 12,
+    marginBottom: 4,
   },
   entityPickerRow: {
-    paddingVertical: 14, paddingHorizontal: 4,
+    paddingVertical: 14,
+    paddingHorizontal: 4,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   entityPickerText: { fontSize: 15 },

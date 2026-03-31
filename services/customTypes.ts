@@ -10,10 +10,11 @@ export async function getCustomTypes(): Promise<CustomDocumentType[]> {
 export async function createCustomType(name: string): Promise<CustomDocumentType> {
   const id = generateId();
   const created_at = new Date().toISOString();
-  await db.runAsync(
-    'INSERT INTO custom_document_types (id, name, created_at) VALUES (?, ?, ?)',
-    [id, name.trim(), created_at]
-  );
+  await db.runAsync('INSERT INTO custom_document_types (id, name, created_at) VALUES (?, ?, ?)', [
+    id,
+    name.trim(),
+    created_at,
+  ]);
   return { id, name: name.trim(), created_at };
 }
 

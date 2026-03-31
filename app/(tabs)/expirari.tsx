@@ -43,6 +43,7 @@ const DOC_ICON: Record<DocumentType, IoniconName> = {
   reteta_medicala: 'medkit-outline',
   analize_medicale: 'flask-outline',
   bon_cumparaturi: 'receipt-outline',
+  bon_parcare: 'car-outline',
   pad: 'home-outline',
   stingator_incendiu: 'flame-outline',
   abonament: 'repeat-outline',
@@ -79,6 +80,7 @@ const DOC_ICON_BG: Record<DocumentType, string> = {
   reteta_medicala: '#FCE4EC',
   analize_medicale: '#E3F2FD',
   bon_cumparaturi: '#FFF8E1',
+  bon_parcare: '#E8F5E9',
   pad: '#E3F2FD',
   stingator_incendiu: '#FCE4EC',
   abonament: '#F3E5F5',
@@ -115,6 +117,7 @@ const DOC_ICON_COLOR: Record<DocumentType, string> = {
   reteta_medicala: '#C62828',
   analize_medicale: '#1565C0',
   bon_cumparaturi: '#F57F17',
+  bon_parcare: '#2E7D32',
   pad: '#1565C0',
   stingator_incendiu: '#BF360C',
   abonament: '#7B1FA2',
@@ -248,9 +251,10 @@ export default function ExpirariScreen() {
   return (
     <RNView style={[styles.container, { backgroundColor: C.background }]}>
       {/* ── Custom Header ── */}
-      <RNView style={[styles.header, { backgroundColor: C.background, paddingTop: insets.top + 8 }]}>
+      <RNView
+        style={[styles.header, { backgroundColor: C.background, paddingTop: insets.top + 8 }]}
+      >
         <RNView style={styles.headerLeft}>
-          <RNText style={[styles.headerTitle, { color: C.text }]}>Expirări</RNText>
           <RNText style={[styles.headerSub, { color: C.textSecondary }]}>{subtitleText}</RNText>
         </RNView>
       </RNView>
