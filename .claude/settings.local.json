@@ -18,7 +18,18 @@
       "Bash(grep -r \"AI\\\\|assistant\\\\|Mistral\" /Users/ax/work/documents/app/docs --include=*.md)",
       "Bash(pod spec:*)",
       "Bash(xargs -I{} grep -l 8.0.0 {})",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(git checkout:*)",
+      "Bash(npm install:*)",
+      "Bash(xcrun devicectl:*)",
+      "Bash(xcrun xctrace:*)",
+      "Bash(npm test:*)",
+      "Bash(xargs kill:*)",
+      "Bash(curl:*)",
+      "WebFetch(domain:mistral.ai)",
+      "WebFetch(domain:legal.mistral.ai)",
+      "Bash(gh api:*)",
+      "Bash(python3 -c \"import sys,json; t=json.load\\(sys.stdin\\); [print\\(x[''''path'''']\\) for x in t.get\\(''''tree'''',[]\\) if ''''docs'''' in x[''''path''''] or ''''legal'''' in x[''''path'''']]\")"
     ]
   }
 }

@@ -38,7 +38,14 @@ async function buildContext(): Promise<string> {
   if (animals.length)
     lines.push(`Animale: ${animals.map(a => `${a.name} (${a.species})`).join(', ')}`);
 
+  if (!persons.length && !properties.length && !vehicles.length && !cards.length && !animals.length && !documents.length) {
+    return 'NU EXISTĂ DATE ÎN APLICAȚIE. Utilizatorul nu a adăugat nicio entitate sau document.';
+  }
+
   lines.push('\nDocumente:');
+  if (!documents.length) {
+    lines.push('(niciun document adăugat)');
+  }
   for (const doc of documents) {
     const entity =
       persons.find(p => p.id === doc.person_id)?.name ??
@@ -88,7 +95,8 @@ ${context}
 
 ## Reguli generale
 - Fii concis și util
-- Bazează-te DOAR pe datele de mai sus; nu inventa date care nu există
+- Bazează-te STRICT pe datele de mai sus; NICIODATĂ nu inventa, presupune sau genera date care nu există explicit
+- Dacă datele de mai sus indică "NU EXISTĂ DATE" sau "(niciun document adăugat)", răspunde că nu există date — nu genera exemple, nu sugera date fictive
 - Când menționezi un document specific, include ID-ul în format [ID:xxx] ca să poată fi deschis
 
 ## Formate speciale — returnează EXACT formatul de mai jos când e cerut
