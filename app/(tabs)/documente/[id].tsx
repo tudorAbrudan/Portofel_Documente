@@ -35,6 +35,7 @@ import {
   addDocumentPage,
   removeDocumentPage,
   setDocumentOcrText,
+  reorderAllDocumentFiles,
   getDocumentEntityLinks,
 } from '@/services/documents';
 import type { DocumentEntityLink, EntityType } from '@/types';
@@ -90,6 +91,12 @@ export default function DocumentDetailScreen() {
 
   const [fullscreenUri, setFullscreenUri] = useState<string | null>(null);
   const [fullscreenPdfUri, setFullscreenPdfUri] = useState<string | null>(null);
+  const [fsKey, setFsKey] = useState(0);
+
+  function handleFullscreen(uri: string) {
+    setFsKey(k => k + 1);
+    setFullscreenUri(uri);
+  }
   const [entityLinks, setEntityLinks] = useState<DocumentEntityLink[]>([]);
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
 
@@ -179,6 +186,28 @@ export default function DocumentDetailScreen() {
         },
       },
     ]);
+  }
+
+  async function handleReorderPage(fromIndex: number, toIndex: number) {
+    if (!doc) return;
+    const paths = allPages.map(p => p.file_path);
+    const newPaths = [...paths];
+    const [moved] = newPaths.splice(fromIndex, 1);
+    newPaths.splice(toIndex, 0, moved);
+    try {
+      await reorderAllDocumentFiles(doc.id, newPaths);
+      const updated = await getDocumentById(doc.id);
+      setDoc(updated);
+    } catch (e) {
+      Alert.alert('Eroare', e instanceof Error ? e.message : 'Nu s-a putut reordona');
+    }
+  }
+
+  async function handleOcrSave(text: string) {
+    if (!doc) return;
+    await setDocumentOcrText(doc.id, text);
+    const updated = await getDocumentById(doc.id);
+    setDoc(updated);
   }
 
   async function saveAndAddPage(uri: string) {
@@ -865,7 +894,8 @@ export default function DocumentDetailScreen() {
           onRotate={handleRotate}
           onDelete={handleDeletePage}
           onRunOcr={handleOcr}
-          onFullscreen={setFullscreenUri}
+          onFullscreen={handleFullscreen}
+          onOcrTextSave={handleOcrSave}
         />
         {/* Vizualizare PDF — WKWebView redă PDF nativ pe iOS */}
         {allPages
@@ -1099,25 +1129,26 @@ export default function DocumentDetailScreen() {
       <Modal visible={!!fullscreenUri} transparent animationType="fade" statusBarTranslucent>
         <View style={styles.fsOverlay}>
           <StatusBar hidden />
-          <ScrollView
-            key={fullscreenUri ?? 'fs'}
-            style={{ flex: 1 }}
-            contentContainerStyle={styles.fsScrollContent}
-            maximumZoomScale={6}
-            minimumZoomScale={1}
-            showsHorizontalScrollIndicator={false}
-            showsVerticalScrollIndicator={false}
-            centerContent
-            bouncesZoom
-          >
-            {fullscreenUri && (
-              <Image
-                source={{ uri: fullscreenUri }}
-                style={{ width: screenWidth, height: screenHeight }}
-                resizeMode="contain"
-              />
-            )}
-          </ScrollView>
+          <View key={fsKey} style={{ flex: 1 }}>
+            <ScrollView
+              style={{ flex: 1 }}
+              contentContainerStyle={styles.fsScrollContent}
+              maximumZoomScale={6}
+              minimumZoomScale={1}
+              showsHorizontalScrollIndicator={false}
+              showsVerticalScrollIndicator={false}
+              centerContent
+              bouncesZoom
+            >
+              {fullscreenUri && (
+                <Image
+                  source={{ uri: fullscreenUri }}
+                  style={{ width: screenWidth, height: screenHeight }}
+                  resizeMode="contain"
+                />
+              )}
+            </ScrollView>
+          </View>
           <Pressable style={styles.fsCloseBtn} onPress={() => setFullscreenUri(null)}>
             <Text style={styles.fsCloseBtnText}>✕</Text>
           </Pressable>

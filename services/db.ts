@@ -194,8 +194,25 @@ try {
   // coloana există deja
 }
 
+// Migrare: deduplicare document_entities + UNIQUE index (previne duplicate la restart)
+try {
+  db.execSync(`
+    DELETE FROM document_entities
+    WHERE id NOT IN (
+      SELECT MIN(id) FROM document_entities
+      GROUP BY document_id, entity_type, entity_id
+    )
+  `);
+  db.execSync(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_doc_entities_unique
+    ON document_entities(document_id, entity_type, entity_id)
+  `);
+} catch {
+  // Index poate exista deja
+}
+
 // Migrare: populează document_entities din coloanele legacy (o singură dată)
-// Folosim OR IGNORE pentru a evita duplicate la rulări repetate
+// Cu UNIQUE index activ, INSERT OR IGNORE sare peste combinații existente
 try {
   db.execSync(`
     INSERT OR IGNORE INTO document_entities (id, document_id, entity_type, entity_id)

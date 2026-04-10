@@ -3,14 +3,17 @@ import {
   StyleSheet,
   Pressable,
   Alert,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  ScrollView,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { Text, View, ThemedTextInput } from '@/components/Themed';
 import { primary } from '@/theme/colors';
+import { BottomActionBar } from '@/components/ui/BottomActionBar';
 import { useEntities } from '@/hooks/useEntities';
 import { useVisibilitySettings } from '@/hooks/useVisibilitySettings';
 import { extractText, extractCardInfo } from '@/services/ocr';
@@ -100,7 +103,8 @@ export default function AddEntityScreen() {
         await createCompany(name.trim(), cui.trim() || undefined, regCom.trim() || undefined);
       else await createCard(nickname.trim(), last4.trim() || '****', expiry.trim() || undefined);
       await refresh();
-      router.back();
+      if (router.canGoBack()) router.back();
+      else router.replace('/(tabs)/entitati');
     } catch (e) {
       Alert.alert('Eroare', e instanceof Error ? e.message : 'Nu s-a putut adăuga');
     } finally {
@@ -157,7 +161,13 @@ export default function AddEntityScreen() {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <View style={styles.inner}>
+      <Pressable style={{ flex: 1 }} onPress={Keyboard.dismiss} accessible={false}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={styles.inner}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
         {!isCard && (
           <>
             <Text style={styles.label}>Nume</Text>
@@ -260,14 +270,14 @@ export default function AddEntityScreen() {
           </>
         )}
 
-        <Pressable
-          style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
-          onPress={handleSubmit}
-          disabled={loading}
-        >
-          <Text style={styles.buttonText}>{loading ? 'Se salvează...' : 'Salvează'}</Text>
-        </Pressable>
-      </View>
+      </ScrollView>
+      </Pressable>
+      <BottomActionBar
+        label="Salvează"
+        onPress={handleSubmit}
+        loading={loading}
+        safeArea
+      />
     </KeyboardAvoidingView>
   );
 }

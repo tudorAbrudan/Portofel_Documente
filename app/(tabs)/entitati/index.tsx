@@ -15,7 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
-import { FloatingPillButton } from '@/components/ui/FloatingPillButton';
+import { BottomActionBar } from '@/components/ui/BottomActionBar';
 import { primary } from '@/theme/colors';
 import { useEntities } from '@/hooks/useEntities';
 import { useVisibilitySettings } from '@/hooks/useVisibilitySettings';
@@ -327,9 +327,9 @@ export default function EntitatiListScreen() {
         )}
       </ScrollView>
 
-      <FloatingPillButton
+      <BottomActionBar
         label="Adaugă entitate"
-        icon={<Ionicons name="add" size={22} color="#fff" />}
+        icon={<Ionicons name="add" size={20} color="#fff" />}
         onPress={() => router.push('/(tabs)/entitati/add')}
       />
     </RNView>
@@ -433,7 +433,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: 12,
     paddingTop: 4,
-    paddingBottom: 96,
+    paddingBottom: 16,
   },
   scrollContentEmpty: { flexGrow: 1 },
 

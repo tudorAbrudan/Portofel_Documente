@@ -4,6 +4,7 @@ import {
   ScrollView,
   Pressable,
   Alert,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
@@ -72,11 +73,17 @@ export default function WizardMasinaScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.flex}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <ScrollView style={styles.flex} contentContainerStyle={styles.content}>
+    <Pressable style={{ flex: 1 }} onPress={Keyboard.dismiss} accessible={false}>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView
+          style={styles.flex}
+          contentContainerStyle={styles.content}
+          keyboardDismissMode="on-drag"
+          keyboardShouldPersistTaps="handled"
+        >
         {/* Step 1 */}
         <View style={styles.stepBlock}>
           <Text style={styles.stepTitle}>1. Numele mașinii</Text>
@@ -145,8 +152,9 @@ export default function WizardMasinaScreen() {
             {loading ? 'Se salvează...' : 'Salvează mașina'}
           </Text>
         </Pressable>
-      </ScrollView>
-    </KeyboardAvoidingView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </Pressable>
   );
 }
 

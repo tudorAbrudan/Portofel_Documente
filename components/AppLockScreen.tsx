@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   StyleSheet,
   View,
@@ -8,6 +8,7 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  AppState,
 } from 'react-native';
 import { SymbolView } from 'expo-symbols';
 import { primary } from '@/theme/colors';
@@ -26,9 +27,11 @@ export default function AppLockScreen({
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const autoTriggered = useRef(false);
+  const loadingRef = useRef(false);
 
-  const handleBiometric = async () => {
+  const handleBiometric = useCallback(async () => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     setError('');
     setLoading(true);
     try {
@@ -38,16 +41,32 @@ export default function AppLockScreen({
       setError('Biometria nu este disponibilă.');
     } finally {
       setLoading(false);
+      loadingRef.current = false;
     }
-  };
+  }, [onUnlockBiometric]);
 
+  // Auto-trigger doar când app-ul e vizibil (active), nu din fundal
   useEffect(() => {
-    if (biometricAvailable && !autoTriggered.current) {
-      autoTriggered.current = true;
+    if (biometricAvailable && AppState.currentState === 'active') {
       handleBiometric();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [biometricAvailable]);
+
+  // Auto-trigger când aplicația revine în prim-plan, cu delay pentru a lăsa
+  // iOS să termine Face ID-ul de deblocare a telefonului înainte să cerem al nostru
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const sub = AppState.addEventListener('change', state => {
+      if (state === 'active' && biometricAvailable) {
+        timer = setTimeout(handleBiometric, 300);
+      }
+    });
+    return () => {
+      sub.remove();
+      if (timer) clearTimeout(timer);
+    };
+  }, [biometricAvailable, handleBiometric]);
 
   const handlePinSubmit = async () => {
     if (!pin.trim()) return;

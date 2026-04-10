@@ -227,7 +227,7 @@ export async function createDocument(input: CreateDocumentInput): Promise<Docume
       input.company_id ?? null,
       input.metadata ? JSON.stringify(input.metadata) : null,
       input.auto_delete ?? null,
-      input.ocr_text ?? null,
+      input.ocr_text != null ? input.ocr_text.trim() : null,
       created_at,
     ]
   );
@@ -261,7 +261,7 @@ export async function createDocument(input: CreateDocumentInput): Promise<Docume
 }
 
 export async function setDocumentOcrText(id: string, ocrText: string): Promise<void> {
-  await db.runAsync('UPDATE documents SET ocr_text = ? WHERE id = ?', [ocrText, id]);
+  await db.runAsync('UPDATE documents SET ocr_text = ? WHERE id = ?', [ocrText.trim(), id]);
 }
 
 export async function deleteDocument(id: string): Promise<void> {
@@ -436,6 +436,58 @@ export async function reorderDocumentPages(
       documentId,
     ]);
   }
+}
+
+// Reordonează TOATE fișierele unui document (inclusiv pagina principală din file_path).
+// orderedFilePaths = toate căile în noua ordine; primul devine noul file_path principal.
+export async function reorderAllDocumentFiles(
+  documentId: string,
+  orderedFilePaths: string[]
+): Promise<void> {
+  if (orderedFilePaths.length === 0) return;
+  const [newMain, ...rest] = orderedFilePaths;
+  await db.runAsync('UPDATE documents SET file_path = ? WHERE id = ?', [newMain, documentId]);
+  await db.runAsync('DELETE FROM document_pages WHERE document_id = ?', [documentId]);
+  for (let i = 0; i < rest.length; i++) {
+    await db.runAsync(
+      'INSERT INTO document_pages (id, document_id, page_order, file_path, created_at) VALUES (?, ?, ?, ?, ?)',
+      [generateId(), documentId, i, rest[i], new Date().toISOString()]
+    );
+  }
+}
+
+export async function findDuplicateDocument(
+  type: DocumentType,
+  customTypeId: string | undefined,
+  entityLinks: DocumentEntityLink[]
+): Promise<Document | null> {
+  if (entityLinks.length === 0) return null;
+
+  const customFilter =
+    type === 'custom' && customTypeId
+      ? 'AND d.custom_type_id = ?'
+      : type === 'custom'
+        ? ''
+        : '';
+  const params: (string | null)[] = type === 'custom' && customTypeId ? [customTypeId] : [];
+
+  for (const link of entityLinks) {
+    const row = await db.getFirstAsync<Row>(
+      `SELECT d.* FROM documents d
+       WHERE d.type = ?
+       ${customFilter}
+       AND EXISTS (
+         SELECT 1 FROM document_entities de
+         WHERE de.document_id = d.id
+         AND de.entity_type = ?
+         AND de.entity_id = ?
+       )
+       LIMIT 1`,
+      [type, ...params, link.entityType, link.entityId]
+    );
+    if (row) return mapRow(row);
+  }
+  return null;
 }
 
 export async function getAllDocumentPages(): Promise<DocumentPage[]> {

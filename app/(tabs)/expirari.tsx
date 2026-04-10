@@ -156,6 +156,20 @@ function isExpired(expiryDate: string): boolean {
   return expiryDate < today;
 }
 
+function sortByExpiryAsc(a: Document, b: Document): number {
+  return (a.expiry_date ?? '').localeCompare(b.expiry_date ?? '');
+}
+
+function getExpiryBorderColor(doc: Document): string {
+  if (!doc.expiry_date) return 'transparent';
+  const exp = new Date(doc.expiry_date).getTime();
+  const now = Date.now();
+  const daysLeft = Math.ceil((exp - now) / (24 * 60 * 60 * 1000));
+  if (daysLeft < 0) return '#E53935';
+  if (daysLeft <= 30) return '#F9A825';
+  return primary;
+}
+
 function getExpiryInfo(doc: Document): { label: string; bg: string; fg: string } | null {
   if (!doc.expiry_date) return null;
   const exp = new Date(doc.expiry_date).getTime();
@@ -166,7 +180,7 @@ function getExpiryInfo(doc: Document): { label: string; bg: string; fg: string }
     return { label: 'Expirat', bg: '#E53935', fg: '#fff' };
   }
   if (daysLeft <= 30) {
-    return { label: `${daysLeft}z`, bg: '#F57C00', fg: '#fff' };
+    return { label: `${daysLeft}z`, bg: '#F9A825', fg: '#fff' };
   }
   if (daysLeft <= 365) {
     return { label: `${daysLeft}z`, bg: primaryTint, fg: primary };
@@ -195,8 +209,12 @@ export default function ExpirariScreen() {
   );
 
   const withExpiry = documents.filter(d => !!d.expiry_date && visibleDocTypes.includes(d.type));
-  const expired = withExpiry.filter(d => d.expiry_date && isExpired(d.expiry_date));
-  const upcoming = withExpiry.filter(d => d.expiry_date && !isExpired(d.expiry_date));
+  const expired = withExpiry
+    .filter(d => d.expiry_date && isExpired(d.expiry_date))
+    .sort(sortByExpiryAsc);
+  const upcoming = withExpiry
+    .filter(d => d.expiry_date && !isExpired(d.expiry_date))
+    .sort(sortByExpiryAsc);
 
   const subtitleText =
     withExpiry.length === 0
@@ -221,13 +239,14 @@ export default function ExpirariScreen() {
     const iconColor = DOC_ICON_COLOR[doc.type] ?? '#757575';
     const iconName = DOC_ICON[doc.type] ?? 'document-outline';
     const expiry = getExpiryInfo(doc);
+    const borderColor = getExpiryBorderColor(doc);
 
     return (
       <Pressable
         key={doc.id}
         style={({ pressed }) => [
           styles.card,
-          { backgroundColor: C.card, shadowColor: C.cardShadow },
+          { backgroundColor: C.card, shadowColor: C.cardShadow, borderLeftColor: borderColor },
           pressed && styles.cardPressed,
         ]}
         onPress={() => router.push(`/(tabs)/documente/${doc.id}`)}
@@ -396,6 +415,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderRadius: 12,
+    borderLeftWidth: 4,
     padding: 14,
     ...Platform.select({
       ios: {

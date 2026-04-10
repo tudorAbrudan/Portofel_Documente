@@ -10,11 +10,13 @@ import {
   Platform,
   View as RNView,
   Text as RNText,
+  FlatList,
 } from 'react-native';
-import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
+import { router, useLocalSearchParams, useFocusEffect, Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ThemedTextInput } from '@/components/Themed';
+import { BottomActionBar } from '@/components/BottomActionBar';
+import type { BottomAction } from '@/components/BottomActionBar';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
 import { primary } from '@/theme/colors';
@@ -23,14 +25,12 @@ import { useEntities } from '@/hooks/useEntities';
 import { useDocuments } from '@/hooks/useDocuments';
 import { getDocuments, linkDocumentToEntity } from '@/services/documents';
 import { DOCUMENT_TYPE_LABELS } from '@/types';
-import type { Document as DocType, Company } from '@/types';
+import type { Document as DocType, DocumentType, Company } from '@/types';
 
 export default function EntityDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const scheme = (useColorScheme() ?? 'light') as 'light' | 'dark';
   const C = Colors[scheme];
-  const insets = useSafeAreaInsets();
-
   const {
     persons,
     properties,
@@ -55,6 +55,7 @@ export default function EntityDetailScreen() {
   const { getDocumentsByEntity } = useDocuments();
 
   const [documents, setDocuments] = useState<DocType[]>([]);
+  const [selectedType, setSelectedType] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [entityName, setEntityName] = useState('');
   const [entityKind, setEntityKind] = useState<
@@ -108,6 +109,7 @@ export default function EntityDetailScreen() {
   async function loadDocs(kind: typeof entityKind, entityId: string) {
     if (!entityId) return;
     setLoading(true);
+    setSelectedType(null);
     try {
       const list = await getDocumentsByEntity(kind, entityId);
       setDocuments(list);
@@ -261,22 +263,28 @@ export default function EntityDetailScreen() {
   const isCompany = entityKind === 'company_id';
   const isPerson = entityKind === 'person_id';
 
+  // Tipuri unice prezente în documente (ordinea primei apariții)
+  const presentTypes = Array.from(new Set(documents.map(d => d.type)));
+  const showFilter = presentTypes.length >= 2;
+  const visibleDocuments = selectedType ? documents.filter(d => d.type === selectedType) : documents;
+
   return (
     <RNView style={[styles.container, { backgroundColor: C.background }]}>
-      {/* ── Header ── */}
-      <RNView
-        style={[styles.header, { backgroundColor: C.background, paddingTop: insets.top + 8 }]}
-      >
-        <Pressable style={styles.backBtn} onPress={() => router.back()}>
-          <Ionicons name="chevron-back" size={24} color={C.primary} />
-        </Pressable>
-        <RNText style={[styles.headerTitle, { color: C.text }]} numberOfLines={1}>
-          {entityName || '...'}
-        </RNText>
-        <Pressable style={[styles.editBtn, { borderColor: C.primary }]} onPress={openEditModal}>
-          <RNText style={[styles.editBtnText, { color: C.primary }]}>Editează</RNText>
-        </Pressable>
-      </RNView>
+      <Stack.Screen
+        options={{
+          title: entityName || 'Entitate',
+          headerLeft: () => (
+            <Pressable onPress={() => router.back()} style={{ paddingRight: 16 }}>
+              <RNText style={{ color: primary, fontSize: 16 }}>‹ Înapoi</RNText>
+            </Pressable>
+          ),
+          headerRight: () => (
+            <Pressable onPress={openEditModal} hitSlop={12} style={{ paddingLeft: 8 }}>
+              <Ionicons name="pencil-outline" size={22} color={primary} />
+            </Pressable>
+          ),
+        }}
+      />
 
       {/* ── Document list ── */}
       <ScrollView
@@ -339,13 +347,44 @@ export default function EntityDetailScreen() {
 
         <RNText style={[styles.sectionTitle, { color: C.textSecondary }]}>DOCUMENTE LEGATE</RNText>
 
-        {documents.length === 0 && !loading && (
+        {showFilter && (
+          <FlatList
+            data={[null, ...presentTypes]}
+            keyExtractor={item => item ?? '__all__'}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.filterBar}
+            contentContainerStyle={styles.filterBarContent}
+            renderItem={({ item }) => {
+              const active = selectedType === item;
+              return (
+                <Pressable
+                  style={[
+                    styles.filterChip,
+                    active
+                      ? { backgroundColor: primary }
+                      : { backgroundColor: C.card, borderColor: C.border, borderWidth: 1 },
+                  ]}
+                  onPress={() => setSelectedType(item)}
+                >
+                  <RNText style={[styles.filterChipText, { color: active ? '#fff' : C.text }]}>
+                    {item === null ? 'Toate' : (DOCUMENT_TYPE_LABELS[item as DocumentType] ?? item)}
+                  </RNText>
+                </Pressable>
+              );
+            }}
+          />
+        )}
+
+        {visibleDocuments.length === 0 && !loading && (
           <RNText style={[styles.empty, { color: C.textSecondary }]}>
-            Niciun document. Adaugă unul mai jos.
+            {documents.length === 0
+              ? 'Niciun document. Adaugă unul mai jos.'
+              : 'Niciun document pentru tipul selectat.'}
           </RNText>
         )}
 
-        {documents.map(doc => (
+        {visibleDocuments.map(doc => (
           <Pressable
             key={doc.id}
             style={({ pressed }) => [
@@ -354,7 +393,7 @@ export default function EntityDetailScreen() {
               pressed && styles.docRowPressed,
             ]}
             onPress={() =>
-              router.push({ pathname: '/(tabs)/documente/[id]', params: { id: doc.id } })
+              router.push({ pathname: '/(tabs)/documente/[id]', params: { id: doc.id, from: 'entity', entityId: id } })
             }
           >
             <RNView style={styles.docRowText}>
@@ -378,86 +417,43 @@ export default function EntityDetailScreen() {
       </ScrollView>
 
       {/* ── Bottom actions ── */}
-      <RNView
-        style={[
-          styles.bottomBar,
+      <BottomActionBar
+        topActions={isVehicle ? [
           {
-            borderTopColor: C.border,
-            backgroundColor: C.background,
-            paddingBottom: insets.bottom + 12,
+            icon: 'flame-outline',
+            label: 'Carburant',
+            onPress: () =>
+              router.push(
+                `/(tabs)/entitati/fuel?vehicleId=${id}&vehicleName=${encodeURIComponent(entityName)}`
+              ),
+          },
+          {
+            icon: 'globe-outline',
+            label: 'Vignetă',
+            onPress: () =>
+              router.push({ pathname: '/(tabs)/entitati/vigneta', params: { vehicleId: id } }),
+          },
+        ] as BottomAction[] : undefined}
+        actions={[
+          {
+            icon: 'add-circle-outline',
+            label: 'Adaugă doc',
+            onPress: () =>
+              router.push({ pathname: '/(tabs)/documente/add', params: { [entityKind]: id } }),
+          },
+          {
+            icon: 'link-outline',
+            label: 'Asociază',
+            onPress: openLinkDoc,
+          },
+          {
+            icon: 'trash-outline',
+            label: 'Șterge',
+            onPress: handleDelete,
+            danger: true,
           },
         ]}
-      >
-        {/* Vehicle-specific actions */}
-        {isVehicle && (
-          <RNView style={styles.vehicleActions}>
-            <Pressable
-              style={({ pressed }) => [
-                styles.actionBtn,
-                { borderColor: C.primary },
-                pressed && styles.btnPressed,
-              ]}
-              onPress={() =>
-                router.push(
-                  `/(tabs)/entitati/fuel?vehicleId=${id}&vehicleName=${encodeURIComponent(entityName)}`
-                )
-              }
-            >
-              <Ionicons
-                name="flame-outline"
-                size={16}
-                color={C.primary}
-                style={styles.actionIcon}
-              />
-              <RNText style={[styles.actionBtnText, { color: C.primary }]}>Carburant</RNText>
-            </Pressable>
-            <Pressable
-              style={({ pressed }) => [
-                styles.actionBtn,
-                { borderColor: C.primary },
-                pressed && styles.btnPressed,
-              ]}
-              onPress={() =>
-                router.push({ pathname: '/(tabs)/entitati/vigneta', params: { vehicleId: id } })
-              }
-            >
-              <Ionicons
-                name="globe-outline"
-                size={16}
-                color={C.primary}
-                style={styles.actionIcon}
-              />
-              <RNText style={[styles.actionBtnText, { color: C.primary }]}>Vignetă</RNText>
-            </Pressable>
-          </RNView>
-        )}
-
-        {/* Add document */}
-        <Pressable
-          style={({ pressed }) => [styles.primaryBtn, pressed && styles.btnPressed]}
-          onPress={() =>
-            router.push({ pathname: '/(tabs)/documente/add', params: { [entityKind]: id } })
-          }
-        >
-          <Ionicons name="add" size={20} color="#fff" style={styles.actionIcon} />
-          <RNText style={styles.primaryBtnText}>Adaugă document nou</RNText>
-        </Pressable>
-
-        <Pressable
-          style={({ pressed }) => [styles.secondaryBtn, pressed && styles.btnPressed]}
-          onPress={openLinkDoc}
-        >
-          <Ionicons name="link-outline" size={18} color={C.primary} style={styles.actionIcon} />
-          <RNText style={[styles.secondaryBtnText, { color: C.primary }]}>
-            Asociază document existent
-          </RNText>
-        </Pressable>
-
-        {/* Delete */}
-        <Pressable style={styles.deleteBtn} onPress={handleDelete}>
-          <RNText style={styles.deleteBtnText}>Șterge entitate</RNText>
-        </Pressable>
-      </RNView>
+      />
 
       {/* ── Link existing document modal ── */}
       <Modal
@@ -503,12 +499,14 @@ export default function EntityDetailScreen() {
                 ))}
               </ScrollView>
             )}
-            <Pressable
-              style={[styles.modalCancelBtn, { borderColor: C.border, marginTop: 12 }]}
-              onPress={() => setLinkDocVisible(false)}
-            >
-              <RNText style={[styles.modalCancelText, { color: C.text }]}>Anulare</RNText>
-            </Pressable>
+            <RNView style={[styles.modalButtons, { marginTop: 12 }]}>
+              <Pressable
+                style={[styles.modalCancelBtn, { borderColor: C.border }]}
+                onPress={() => setLinkDocVisible(false)}
+              >
+                <RNText style={[styles.modalCancelText, { color: C.text }]}>Anulare</RNText>
+              </Pressable>
+            </RNView>
           </RNView>
         </RNView>
       </Modal>
@@ -679,19 +677,6 @@ export default function EntityDetailScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
 
-  // Header
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingBottom: 12,
-    gap: 8,
-  },
-  backBtn: { padding: 4 },
-  headerTitle: { flex: 1, fontSize: 20, fontWeight: '700', letterSpacing: -0.3 },
-  editBtn: { borderWidth: 1, borderRadius: 10, paddingVertical: 7, paddingHorizontal: 14 },
-  editBtnText: { fontSize: 14, fontWeight: '500' },
-
   // Scroll
   scroll: { flex: 1 },
   scrollContent: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 16 },
@@ -712,6 +697,16 @@ const styles = StyleSheet.create({
   contactIcon: { marginRight: 8 },
   contactValue: { fontSize: 15 },
 
+  // Filter chips
+  filterBar: { marginBottom: 12 },
+  filterBarContent: { gap: 8, paddingVertical: 2 },
+  filterChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+  },
+  filterChipText: { fontSize: 13, fontWeight: '500' },
+
   // Doc row
   docRow: {
     flexDirection: 'row',
@@ -730,55 +725,10 @@ const styles = StyleSheet.create({
   docMeta: { fontSize: 13, marginTop: 3 },
 
   // Bottom bar
-  bottomBar: {
-    paddingTop: 12,
-    paddingHorizontal: 16,
-    borderTopWidth: 1,
-    gap: 8,
-  },
-  vehicleActions: { flexDirection: 'row', gap: 8 },
-  actionBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingVertical: 11,
-  },
-  actionIcon: { marginRight: 6 },
-  actionBtnText: { fontSize: 14, fontWeight: '500' },
-  primaryBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: primary,
-    borderRadius: 12,
-    paddingVertical: 14,
-  },
-  primaryBtnText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  secondaryBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: primary,
-    borderRadius: 12,
-    paddingVertical: 13,
-  },
-  secondaryBtnText: { fontSize: 15, fontWeight: '500' },
   btnPressed: { opacity: 0.85, transform: [{ scale: 0.99 }] },
-  deleteBtn: {
-    borderWidth: 1,
-    borderColor: '#E53935',
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
   linkDocRow: { paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth },
   linkDocType: { fontSize: 15, fontWeight: '600' },
   linkDocNote: { fontSize: 13, marginTop: 2 },
-  deleteBtnText: { color: '#E53935', fontSize: 15, fontWeight: '500' },
 
   // Modal
   modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },

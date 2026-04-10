@@ -31,6 +31,14 @@
             "type": "command",
             "command": "/Users/ax/work/documents/app/.claude/hooks/format-ts.sh",
             "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "echo \"$CLAUDE_TOOL_INPUT\" | python3 -c \"\nimport sys, json\ndata = json.load(sys.stdin)\npath = data.get('file_path', '') or data.get('path', '')\ntriggers = [\n  ('types/index.ts', 'DOCUMENT_TYPE_LABELS sau tipuri de entități modificate → verifică: services/appKnowledge.ts (categorii DOC_CATEGORIES)'),\n  ('services/appKnowledge.ts', 'Cunoștințele aplicației modificate → testează chatbot-ul cu întrebări despre funcționalități'),\n]\nfor file_trigger, msg in triggers:\n  if file_trigger in path:\n    print(f'[SYNC REMINDER] {msg}')\n\""
+          },
+          {
+            "type": "command",
+            "command": "echo \"$CLAUDE_TOOL_INPUT\" | python3 -c \"\nimport sys, json, subprocess, os\ndata = json.load(sys.stdin)\npath = data.get('file_path', '') or data.get('path', '')\nif 'types/index.ts' in path or 'services/appKnowledge.ts' in path:\n    script = os.path.join(os.path.dirname(path.split('types')[0].split('services')[0].rstrip('/')), 'scripts/update-site.js')\n    # Găsim root-ul proiectului\n    parts = path.replace('\\\\\\\\', '/').split('/')\n    for i, p in enumerate(parts):\n        if p in ('types', 'services'):\n            root = '/'.join(parts[:i])\n            script_path = root + '/scripts/update-site.js'\n            if os.path.exists(script_path):\n                result = subprocess.run(['node', script_path], capture_output=True, text=True, cwd=root)\n                if result.returncode == 0:\n                    print('[AUTO-SYNC] docs/ actualizat cu succes')\n                else:\n                    print(f'[AUTO-SYNC] Eroare update-site: {result.stderr[:200]}')\n            break\n\""
           }
         ]
       }

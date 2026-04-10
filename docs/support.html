@@ -269,7 +269,24 @@
         <span class="faq-arrow">▼</span>
       </button>
       <div class="faq-a">
-        Din ecranul <strong>Setări → Backup & Restore</strong> poți exporta toate datele și fișierele într-un arhivă JSON. Aceasta poate fi salvată în iCloud Drive (iOS) și restaurată ulterior pe același device sau pe un device nou.
+        Din ecranul <strong>Setări → Backup &amp; Restore</strong> poți exporta toate datele și fișierele într-un fișier <strong>.zip</strong>. Acesta conține baza de date și toate fotografiile/PDF-urile atașate.<br/><br/>
+        Poți salva fișierul în <strong>iCloud Drive</strong>, îl poți trimite prin <strong>AirDrop</strong>, email sau orice altă metodă. La nevoie, îl reimportezi din același ecran — pe același device sau pe unul nou.
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <button class="faq-q" onclick="toggle(this)">
+        Pot folosi aplicația pe mai multe dispozitive (iPhone + iPad)?
+        <span class="faq-arrow">▼</span>
+      </button>
+      <div class="faq-a">
+        Da. Cel mai simplu flux:<br/><br/>
+        <ol style="margin: 0 0 0 18px; padding: 0; line-height: 1.8">
+          <li>Pe primul dispozitiv: <strong>Setări → Backup &amp; Restore → Exportă backup</strong> → alege <strong>AirDrop</strong> și trimite pe al doilea dispozitiv.</li>
+          <li>Pe al doilea dispozitiv: deschide fișierul <strong>.zip</strong> primit → aplicația Dosar se deschide automat și importă tot.</li>
+        </ol>
+        <br/>
+        <strong>Notă:</strong> Dosar nu sincronizează automat între dispozitive — datele trăiesc local pe fiecare device. Backup-ul este soluția actuală pentru a transfera sau a ține două dispozitive la zi.
       </div>
     </div>
 
@@ -279,7 +296,8 @@
         <span class="faq-arrow">▼</span>
       </button>
       <div class="faq-a">
-        Dacă ai activat Face ID / Touch ID, poți debloca aplicația biometric. Dacă ai uitat PIN-ul și nu ai biometrie configurată, dezinstalează și reinstalează aplicația — aceasta va șterge toate datele locale. Asigură-te că ai un backup înainte.
+        Dacă telefonul are Face ID sau Touch ID configurat, îl poți folosi oricând pentru a debloca aplicația — chiar dacă l-ai setat după ce ai creat PIN-ul. Din <strong>Setări iOS → Face ID &amp; Cod → Alte aplicații</strong> activează Dosar și vei putea debloca biometric.<br/><br/>
+        Dacă nu ai biometrie disponibilă și ai uitat PIN-ul, dezinstalează și reinstalează aplicația. Aceasta va șterge toate datele locale — asigură-te că ai un backup înainte.
       </div>
     </div>
 
@@ -322,6 +340,19 @@
         Momentan aplicația este disponibilă exclusiv pe iOS (iPhone și iPad). O versiune Android este planificată pentru o versiune viitoare.
       </div>
     </div>
+
+    <!-- DOSAR:FAQ_DOC_TYPES_START -->
+    <div class="faq-item">
+      <button class="faq-q" onclick="toggle(this)">
+        Ce tipuri de documente suportă aplicația?
+        <span class="faq-arrow">▼</span>
+      </button>
+      <div class="faq-a">
+        Aplicația vine cu 32 tipuri predefinite: Buletin, Pașaport, Permis auto, Talon, Carte auto, RCA, CASCO, ITP, Vignetă, Act proprietate, Cadastru, Factură, Impozit proprietate, Contract, Card, Garanție produs, Rețetă medicală, Analize medicale, Bon cumpărături, Bon parcare, PAD Asigurare Locuință, Stingător incendiu, Abonament, Vaccin animal, Deparazitare, Vizită veterinar, Bilet, Certificat înregistrare, Autorizație activitate, Act constitutiv, Certificat TVA, Asigurare profesională.<br/><br/>
+        Pentru orice document care nu se încadrează, poți folosi tipul <strong>„Altele"</strong> sau crea un <strong>tip personalizat</strong> (Acte → Adaugă document → Tip → derulează jos → „Tip personalizat").
+      </div>
+    </div>
+  <!-- DOSAR:FAQ_DOC_TYPES_END -->
 
   </div>
 

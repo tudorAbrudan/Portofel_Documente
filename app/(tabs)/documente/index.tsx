@@ -16,7 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
-import { FloatingPillButton } from '@/components/ui/FloatingPillButton';
+import { BottomActionBar } from '@/components/ui/BottomActionBar';
 import { primary, primaryTint } from '@/theme/colors';
 import { useDocuments } from '@/hooks/useDocuments';
 import { useEntities } from '@/hooks/useEntities';
@@ -448,18 +448,19 @@ export default function DocumenteListScreen() {
   const { persons, properties, vehicles, cards, animals } = useEntities();
   const { customTypes } = useCustomTypes();
   const { docTypeOptions } = useFilteredDocTypes();
-  const DOCUMENT_TYPES = useMemo(
-    () => [{ value: 'toate' as const, label: 'Toate' }, ...docTypeOptions],
-    [docTypeOptions]
-  );
+  const DOCUMENT_TYPES = useMemo(() => {
+    const typesWithDocs = new Set(documents.map(d => d.type));
+    const opts = docTypeOptions.filter(opt => typesWithDocs.has(opt.value));
+    return [{ value: 'toate' as const, label: 'Toate' }, ...opts];
+  }, [docTypeOptions, documents]);
 
   const [filterType, setFilterType] = useState<DocumentType | 'toate'>('toate');
 
   useEffect(() => {
-    if (filterType !== 'toate' && !docTypeOptions.some(opt => opt.value === filterType)) {
+    if (filterType !== 'toate' && !DOCUMENT_TYPES.some(opt => opt.value === filterType)) {
       setFilterType('toate');
     }
-  }, [docTypeOptions, filterType]);
+  }, [DOCUMENT_TYPES, filterType]);
 
   const [filterEntity, setFilterEntity] = useState<{ kind: string; id: string } | null>(null);
   const [onlyExpiring, setOnlyExpiring] = useState(false);
@@ -500,16 +501,36 @@ export default function DocumenteListScreen() {
   }
 
   const entityOptions = useMemo(() => {
+    const personIds = new Set(documents.filter(d => d.person_id).map(d => d.person_id!));
+    const propertyIds = new Set(documents.filter(d => d.property_id).map(d => d.property_id!));
+    const vehicleIds = new Set(documents.filter(d => d.vehicle_id).map(d => d.vehicle_id!));
+    const cardIds = new Set(documents.filter(d => d.card_id).map(d => d.card_id!));
+    const animalIds = new Set(documents.filter(d => d.animal_id).map(d => d.animal_id!));
+
     const list: { kind: string; id: string; label: string }[] = [];
-    persons.forEach(p => list.push({ kind: 'person_id', id: p.id, label: p.name }));
-    properties.forEach(p => list.push({ kind: 'property_id', id: p.id, label: p.name }));
-    vehicles.forEach(v => list.push({ kind: 'vehicle_id', id: v.id, label: v.name }));
-    cards.forEach(c =>
+    persons.filter(p => personIds.has(p.id)).forEach(p =>
+      list.push({ kind: 'person_id', id: p.id, label: p.name })
+    );
+    properties.filter(p => propertyIds.has(p.id)).forEach(p =>
+      list.push({ kind: 'property_id', id: p.id, label: p.name })
+    );
+    vehicles.filter(v => vehicleIds.has(v.id)).forEach(v =>
+      list.push({ kind: 'vehicle_id', id: v.id, label: v.name })
+    );
+    cards.filter(c => cardIds.has(c.id)).forEach(c =>
       list.push({ kind: 'card_id', id: c.id, label: c.nickname || c.last4 || c.id })
     );
-    animals.forEach(a => list.push({ kind: 'animal_id', id: a.id, label: a.name }));
+    animals.filter(a => animalIds.has(a.id)).forEach(a =>
+      list.push({ kind: 'animal_id', id: a.id, label: a.name })
+    );
     return list;
-  }, [persons, properties, vehicles, cards, animals]);
+  }, [persons, properties, vehicles, cards, animals, documents]);
+
+  useEffect(() => {
+    if (filterEntity && !entityOptions.some(o => o.kind === filterEntity.kind && o.id === filterEntity.id)) {
+      setFilterEntity(null);
+    }
+  }, [entityOptions, filterEntity]);
 
   // ── Filtering ────────────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
@@ -757,9 +778,9 @@ export default function DocumenteListScreen() {
         keyboardDismissMode="on-drag"
       />
 
-      <FloatingPillButton
+      <BottomActionBar
         label="Adaugă document"
-        icon={<Ionicons name="add" size={22} color="#fff" />}
+        icon={<Ionicons name="add" size={20} color="#fff" />}
         onPress={() => router.push('/(tabs)/documente/add')}
       />
     </RNView>
@@ -880,7 +901,7 @@ const styles = StyleSheet.create({
   listContent: {
     paddingHorizontal: 12,
     paddingTop: 8,
-    paddingBottom: 96,
+    paddingBottom: 16,
   },
   listContentEmpty: {
     flexGrow: 1,

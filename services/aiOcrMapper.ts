@@ -48,24 +48,46 @@ const DOC_TYPE_LIST = Object.entries(DOCUMENT_TYPE_LABELS)
   .map(([v, l]) => `${v}: ${l}`)
   .join(', ');
 
+// ─── Sanitizare OCR ───────────────────────────────────────────────────────────
+
+/**
+ * Sanitizează textul OCR înainte de inserare în prompt.
+ * Scop: previne prompt injection prin escaparea delimitatorilor și
+ * a secvențelor care ar putea suprascrie instrucțiunile sistemului.
+ */
+function sanitizeOcrText(text: string): string {
+  return text
+    .slice(0, 3000)
+    .replace(/"""/g, "'''") // escape triple-quote delimiter
+    .replace(/```/g, '~~~') // escape markdown code blocks
+    .replace(/<\|/g, '< |') // escape Mistral special tokens
+    .replace(/\[INST\]/gi, '[inst]') // escape instruction tokens
+    .replace(/\[\/INST\]/gi, '[/inst]');
+}
+
 // ─── Mapper principal ─────────────────────────────────────────────────────────
 
 export async function mapOcrWithAi(
   ocrText: string,
   entities: AvailableEntities
 ): Promise<AiOcrResult> {
-  const entityContext = buildEntityContext(entities);
+  // Folosim indecși numerici în loc de ID-uri reale — previne exfiltrarea ID-urilor
+  const { entityContext, indexToId } = buildEntityContext(entities);
 
-  const prompt = `Ești un expert în analiza documentelor românești. Analizează textul OCR și returnează un JSON structurat.
+  const sanitizedOcr = sanitizeOcrText(ocrText);
+
+  const systemMessage = `Ești un expert în analiza documentelor românești. Sarcina ta este să extragi date structurate din textul OCR furnizat și să returnezi exclusiv JSON valid, fără text suplimentar.`;
+
+  const prompt = `Analizează textul OCR și returnează un JSON structurat.
 
 TEXT OCR (poate conține mai multe pagini separate prin "---"):
 """
-${ocrText.slice(0, 3000)}
+${sanitizedOcr}
 """
 
 IMPORTANT: Dacă există mai multe pagini, analizează TOATE și identifică documentul principal (ex: polița RCA, nu scrisoarea de informare sau coperta). Ignoră paginile de tip "scrisoare de însoțire", "informații produs", "adresă de înaintare".
 
-ENTITĂȚI EXISTENTE ÎN APLICAȚIE:
+ENTITĂȚI EXISTENTE ÎN APLICAȚIE (folosește indexul e0, e1, ... în entityId):
 ${entityContext}
 
 ━━━ REGULI IDENTIFICARE TIP DOCUMENT ━━━
@@ -134,40 +156,56 @@ Returnează EXCLUSIV JSON valid:
 
 Răspunde DOAR cu JSON, fără text suplimentar.`;
 
-  const rawResponse = await sendAiRequest([{ role: 'user', content: prompt }], 600);
+  const rawResponse = await sendAiRequest(
+    [
+      { role: 'system', content: systemMessage },
+      { role: 'user', content: prompt },
+    ],
+    600
+  );
 
-  return parseAiResponse(rawResponse, entities);
+  return parseAiResponse(rawResponse, entities, indexToId);
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function buildEntityContext(entities: AvailableEntities): string {
+/**
+ * Construiește contextul de entități folosind indecși numerici în loc de ID-uri reale.
+ * Returnează și un map index→id real pentru a putea valida răspunsul AI ulterior.
+ * Scop: ID-urile reale (UUID-uri) nu ajung în promptul trimis la AI.
+ */
+function buildEntityContext(entities: AvailableEntities): {
+  entityContext: string;
+  indexToId: Map<string, string>;
+} {
   const lines: string[] = [];
+  const indexToId = new Map<string, string>();
+  let idx = 0;
 
-  if (entities.persons.length > 0) {
-    lines.push('Persoane: ' + entities.persons.map(p => `[${p.id}] ${p.name}`).join(', '));
-  }
-  if (entities.vehicles.length > 0) {
-    lines.push('Vehicule: ' + entities.vehicles.map(v => `[${v.id}] ${v.name}`).join(', '));
-  }
-  if (entities.properties.length > 0) {
-    lines.push('Proprietăți: ' + entities.properties.map(p => `[${p.id}] ${p.name}`).join(', '));
-  }
-  if (entities.cards.length > 0) {
-    lines.push(
-      'Carduri: ' + entities.cards.map(c => `[${c.id}] ${c.nickname} (****${c.last4})`).join(', ')
-    );
-  }
-  if (entities.animals.length > 0) {
-    lines.push(
-      'Animale: ' + entities.animals.map(a => `[${a.id}] ${a.name} (${a.species})`).join(', ')
-    );
-  }
-  if (entities.companies.length > 0) {
-    lines.push('Firme: ' + entities.companies.map(c => `[${c.id}] ${c.name}`).join(', '));
-  }
+  const addGroup = (
+    label: string,
+    items: Array<{ id: string; display: string }>
+  ) => {
+    if (items.length === 0) return;
+    const parts = items.map(item => {
+      const key = `e${idx++}`;
+      indexToId.set(key, item.id);
+      return `[${key}] ${item.display}`;
+    });
+    lines.push(`${label}: ${parts.join(', ')}`);
+  };
 
-  return lines.length > 0 ? lines.join('\n') : 'Nicio entitate disponibilă.';
+  addGroup('Persoane', entities.persons.map(p => ({ id: p.id, display: p.name })));
+  addGroup('Vehicule', entities.vehicles.map(v => ({ id: v.id, display: v.name })));
+  addGroup('Proprietăți', entities.properties.map(p => ({ id: p.id, display: p.name })));
+  addGroup('Carduri', entities.cards.map(c => ({ id: c.id, display: `${c.nickname} (****${c.last4})` })));
+  addGroup('Animale', entities.animals.map(a => ({ id: a.id, display: `${a.name} (${a.species})` })));
+  addGroup('Firme', entities.companies.map(c => ({ id: c.id, display: c.name })));
+
+  return {
+    entityContext: lines.length > 0 ? lines.join('\n') : 'Nicio entitate disponibilă.',
+    indexToId,
+  };
 }
 
 interface RawAiJson {
@@ -184,7 +222,13 @@ interface RawAiJson {
   aiNotes?: string;
 }
 
-function parseAiResponse(raw: string, entities: AvailableEntities): AiOcrResult {
+const AI_NOTES_MAX_LENGTH = 300;
+
+function parseAiResponse(
+  raw: string,
+  entities: AvailableEntities,
+  indexToId: Map<string, string>
+): AiOcrResult {
   // Extrage JSON din răspuns (poate veni cu ``` sau text suplimentar)
   const jsonMatch = raw.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
@@ -201,12 +245,12 @@ function parseAiResponse(raw: string, entities: AvailableEntities): AiOcrResult 
   // Validăm tipul documentului
   const documentType = validateDocumentType(parsed.documentType);
 
-  // Câmpuri — filtrăm valorile goale
+  // Câmpuri — filtrăm valorile goale și limităm lungimea
   const fields: Record<string, string> = {};
   if (parsed.fields && typeof parsed.fields === 'object') {
     for (const [k, v] of Object.entries(parsed.fields)) {
-      if (typeof v === 'string' && v.trim()) {
-        fields[k] = v.trim();
+      if (typeof v === 'string' && v.trim() && typeof k === 'string') {
+        fields[k.slice(0, 50)] = v.trim().slice(0, 200);
       }
     }
   }
@@ -215,13 +259,20 @@ function parseAiResponse(raw: string, entities: AvailableEntities): AiOcrResult 
   const issueDate = validateDate(parsed.issueDate);
   const expiryDate = validateDate(parsed.expiryDate);
 
-  // Sugestii entitate — validăm că ID-urile există în aplicație
+  // Sugestii entitate — rezolvăm indexul înapoi la ID real și validăm că există în DB
   const entitySuggestions: AiEntitySuggestion[] = [];
   if (Array.isArray(parsed.entitySuggestions)) {
     for (const s of parsed.entitySuggestions) {
-      const validated = validateEntitySuggestion(s, entities);
+      const validated = validateEntitySuggestion(s, entities, indexToId);
       if (validated) entitySuggestions.push(validated);
     }
+  }
+
+  // aiNotes — limităm lungimea și eliminăm caractere de control
+  let aiNotes: string | undefined;
+  if (typeof parsed.aiNotes === 'string' && parsed.aiNotes.trim()) {
+    aiNotes = parsed.aiNotes.replace(/[\x00-\x1F\x7F]/g, ' ').trim().slice(0, AI_NOTES_MAX_LENGTH);
+    if (!aiNotes) aiNotes = undefined;
   }
 
   return {
@@ -230,7 +281,7 @@ function parseAiResponse(raw: string, entities: AvailableEntities): AiOcrResult 
     issueDate,
     expiryDate,
     entitySuggestions,
-    aiNotes: typeof parsed.aiNotes === 'string' ? parsed.aiNotes : undefined,
+    aiNotes,
   };
 }
 
@@ -260,23 +311,27 @@ const VALID_ENTITY_TYPES = new Set<string>([
 
 function validateEntitySuggestion(
   s: { entityType?: string; entityId?: string; entityName?: string; confidence?: string },
-  entities: AvailableEntities
+  entities: AvailableEntities,
+  indexToId: Map<string, string>
 ): AiEntitySuggestion | null {
   if (!s.entityType || !VALID_ENTITY_TYPES.has(s.entityType)) return null;
   if (!s.entityId || typeof s.entityId !== 'string') return null;
 
   const entityType = s.entityType as EntityType;
 
-  // Verificăm că ID-ul există în aplicație
-  const exists = checkEntityExists(entityType, s.entityId, entities);
+  // Rezolvăm indexul numeric (e0, e1, ...) înapoi la ID real
+  const resolvedId = indexToId.get(s.entityId) ?? s.entityId;
+
+  // Verificăm că ID-ul rezolvat există în aplicație
+  const exists = checkEntityExists(entityType, resolvedId, entities);
   if (!exists) return null;
 
   const confidence = s.confidence === 'high' || s.confidence === 'low' ? s.confidence : 'medium';
 
   return {
     entityType,
-    entityId: s.entityId,
-    entityName: typeof s.entityName === 'string' ? s.entityName : s.entityId,
+    entityId: resolvedId,
+    entityName: typeof s.entityName === 'string' ? s.entityName : resolvedId,
     confidence,
   };
 }

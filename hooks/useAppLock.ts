@@ -28,7 +28,7 @@ export function useAppLock() {
   useEffect(() => {
     if (!lockEnabled) return;
     const sub = AppState.addEventListener('change', (nextState: AppStateStatus) => {
-      if (nextState === 'background' || nextState === 'inactive') setLocked(true);
+      if (nextState === 'background') setLocked(true);
     });
     return () => sub.remove();
   }, [lockEnabled]);

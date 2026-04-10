@@ -92,6 +92,7 @@ ${buildDocTypesList()}
 **Funcții principale:**
 - Scanare documente cu camera + OCR automat (extrage text și date din poze)
 - Notificări de expirare (configurabil cu X zile înainte, funcționează și când app e închisă)
+- Tab „Expirări": documente sortate după dată (cele mai urgente primele), cu indicator colorat — roșu = expirat, galben = expiră în 30 de zile, verde = ok
 - Backup complet în iCloud (iOS) / Google Drive (Android) și restore
 - Blocare cu Face ID / Touch ID / PIN
 - Asistent AI (acesta) pentru căutare și întrebări despre documente

@@ -452,7 +452,7 @@ export default function HomeScreen() {
                     { backgroundColor: C.card, shadowColor: C.cardShadow },
                     pressed && styles.docCardPressed,
                   ]}
-                  onPress={() => router.push(`/(tabs)/documente/${doc.id}`)}
+                  onPress={() => router.push(`/(tabs)/documente/${doc.id}?from=home`)}
                 >
                   <RNView
                     style={[
@@ -510,7 +510,7 @@ export default function HomeScreen() {
                     { backgroundColor: C.card, shadowColor: C.cardShadow },
                     pressed && styles.docCardPressed,
                   ]}
-                  onPress={() => router.push(`/(tabs)/documente/${doc.id}`)}
+                  onPress={() => router.push(`/(tabs)/documente/${doc.id}?from=home`)}
                 >
                   <RNView
                     style={[

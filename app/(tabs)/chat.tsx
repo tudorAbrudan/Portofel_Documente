@@ -580,7 +580,6 @@ function ConversationView({
     <KeyboardAvoidingView
       style={[styles.container, { backgroundColor: colors.background }]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={insets.bottom}
     >
       {/* Header */}
       <View
@@ -673,7 +672,7 @@ function ConversationView({
           {
             backgroundColor: colors.surface,
             borderTopColor: colors.border,
-            paddingBottom: 12 + insets.bottom,
+            paddingBottom: 12,
           },
         ]}
       >

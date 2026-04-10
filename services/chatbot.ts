@@ -1,6 +1,8 @@
 import { getPersons, getProperties, getVehicles, getCards, getAnimals } from './entities';
 import { getDocuments } from './documents';
 import { DOCUMENT_TYPE_LABELS } from '@/types';
+import type { DocumentType, Document } from '@/types';
+import { buildAppKnowledge } from './appKnowledge';
 import { sendAiRequest } from './aiProvider';
 import type { AiMessage } from './aiProvider';
 
@@ -9,7 +11,149 @@ export interface ChatMessage {
   content: string;
 }
 
-async function buildContext(): Promise<string> {
+// ─── Filtrare context ─────────────────────────────────────────────────────────
+
+/**
+ * Extrage ID-urile entităților menționate din prefixul adăugat de chat.tsx.
+ * Format: "[Context mențiuni: @Nume = Tip (ID: abc123), ...]"
+ */
+function extractMentionedIds(text: string): Set<string> {
+  const ids = new Set<string>();
+  const prefixMatch = text.match(/^\[Context mențiuni: ([^\]]+)\]/);
+  if (!prefixMatch) return ids;
+  const matches = prefixMatch[1].matchAll(/\(ID: ([^)]+)\)/g);
+  for (const m of matches) ids.add(m[1]);
+  return ids;
+}
+
+/**
+ * Mapare cuvinte cheie din limbaj natural → tipuri de documente.
+ * Normalizat la lowercase fără diacritice pentru matching robust.
+ */
+const KEYWORD_TO_TYPES: Array<{ keywords: string[]; types: DocumentType[] }> = [
+  { keywords: ['buletin', 'ci', 'carte identitate', 'identitate'], types: ['buletin'] },
+  { keywords: ['pasaport', 'pașaport', 'passport'], types: ['pasaport'] },
+  { keywords: ['permis', 'sofer', 'șofer'], types: ['permis_auto'] },
+  { keywords: ['talon', 'inmatriculare', 'înmatriculare'], types: ['talon'] },
+  { keywords: ['carte auto', 'civ'], types: ['carte_auto'] },
+  { keywords: ['rca', 'asigurare obligatorie', 'asigurare auto'], types: ['rca'] },
+  { keywords: ['casco'], types: ['casco'] },
+  { keywords: ['itp', 'inspectie tehnica', 'inspecție tehnică'], types: ['itp'] },
+  { keywords: ['vigneta', 'vignetă', 'rovinieta'], types: ['vigneta'] },
+  { keywords: ['factura', 'factură', 'invoice'], types: ['factura'] },
+  { keywords: ['contract'], types: ['contract'] },
+  { keywords: ['garantie', 'garanție', 'warranty'], types: ['garantie'] },
+  { keywords: ['reteta', 'rețetă', 'prescriptie', 'prescripție'], types: ['reteta_medicala'] },
+  { keywords: ['analize', 'laborator', 'rezultate'], types: ['analize_medicale'] },
+  { keywords: ['pad', 'asigurare locuinta', 'asigurare locuință'], types: ['pad'] },
+  { keywords: ['vaccin', 'vaccinare'], types: ['vaccin_animal'] },
+  { keywords: ['deparazitare', 'antiparazitar'], types: ['deparazitare'] },
+  { keywords: ['veterinar', 'vet', 'consultatie', 'consultație'], types: ['vizita_vet'] },
+  { keywords: ['bilet', 'zbor', 'avion', 'tren', 'concert'], types: ['bilet'] },
+  { keywords: ['abonament'], types: ['abonament'] },
+  { keywords: ['impozit'], types: ['impozit_proprietate'] },
+  { keywords: ['act proprietate', 'proprietate'], types: ['act_proprietate'] },
+  { keywords: ['cadastru'], types: ['cadastru'] },
+  { keywords: ['bon', 'chitanta', 'chitanță'], types: ['bon_cumparaturi', 'bon_parcare'] },
+  { keywords: ['stingator', 'stingător'], types: ['stingator_incendiu'] },
+  {
+    keywords: ['expira', 'expiră', 'expirare', 'scadenta', 'scadență', 'valabil'],
+    types: [],
+  }, // special: returnează toate documentele cu dată expirare
+];
+
+function normalize(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+// Cuvinte comune care nu ajută la căutare
+const STOP_WORDS = new Set([
+  'ce', 'care', 'cum', 'cand', 'când', 'unde', 'de', 'la', 'in', 'în', 'pe', 'cu',
+  'și', 'si', 'sau', 'dar', 'ca', 'sa', 'să', 'nu', 'este', 'e', 'are', 'am',
+  'al', 'ale', 'ai', 'un', 'o', 'unei', 'unui', 'mi', 'îmi', 'imi', 'iti', 'îți',
+  'mai', 'fi', 'fii', 'fost', 'fi', 'pot', 'poti', 'poți', 'vrea', 'vreau',
+  'imi', 'spune', 'spui', 'arata', 'arată', 'gaseste', 'găsește', 'cauta', 'caută',
+]);
+
+/**
+ * Extrage termeni de căutare semnificativi din mesajul userului.
+ * Elimină prefixul de mențiuni, stop words și cuvinte prea scurte.
+ */
+function extractSearchTerms(message: string): string[] {
+  const clean = message.replace(/^\[Context mențiuni:[^\]]*\]\n?/, '');
+  const norm = normalize(clean);
+  return norm
+    .split(/\s+/)
+    .map(w => w.replace(/[^a-z0-9]/g, ''))
+    .filter(w => w.length >= 3 && !STOP_WORDS.has(w));
+}
+
+/**
+ * Găsește documentele ale căror OCR conține termenii de căutare.
+ * Caută în OCR-ul COMPLET, nu în versiunea trunchiată.
+ * Returnează un Set cu ID-urile documentelor relevante.
+ */
+function findDocsByOcrSearch(docs: Document[], searchTerms: string[]): Set<string> {
+  if (searchTerms.length === 0) return new Set();
+  const matched = new Set<string>();
+  for (const doc of docs) {
+    if (!doc.ocr_text) continue;
+    const ocrNorm = normalize(doc.ocr_text);
+    if (searchTerms.some(term => ocrNorm.includes(term))) {
+      matched.add(doc.id);
+    }
+  }
+  return matched;
+}
+
+/**
+ * Detectează tipurile de documente relevante din textul mesajului.
+ * Returnează null dacă nu detectează nimic specific (= trimite toate).
+ */
+function detectRelevantTypes(text: string): DocumentType[] | null {
+  const norm = normalize(text);
+  const types = new Set<DocumentType>();
+
+  for (const { keywords, types: docTypes } of KEYWORD_TO_TYPES) {
+    if (keywords.some(kw => norm.includes(normalize(kw)))) {
+      if (docTypes.length === 0) return null; // "expirare" → toate
+      docTypes.forEach(t => types.add(t));
+    }
+  }
+
+  return types.size > 0 ? Array.from(types) : null;
+}
+
+/**
+ * Colectează ID-urile entităților menționate din ultimele N mesaje din istoric.
+ * Propagă contextul @mențiunilor prin conversație.
+ */
+function collectHistoryMentions(history: ChatMessage[], lastN = 6): Set<string> {
+  const ids = new Set<string>();
+  const recent = history.slice(-lastN);
+  for (const msg of recent) {
+    if (msg.role === 'user') {
+      extractMentionedIds(msg.content).forEach(id => ids.add(id));
+    }
+  }
+  return ids;
+}
+
+// ─── Construire context filtrat ───────────────────────────────────────────────
+
+const MAX_DOCS_FULL = 80;     // fără filtrare: max 80 doc
+const MAX_DOCS_FILTERED = 40; // cu filtrare: mai mult spațiu per doc
+const OCR_LIMIT_DEFAULT = 300;   // caractere OCR pentru doc obișnuit
+const OCR_LIMIT_FILTERED = 800;  // doc relevant prin entitate/tip
+const OCR_LIMIT_FULL = 3000;     // doc găsit prin căutare text — OCR complet
+
+async function buildContext(
+  userMessage: string,
+  history: ChatMessage[]
+): Promise<{ contextText: string; filtered: boolean }> {
   const [persons, properties, vehicles, cards, animals, documents] = await Promise.all([
     getPersons(),
     getProperties(),
@@ -18,6 +162,84 @@ async function buildContext(): Promise<string> {
     getAnimals(),
     getDocuments(),
   ]);
+
+  const noData =
+    !persons.length &&
+    !properties.length &&
+    !vehicles.length &&
+    !cards.length &&
+    !animals.length &&
+    !documents.length;
+
+  if (noData) {
+    return {
+      contextText: 'NU EXISTĂ DATE ÎN APLICAȚIE. Utilizatorul nu a adăugat nicio entitate sau document.',
+      filtered: false,
+    };
+  }
+
+  // ── Identificare filtre ────────────────────────────────────────────────────
+
+  // ID-uri menționate: mesajul curent + ultimele mesaje din istoric
+  const currentMentions = extractMentionedIds(userMessage);
+  const historyMentions = collectHistoryMentions(history);
+  const allMentionedIds = new Set([...currentMentions, ...historyMentions]);
+
+  // Tipuri de documente detectate din mesajul curent
+  const cleanMessage = userMessage.replace(/^\[Context mențiuni:[^\]]*\]\n?/, '');
+  const relevantTypes = detectRelevantTypes(cleanMessage);
+
+  // Căutare text în OCR complet (înainte de trunchere)
+  const searchTerms = extractSearchTerms(cleanMessage);
+  const ocrMatchedIds = findDocsByOcrSearch(documents, searchTerms);
+
+  const hasEntityFilter = allMentionedIds.size > 0;
+  const hasTypeFilter = relevantTypes !== null;
+  const hasOcrMatch = ocrMatchedIds.size > 0;
+  const isFiltered = hasEntityFilter || hasTypeFilter || hasOcrMatch;
+
+  // ── Filtrare documente ─────────────────────────────────────────────────────
+
+  let filteredDocs: Document[] = documents;
+
+  if (hasEntityFilter) {
+    filteredDocs = filteredDocs.filter(
+      doc =>
+        (doc.person_id && allMentionedIds.has(doc.person_id)) ||
+        (doc.vehicle_id && allMentionedIds.has(doc.vehicle_id)) ||
+        (doc.property_id && allMentionedIds.has(doc.property_id)) ||
+        (doc.card_id && allMentionedIds.has(doc.card_id)) ||
+        (doc.animal_id && allMentionedIds.has(doc.animal_id)) ||
+        (doc.company_id && allMentionedIds.has(doc.company_id))
+    );
+    if (filteredDocs.length === 0) filteredDocs = documents;
+  }
+
+  if (hasTypeFilter && relevantTypes!.length > 0) {
+    const typeFiltered = filteredDocs.filter(doc => relevantTypes!.includes(doc.type));
+    if (typeFiltered.length > 0) filteredDocs = typeFiltered;
+  }
+
+  // Documentele găsite prin căutare OCR se adaugă întotdeauna la set
+  // (chiar dacă nu au trecut filtrele de entitate/tip)
+  if (hasOcrMatch) {
+    const existingIds = new Set(filteredDocs.map(d => d.id));
+    const ocrExtra = documents.filter(d => ocrMatchedIds.has(d.id) && !existingIds.has(d.id));
+    filteredDocs = [...filteredDocs, ...ocrExtra];
+  }
+
+  // Limită maximă de documente
+  const maxDocs = isFiltered ? MAX_DOCS_FILTERED : MAX_DOCS_FULL;
+  if (filteredDocs.length > maxDocs) {
+    // Prioritizăm: 1. găsite prin OCR search, 2. cu dată expirare, 3. restul
+    filteredDocs = [
+      ...filteredDocs.filter(d => ocrMatchedIds.has(d.id)),
+      ...filteredDocs.filter(d => !ocrMatchedIds.has(d.id) && d.expiry_date),
+      ...filteredDocs.filter(d => !ocrMatchedIds.has(d.id) && !d.expiry_date),
+    ].slice(0, maxDocs);
+  }
+
+  // ── Construire string context ──────────────────────────────────────────────
 
   const lines: string[] = ['=== DATE APLICAȚIE ==='];
 
@@ -38,15 +260,29 @@ async function buildContext(): Promise<string> {
   if (animals.length)
     lines.push(`Animale: ${animals.map(a => `${a.name} (${a.species})`).join(', ')}`);
 
-  if (!persons.length && !properties.length && !vehicles.length && !cards.length && !animals.length && !documents.length) {
-    return 'NU EXISTĂ DATE ÎN APLICAȚIE. Utilizatorul nu a adăugat nicio entitate sau document.';
+  // Notă de filtrare (ajută AI-ul să înțeleagă că nu vede tot)
+  if (isFiltered && filteredDocs.length < documents.length) {
+    lines.push(
+      `\nDocumente (${filteredDocs.length} din ${documents.length} total, filtrate după context):`
+    );
+  } else {
+    lines.push('\nDocumente:');
   }
 
-  lines.push('\nDocumente:');
-  if (!documents.length) {
-    lines.push('(niciun document adăugat)');
+  if (!filteredDocs.length) {
+    lines.push('(niciun document relevant găsit)');
   }
-  for (const doc of documents) {
+
+  for (const doc of filteredDocs) {
+    // OCR limit per document:
+    // - găsit prin căutare text → OCR complet (3000 chars)
+    // - relevant prin entitate/tip → 800 chars
+    // - restul → 300 chars
+    const ocrLimit = ocrMatchedIds.has(doc.id)
+      ? OCR_LIMIT_FULL
+      : isFiltered
+        ? OCR_LIMIT_FILTERED
+        : OCR_LIMIT_DEFAULT;
     const entity =
       persons.find(p => p.id === doc.person_id)?.name ??
       vehicles.find(v => v.id === doc.vehicle_id)?.name ??
@@ -60,7 +296,6 @@ async function buildContext(): Promise<string> {
     const entityStr = entity ? ` (${entity})` : '';
     const note = doc.note ? ` | notă: ${doc.note}` : '';
 
-    // Metadata specifică tipului (nr. înmatriculare, CNP, serie, etc.)
     let meta = '';
     if (doc.metadata) {
       try {
@@ -74,30 +309,26 @@ async function buildContext(): Promise<string> {
       }
     }
 
-    // Text OCR complet (trunchiat la 800 de caractere pentru context)
     const ocrText = doc.ocr_text
-      ? ` | OCR: ${doc.ocr_text.slice(0, 800)}${doc.ocr_text.length > 800 ? '…' : ''}`
+      ? ` | OCR: ${doc.ocr_text.slice(0, ocrLimit)}${doc.ocr_text.length > ocrLimit ? '…' : ''}`
       : '';
 
     lines.push(`- [ID:${doc.id}] ${label}${entityStr}${issued}${expiry}${note}${meta}${ocrText}`);
   }
 
-  return lines.join('\n');
+  return { contextText: lines.join('\n'), filtered: isFiltered };
 }
 
+// ─── Export principal ─────────────────────────────────────────────────────────
+
 export async function sendMessage(userMessage: string, history: ChatMessage[]): Promise<string> {
-  const context = await buildContext();
+  const { contextText } = await buildContext(userMessage, history);
 
-  const systemPrompt = `Ești un asistent pentru aplicația de documente personale. Răspunzi în română.
-Ai acces la datele utilizatorului:
+  const systemPrompt = `${buildAppKnowledge()}
 
-${context}
+## Datele utilizatorului
 
-## Reguli generale
-- Fii concis și util
-- Bazează-te STRICT pe datele de mai sus; NICIODATĂ nu inventa, presupune sau genera date care nu există explicit
-- Dacă datele de mai sus indică "NU EXISTĂ DATE" sau "(niciun document adăugat)", răspunde că nu există date — nu genera exemple, nu sugera date fictive
-- Când menționezi un document specific, include ID-ul în format [ID:xxx] ca să poată fi deschis
+${contextText}
 
 ## Formate speciale — returnează EXACT formatul de mai jos când e cerut
 

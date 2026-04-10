@@ -3,6 +3,7 @@ import { Platform, StyleSheet } from 'react-native';
 import { SymbolView } from 'expo-symbols';
 import { Tabs, useRouter } from 'expo-router';
 import * as Notifications from 'expo-notifications';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
@@ -13,6 +14,7 @@ export default function TabLayout() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const lastResponse = Notifications.useLastNotificationResponse();
 
   useEffect(() => {
@@ -38,12 +40,12 @@ export default function TabLayout() {
         tabBarActiveTintColor: colors.tabIconSelected,
         tabBarInactiveTintColor: colors.tabIconDefault,
         headerShown: false,
-        // Nu seta height + paddingBottom aici: navigatorul adaugă deja insets.bottom pe tab bar.
-        // Dublarea comprima rândul de taburi și pe ecrane înguste ultimul tab (ex. Asistent) dispărea.
         tabBarStyle: {
           backgroundColor: colors.surface,
           borderTopWidth: 0,
           paddingTop: 6,
+          paddingBottom: insets.bottom,
+          height: 54 + insets.bottom,
           ...Platform.select({
             ios: {
               shadowColor: '#000',
@@ -89,6 +91,12 @@ export default function TabLayout() {
       />
       <Tabs.Screen
         name="documente"
+        listeners={() => ({
+          tabPress: (e) => {
+            e.preventDefault();
+            router.navigate('/(tabs)/documente');
+          },
+        })}
         options={{
           title: 'Acte',
           tabBarIcon: ({ color }) => (
@@ -146,5 +154,5 @@ export default function TabLayout() {
 
 const styles = StyleSheet.create({
   tabLabel: { fontSize: 10, fontWeight: '600' },
-  tabItem: { paddingTop: 2 },
+  tabItem: { paddingTop: 2, paddingBottom: 0 },
 });

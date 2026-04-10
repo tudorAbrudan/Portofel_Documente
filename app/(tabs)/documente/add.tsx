@@ -5,7 +5,6 @@ import {
   ScrollView,
   Alert,
   Image,
-  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Modal,
@@ -20,6 +19,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { extractTextFromPdf, isPdfFile } from '@/services/pdfExtractor';
 import { Text, View, ThemedTextInput } from '@/components/Themed';
+import { BottomActionBar } from '@/components/ui/BottomActionBar';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
 import { primary } from '@/theme/colors';
@@ -39,8 +39,9 @@ import {
 } from '@/services/ocr';
 import { extractFieldsForType } from '@/services/ocrExtractors';
 import { toRelativePath } from '@/services/fileUtils';
-import { getDocumentsByEntity } from '@/services/documents';
+import { getDocumentsByEntity, findDuplicateDocument } from '@/services/documents';
 import { DOCUMENT_TYPE_LABELS } from '@/types';
+import type { Document } from '@/types';
 import type { DocumentType, EntityType, DocumentEntityLink } from '@/types';
 import { DatePickerField } from '@/components/DatePickerField';
 import { DOCUMENT_FIELDS } from '@/types/documentFields';
@@ -121,10 +122,12 @@ export default function AddDocumentScreen() {
   const [aiOcrLoading, setAiOcrLoading] = useState(false);
   const [aiOcrApplied, setAiOcrApplied] = useState(false);
   const [aiConsentAvailable, setAiConsentAvailable] = useState(false);
+  const [duplicateDoc, setDuplicateDoc] = useState<Document | null>(null);
 
   useEffect(() => {
     AsyncStorage.getItem(AI_CONSENT_KEY).then(v => setAiConsentAvailable(v === 'true'));
   }, []);
+
   const [fullscreenUri, setFullscreenUri] = useState<string | null>(null);
   const [typePickerVisible, setTypePickerVisible] = useState(false);
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
@@ -149,6 +152,16 @@ export default function AddDocumentScreen() {
   const animalId = params.animal_id;
   const companyId = params.company_id;
   const hasParamLink = !!(personId || propertyId || vehicleId || cardId || animalId || companyId);
+
+  useEffect(() => {
+    if (entityLinks.length === 0) {
+      setDuplicateDoc(null);
+      return;
+    }
+    findDuplicateDocument(type, customTypeId ?? undefined, entityLinks)
+      .then(setDuplicateDoc)
+      .catch(() => setDuplicateDoc(null));
+  }, [type, customTypeId, entityLinks]);
 
   // Pre-completează data expirării ITP din talonul vehiculului (dacă există)
   useEffect(() => {
@@ -608,6 +621,28 @@ export default function AddDocumentScreen() {
   // ── Submit ────────────────────────────────────────────────────────────────
 
   async function handleSubmit() {
+    if (duplicateDoc) {
+      const typeName = DOCUMENT_TYPE_LABELS[duplicateDoc.type] ?? duplicateDoc.type;
+      const confirmed = await new Promise<boolean>(resolve => {
+        Alert.alert(
+          'Document similar există',
+          `Există deja un document de tip „${typeName}" pentru această entitate. Ce vrei să faci?`,
+          [
+            { text: 'Anulare', style: 'cancel', onPress: () => resolve(false) },
+            {
+              text: 'Deschide existentul',
+              onPress: () => {
+                router.push(`/(tabs)/documente/${duplicateDoc.id}`);
+                resolve(false);
+              },
+            },
+            { text: 'Salvează oricum', onPress: () => resolve(true) },
+          ]
+        );
+      });
+      if (!confirmed) return;
+    }
+
     setLoading(true);
     try {
       const newDoc = await createDocument({
@@ -774,16 +809,16 @@ export default function AddDocumentScreen() {
           ),
         }}
       />
-      <Pressable style={{ flex: 1 }} onPress={Keyboard.dismiss} accessible={false}>
-        <KeyboardAvoidingView
+      <KeyboardAvoidingView
           style={[styles.container, { backgroundColor: C.background }]}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
           <ScrollView
             style={[styles.scroll, { backgroundColor: C.background }]}
             contentContainerStyle={styles.scrollContent}
-            keyboardDismissMode="on-drag"
+            keyboardDismissMode="interactive"
             keyboardShouldPersistTaps="handled"
+            automaticallyAdjustKeyboardInsets={true}
           >
           {/* 1. POZE & OCR */}
           <Text style={[styles.label, styles.sectionLabel]}>Poze / scan</Text>
@@ -823,6 +858,23 @@ export default function AddDocumentScreen() {
               <Text style={[styles.aiManualBtnText, { color: primary }]}>
                 {aiOcrApplied ? '↺ Re-analizează cu AI' : '✦ Analizează cu AI'}
               </Text>
+            </Pressable>
+          )}
+
+          {/* DUPLICAT */}
+          {duplicateDoc && (
+            <Pressable
+              style={styles.duplicateBanner}
+              onPress={() => router.push(`/(tabs)/documente/${duplicateDoc.id}`)}
+            >
+              <Text style={styles.duplicateBannerTitle}>
+                Document similar găsit
+              </Text>
+              <Text style={styles.duplicateBannerBody}>
+                Există deja un document de tip „
+                {DOCUMENT_TYPE_LABELS[duplicateDoc.type] ?? duplicateDoc.type}" pentru această entitate.
+              </Text>
+              <Text style={styles.duplicateBannerLink}>Deschide documentul existent →</Text>
             </Pressable>
           )}
 
@@ -1093,21 +1145,15 @@ export default function AddDocumentScreen() {
             )}
           </>
 
-          {/* 8. SALVEAZĂ */}
-          <Pressable
-            style={({ pressed }) => [
-              styles.button,
-              pressed && styles.buttonPressed,
-              (!canSave || loading) && styles.buttonDisabled,
-            ]}
-            onPress={handleSubmit}
-            disabled={loading || !canSave}
-          >
-            <Text style={styles.buttonText}>{loading ? 'Se salvează...' : 'Salvează'}</Text>
-          </Pressable>
           </ScrollView>
+          <BottomActionBar
+            label="Salvează"
+            onPress={handleSubmit}
+            loading={loading}
+            disabled={!canSave}
+            safeArea
+          />
         </KeyboardAvoidingView>
-      </Pressable>
 
       <Modal visible={!!fullscreenUri} transparent animationType="fade" statusBarTranslucent>
         <View style={styles.fsOverlay}>
@@ -1276,4 +1322,28 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   fsCloseBtnText: { color: '#fff', fontSize: 20, fontWeight: '600' },
+  duplicateBanner: {
+    backgroundColor: '#fff8e1',
+    borderColor: '#f59e0b',
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 14,
+    marginBottom: 16,
+  },
+  duplicateBannerTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#92400e',
+    marginBottom: 4,
+  },
+  duplicateBannerBody: {
+    fontSize: 13,
+    color: '#78350f',
+    marginBottom: 6,
+  },
+  duplicateBannerLink: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#b45309',
+  },
 });

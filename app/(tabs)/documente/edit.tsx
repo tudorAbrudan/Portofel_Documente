@@ -8,7 +8,6 @@ import {
   ActivityIndicator,
   Modal,
   StatusBar,
-  Keyboard,
   KeyboardAvoidingView,
   Platform,
   useWindowDimensions,
@@ -20,6 +19,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Text, View, ThemedTextInput } from '@/components/Themed';
+import { BottomActionBar } from '@/components/ui/BottomActionBar';
 import { primary } from '@/theme/colors';
 import { DatePickerField } from '@/components/DatePickerField';
 import { DocumentPhotoSection } from '@/components/DocumentPhotoSection';
@@ -30,6 +30,7 @@ import {
   addDocumentPage,
   removeDocumentPage,
   setDocumentOcrText,
+  reorderAllDocumentFiles,
   getDocumentsByEntity,
   addEntityLinkToDocument,
   removeEntityLinkFromDocument,
@@ -67,6 +68,12 @@ export default function EditDocumentScreen() {
   const [saving, setSaving] = useState(false);
   const [ocrLoading, setOcrLoading] = useState(false);
   const [fullscreenUri, setFullscreenUri] = useState<string | null>(null);
+  const [fsKey, setFsKey] = useState(0);
+
+  function handleFullscreen(uri: string) {
+    setFsKey(k => k + 1);
+    setFullscreenUri(uri);
+  }
   const [linkEntityVisible, setLinkEntityVisible] = useState(false);
   const [entityLinks, setEntityLinks] = useState<DocumentEntityLink[]>([]);
   const [typePickerVisible, setTypePickerVisible] = useState(false);
@@ -191,6 +198,28 @@ export default function EditDocumentScreen() {
         },
       },
     ]);
+  }
+
+  async function handleReorderPage(fromIndex: number, toIndex: number) {
+    if (!doc) return;
+    const paths = allPages.map(p => p.file_path);
+    const newPaths = [...paths];
+    const [moved] = newPaths.splice(fromIndex, 1);
+    newPaths.splice(toIndex, 0, moved);
+    try {
+      await reorderAllDocumentFiles(doc.id, newPaths);
+      const updated = await getDocumentById(doc.id);
+      setDoc(updated);
+    } catch (e) {
+      Alert.alert('Eroare', e instanceof Error ? e.message : 'Nu s-a putut reordona');
+    }
+  }
+
+  async function handleOcrSave(text: string) {
+    if (!doc) return;
+    await setDocumentOcrText(doc.id, text);
+    const updated = await getDocumentById(doc.id);
+    setDoc(updated);
   }
 
   async function saveAndAddPage(uri: string) {
@@ -522,7 +551,7 @@ export default function EditDocumentScreen() {
           'Adaugă în calendar?',
           `Vrei să adaugi un reminder pentru expirarea pe ${finalExpiry}?`,
           [
-            { text: 'Nu', style: 'cancel', onPress: () => router.back() },
+            { text: 'Nu', style: 'cancel', onPress: () => { if (router.canGoBack()) router.back(); else router.replace('/(tabs)/documente'); } },
             {
               text: 'Adaugă',
               onPress: async () => {
@@ -534,7 +563,7 @@ export default function EditDocumentScreen() {
                   note: note.trim() || undefined,
                 });
                 if (!calId) Alert.alert('Eroare', 'Nu s-a putut accesa calendarul.');
-                router.back();
+                if (router.canGoBack()) router.back(); else router.replace('/(tabs)/documente');
               },
             },
           ]
@@ -542,7 +571,7 @@ export default function EditDocumentScreen() {
         return;
       }
 
-      router.back();
+      if (router.canGoBack()) router.back(); else router.replace('/(tabs)/documente');
     } catch (e) {
       Alert.alert('Eroare', e instanceof Error ? e.message : 'Nu s-a putut salva');
     } finally {
@@ -578,8 +607,7 @@ export default function EditDocumentScreen() {
           title: getDocumentLabel(doc, customTypes),
         }}
       />
-      <Pressable style={{ flex: 1 }} onPress={Keyboard.dismiss} accessible={false}>
-        <KeyboardAvoidingView
+      <KeyboardAvoidingView
           style={styles.flex}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
@@ -587,7 +615,8 @@ export default function EditDocumentScreen() {
             style={styles.flex}
             contentContainerStyle={styles.content}
             keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="on-drag"
+            keyboardDismissMode="interactive"
+            automaticallyAdjustKeyboardInsets={true}
           >
           {/* 1. POZE & OCR */}
           <Text style={styles.sectionLabel}>Poze / scan</Text>
@@ -599,7 +628,9 @@ export default function EditDocumentScreen() {
             onRotate={handleRotate}
             onDelete={handleDeletePage}
             onRunOcr={handleOcr}
-            onFullscreen={setFullscreenUri}
+            onFullscreen={handleFullscreen}
+            onReorderPage={handleReorderPage}
+            onOcrTextSave={handleOcrSave}
           />
 
           {/* 2. TIP DOCUMENT */}
@@ -799,35 +830,20 @@ export default function EditDocumentScreen() {
             editable={!saving}
           />
 
-          {/* 8. ACȚIUNI */}
-          <View style={styles.actionRow}>
-            <Pressable
-              style={[styles.btnOutline, saving && styles.btnDisabled]}
-              onPress={() => router.back()}
-              disabled={saving}
-            >
-              <Text style={styles.btnOutlineText}>Anulează</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.btnPrimary, saving && styles.btnDisabled]}
-              onPress={handleSave}
-              disabled={saving}
-            >
-              {saving ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.btnPrimaryText}>Salvează</Text>
-              )}
-            </Pressable>
-          </View>
           </ScrollView>
+          <BottomActionBar
+            label="Salvează"
+            onPress={handleSave}
+            loading={saving}
+            safeArea
+          />
         </KeyboardAvoidingView>
-      </Pressable>
 
       {/* Fullscreen modal */}
       <Modal visible={!!fullscreenUri} transparent animationType="fade" statusBarTranslucent>
         <View style={styles.fsOverlay}>
           <StatusBar hidden />
+          <View key={fsKey} style={{ flex: 1 }}>
           <ScrollView
             style={{ flex: 1 }}
             contentContainerStyle={styles.fsScrollContent}
@@ -846,6 +862,7 @@ export default function EditDocumentScreen() {
               />
             )}
           </ScrollView>
+          </View>
           <Pressable style={styles.fsCloseBtn} onPress={() => setFullscreenUri(null)}>
             <Text style={styles.fsCloseBtnText}>✕</Text>
           </Pressable>
