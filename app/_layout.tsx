@@ -4,15 +4,20 @@ import { Stack, useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Notifications from 'expo-notifications';
 import { useState, useEffect, useRef } from 'react';
-import { Linking, DeviceEventEmitter } from 'react-native';
+import { Linking, DeviceEventEmitter, useColorScheme as useColorSchemeNative } from 'react-native';
 
 export const ONBOARDING_RESET_EVENT = 'onboarding_reset';
 import 'react-native-reanimated';
 
 import AppLockScreen from '@/components/AppLockScreen';
 import OnboardingWizard from '@/components/OnboardingWizard';
-import { useColorScheme } from '@/components/useColorScheme';
+import { UpdateBanner } from '@/components/UpdateBanner';
+import { UpdateBlocker } from '@/components/UpdateBlocker';
+import { checkForUpdate, dismissUpdate } from '@/services/updateCheck';
+import type { UpdateInfo } from '@/services/updateCheck';
 import { AppLightTheme, AppDarkTheme } from '@/constants/Theme';
+import { ThemePreferenceContext } from '@/hooks/useThemeScheme';
+import type { ThemePreference } from '@/hooks/useThemeScheme';
 import { useAppLock } from '@/hooks/useAppLock';
 import { db } from '@/services/db';
 import * as settings from '@/services/settings';
@@ -53,11 +58,13 @@ function parseDeepLink(url: string): string | null {
 }
 
 function RootLayoutNav() {
-  const colorScheme = useColorScheme();
+  const systemScheme = useColorSchemeNative();
+  const [themePreference, setThemePreferenceState] = useState<ThemePreference>('auto');
   const appLock = useAppLock();
   const router = useRouter();
   const notifListener = useRef<Notifications.EventSubscription | null>(null);
   const [onboardingDone, setOnboardingDone] = useState<boolean | null>(null);
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
 
   useEffect(() => {
     notifListener.current = Notifications.addNotificationResponseReceivedListener(response => {
@@ -90,6 +97,18 @@ function RootLayoutNav() {
   }, []);
 
   useEffect(() => {
+    settings.getThemePreference().then(setThemePreferenceState);
+  }, []);
+
+  function setPreference(p: ThemePreference) {
+    setThemePreferenceState(p);
+    void settings.setThemePreference(p);
+  }
+
+  const effectiveScheme: 'light' | 'dark' =
+    themePreference === 'auto' ? (systemScheme === 'dark' ? 'dark' : 'light') : themePreference;
+
+  useEffect(() => {
     async function checkOnboarding() {
       const done = await settings.isOnboardingDone();
       if (done) {
@@ -116,12 +135,32 @@ function RootLayoutNav() {
     return () => sub.remove();
   }, []);
 
+  useEffect(() => {
+    checkForUpdate().then(info => {
+      if (info) setUpdateInfo(info);
+    });
+  }, []);
+
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? AppDarkTheme : AppLightTheme}>
+    <ThemePreferenceContext.Provider value={{ preference: themePreference, setPreference }}>
+    <ThemeProvider value={effectiveScheme === 'dark' ? AppDarkTheme : AppLightTheme}>
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
       </Stack>
+      {updateInfo && onboardingDone === true && updateInfo.mandatory && (
+        <UpdateBlocker version={updateInfo.version} url={updateInfo.url} />
+      )}
+      {updateInfo && !appLock.locked && onboardingDone === true && !updateInfo.mandatory && (
+        <UpdateBanner
+          version={updateInfo.version}
+          url={updateInfo.url}
+          onDismiss={() => {
+            dismissUpdate(updateInfo.version);
+            setUpdateInfo(null);
+          }}
+        />
+      )}
       {appLock.locked && (
         <AppLockScreen
           biometricAvailable={appLock.biometricAvailable}
@@ -131,5 +170,6 @@ function RootLayoutNav() {
       )}
       {onboardingDone === false && <OnboardingWizard onComplete={() => setOnboardingDone(true)} />}
     </ThemeProvider>
+    </ThemePreferenceContext.Provider>
   );
 }

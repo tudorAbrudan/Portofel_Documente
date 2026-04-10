@@ -8,7 +8,9 @@ import {
   Platform,
   Switch,
   Linking,
+  Alert,
 } from 'react-native';
+import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from '@/components/useColorScheme';
@@ -30,17 +32,19 @@ import {
 } from '@/services/notifications';
 import { primary } from '@/theme/colors';
 import { radius, spacing } from '@/theme/layout';
+import { useThemePreference } from '@/hooks/useThemeScheme';
 
-const TOTAL_STEPS = 8;
+const TOTAL_STEPS = 9;
 
 const WELCOME = 0;
-const SECURITY = 1;
-const ENTITIES = 2;
-const DOCS = 3;
-const NOTIFICATIONS = 4;
-const BACKUP = 5;
-const AI_STEP = 6;
-const SUMMARY = 7;
+const APPEARANCE = 1;
+const SECURITY = 2;
+const ENTITIES = 3;
+const DOCS = 4;
+const NOTIFICATIONS = 5;
+const BACKUP = 6;
+const AI_STEP = 7;
+const SUMMARY = 8;
 
 const AI_CONSENT_KEY = 'ai_assistant_consent_accepted';
 const MISTRAL_CONSOLE_URL = 'https://console.mistral.ai/api-keys';
@@ -82,6 +86,8 @@ function stepTitle(step: number): string {
   switch (step) {
     case WELCOME:
       return 'Bun venit';
+    case APPEARANCE:
+      return 'Aspect';
     case SECURITY:
       return 'Securitate';
     case ENTITIES:
@@ -105,6 +111,8 @@ function stepSubtitle(step: number): string {
   switch (step) {
     case WELCOME:
       return 'Iată ce trebuie să știi înainte să începi.';
+    case APPEARANCE:
+      return 'Alege cum arată aplicația. Poți schimba oricând din Setări.';
     case SECURITY:
       return 'Câteva recomandări pentru datele tale sensibile.';
     case ENTITIES:
@@ -129,6 +137,8 @@ export default function OnboardingWizard({ onComplete }: Props) {
   const C = Colors[scheme];
   const insets = useSafeAreaInsets();
 
+  const { preference: themePref, setPreference: setThemePref } = useThemePreference();
+
   const [step, setStep] = useState(WELCOME);
   const [selectedEntities, setSelectedEntities] = useState<EntityType[]>([...ALL_ENTITY_TYPES]);
   const [selectedDocTypes, setSelectedDocTypes] = useState<DocumentType[]>([
@@ -136,6 +146,9 @@ export default function OnboardingWizard({ onComplete }: Props) {
   ]);
   const [pushEnabled, setPushEnabled] = useState(true);
   const [notifDays, setNotifDays] = useState(7);
+  const [notifPermStatus, setNotifPermStatus] = useState<'undetermined' | 'granted' | 'denied'>(
+    'undetermined'
+  );
   const [lockEnabled, setLockEnabled] = useState(false);
   const [pinModalVisible, setPinModalVisible] = useState(false);
   const [aiEnabled, setAiEnabled] = useState(true);
@@ -146,6 +159,13 @@ export default function OnboardingWizard({ onComplete }: Props) {
       setNotifDays(d === 7 || d === 14 || d === 30 ? d : 7);
     });
     settings.getAppLockEnabled().then(setLockEnabled);
+    if (Platform.OS !== 'web') {
+      Notifications.getPermissionsAsync().then(({ status }) => {
+        if (status === 'granted') setNotifPermStatus('granted');
+        else if (status === 'denied') setNotifPermStatus('denied');
+        else setNotifPermStatus('undetermined');
+      });
+    }
   }, []);
 
   function toggleEntity(entityType: EntityType) {
@@ -176,12 +196,38 @@ export default function OnboardingWizard({ onComplete }: Props) {
     setStep(DOCS);
   }
 
+  async function handlePushSwitchToggle(value: boolean) {
+    if (!value) {
+      setPushEnabled(false);
+      return;
+    }
+    if (notifPermStatus === 'granted') {
+      setPushEnabled(true);
+      return;
+    }
+    if (notifPermStatus === 'denied') {
+      Alert.alert(
+        'Notificări blocate',
+        'Ai refuzat anterior permisiunea. Activează notificările din Setări sistem.',
+        [
+          { text: 'Nu acum', style: 'cancel' },
+          { text: 'Deschide Setări', onPress: () => Linking.openSettings() },
+        ]
+      );
+      return;
+    }
+    const granted = await requestNotificationPermission();
+    if (granted) {
+      setNotifPermStatus('granted');
+      setPushEnabled(true);
+    } else {
+      setNotifPermStatus('denied');
+    }
+  }
+
   async function goNextFromNotifications() {
     await settings.setPushEnabled(pushEnabled);
     await settings.setNotificationDays(notifDays);
-    if (pushEnabled) {
-      await requestNotificationPermission();
-    }
     await scheduleExpirationReminders();
     setStep(BACKUP);
   }
@@ -308,6 +354,42 @@ export default function OnboardingWizard({ onComplete }: Props) {
                 <Text style={[styles.bulletText, { color: C.text }]}>{line}</Text>
               </View>
             ))}
+          </View>
+        )}
+
+        {step === APPEARANCE && (
+          <View style={[styles.notifCard, { backgroundColor: C.card, borderColor: C.border }]}>
+            <Text style={[styles.notifLabel, { color: C.text }]}>Temă de culori</Text>
+            <View style={[styles.chipRow, { marginTop: 14 }]}>
+              {(
+                [
+                  ['auto', 'Automat'],
+                  ['light', 'Clar'],
+                  ['dark', 'Întunecat'],
+                ] as const
+              ).map(([value, label]) => {
+                const active = themePref === value;
+                return (
+                  <Pressable
+                    key={value}
+                    style={[
+                      styles.chip,
+                      active
+                        ? [styles.chipActive, { borderColor: C.primary }]
+                        : { borderColor: C.border, backgroundColor: C.background },
+                    ]}
+                    onPress={() => setThemePref(value)}
+                  >
+                    <Text style={[styles.chipText, { color: active ? '#fff' : C.text }]}>
+                      {label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <Text style={[styles.notifSub, { color: C.textSecondary, marginTop: 12 }]}>
+              „Automat" urmărește setarea telefonului.
+            </Text>
           </View>
         )}
 
@@ -444,11 +526,21 @@ export default function OnboardingWizard({ onComplete }: Props) {
               </View>
               <Switch
                 value={pushEnabled}
-                onValueChange={setPushEnabled}
+                onValueChange={handlePushSwitchToggle}
                 trackColor={{ false: '#ccc', true: primary }}
               />
             </View>
-            {pushEnabled && (
+            {notifPermStatus === 'denied' && (
+              <View style={styles.permDeniedRow}>
+                <Text style={styles.permDeniedText}>
+                  Notificările sunt blocate. Activează-le din Setări sistem.
+                </Text>
+                <Pressable onPress={() => Linking.openSettings()}>
+                  <Text style={[styles.permDeniedLink, { color: C.primary }]}>Deschide Setări</Text>
+                </Pressable>
+              </View>
+            )}
+            {pushEnabled && notifPermStatus !== 'denied' && (
               <>
                 <Text style={[styles.notifDaysLabel, { color: C.textSecondary }]}>
                   Câte zile înainte să te anunțăm
@@ -568,6 +660,10 @@ export default function OnboardingWizard({ onComplete }: Props) {
 
         {step === SUMMARY && (
           <View style={[styles.summaryCard, { backgroundColor: C.card, borderColor: C.border }]}>
+            <Text style={[styles.summaryLine, { color: C.text }]}>
+              <Text style={styles.summaryKey}>Temă: </Text>
+              {themePref === 'auto' ? 'Automat' : themePref === 'light' ? 'Clar' : 'Întunecat'}
+            </Text>
             <Text style={[styles.summaryLine, { color: C.text }]}>
               <Text style={styles.summaryKey}>Entități: </Text>
               {selectedEntities.map(e => ENTITY_LABELS[e]).join(', ')}
@@ -784,6 +880,9 @@ const styles = StyleSheet.create({
   notifLabel: { fontSize: 16, fontWeight: '600' },
   notifSub: { fontSize: 13, marginTop: 4, lineHeight: 18 },
   notifDaysLabel: { fontSize: 13, marginTop: 16, marginBottom: 10, fontWeight: '500' },
+  permDeniedRow: { marginTop: 12, gap: 6 },
+  permDeniedText: { fontSize: 13, lineHeight: 18, color: '#E65100' },
+  permDeniedLink: { fontSize: 13, fontWeight: '600', textDecorationLine: 'underline' },
 
   backupBody: { fontSize: 15, lineHeight: 22 },
   link: { fontSize: 15, fontWeight: '600', textDecorationLine: 'underline' },

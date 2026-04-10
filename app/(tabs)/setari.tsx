@@ -19,6 +19,7 @@ import Constants from 'expo-constants';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
+import { useThemePreference } from '@/hooks/useThemeScheme';
 import { PRIVACY_URL, SUPPORT_URL } from '@/constants/AppLinks';
 import AppLockPinModal from '@/components/AppLockPinModal';
 import { primary } from '@/theme/colors';
@@ -233,6 +234,7 @@ export default function SetariScreen() {
   const scheme = (useColorScheme() ?? 'light') as 'light' | 'dark';
   const C = Colors[scheme];
   const insets = useSafeAreaInsets();
+  const { preference: themePref, setPreference: setThemePref } = useThemePreference();
 
   const { customTypes, createCustomType, deleteCustomType } = useCustomTypes();
   const { visibleEntityTypes, visibleDocTypes, updateVisibleEntityTypes, updateVisibleDocTypes } =
@@ -576,6 +578,48 @@ export default function SetariScreen() {
               trackColor={{ false: '#ccc', true: primary }}
               thumbColor="#fff"
             />
+          </RNView>
+        </RNView>
+        {appLockEnabled && (
+          <RNText style={[styles.lockHint, { color: C.textSecondary }]}>
+            Dacă ai Face ID configurat pe telefon, poți debloca aplicația cu el chiar dacă uiți
+            PIN-ul. Dacă ai uitat PIN-ul și nu ai Face ID, dezactivează blocarea din Setări iPhone
+            → Parolă și Face ID → resetează datele aplicației.
+          </RNText>
+        )}
+
+        {/* ── Aspect ── */}
+        <RNText style={[styles.sectionLabel, { color: C.textSecondary }]}>ASPECT</RNText>
+        <RNView style={[styles.card, { backgroundColor: C.card, shadowColor: C.cardShadow }]}>
+          <RNText style={[styles.hint, { color: C.textSecondary }]}>
+            Alege tema de culori a aplicației.
+          </RNText>
+          <RNView style={[styles.chipRow, { marginTop: 8 }]}>
+            {(
+              [
+                ['auto', 'Automat'],
+                ['light', 'Clar'],
+                ['dark', 'Întunecat'],
+              ] as const
+            ).map(([value, label]) => {
+              const isActive = themePref === value;
+              return (
+                <Pressable
+                  key={value}
+                  style={[
+                    styles.chip,
+                    isActive
+                      ? [styles.chipActive, { borderColor: primary }]
+                      : { borderColor: C.border },
+                  ]}
+                  onPress={() => setThemePref(value)}
+                >
+                  <RNText style={[styles.chipText, { color: isActive ? '#fff' : C.textSecondary }]}>
+                    {label}
+                  </RNText>
+                </Pressable>
+              );
+            })}
           </RNView>
         </RNView>
 
@@ -1304,6 +1348,7 @@ const styles = StyleSheet.create({
   rowLabelWrap: { flex: 1 },
   rowLabel: { fontSize: 15, fontWeight: '500' },
   rowSub: { fontSize: 12, marginTop: 1, lineHeight: 16 },
+  lockHint: { fontSize: 12, lineHeight: 17, marginTop: 6, marginBottom: 4, paddingHorizontal: 4 },
 
   versionBadge: {
     fontSize: 12,

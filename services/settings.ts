@@ -110,3 +110,19 @@ export async function resetOnboarding(): Promise<void> {
   await AsyncStorage.setItem(KEY_VISIBLE_DOC_TYPES, JSON.stringify([...DEFAULT_VISIBLE_DOC_TYPES]));
   await AsyncStorage.setItem(KEY_VISIBLE_ENTITY_TYPES, JSON.stringify([...ALL_ENTITY_TYPES]));
 }
+
+// ── Temă ──────────────────────────────────────────────────────────────────────
+
+export type ThemePreference = 'light' | 'dark' | 'auto';
+
+const KEY_THEME_PREFERENCE = 'settings_theme_preference';
+
+export async function getThemePreference(): Promise<ThemePreference> {
+  const v = await AsyncStorage.getItem(KEY_THEME_PREFERENCE);
+  if (v === 'light' || v === 'dark' || v === 'auto') return v;
+  return 'auto';
+}
+
+export async function setThemePreference(pref: ThemePreference): Promise<void> {
+  await AsyncStorage.setItem(KEY_THEME_PREFERENCE, pref);
+}
