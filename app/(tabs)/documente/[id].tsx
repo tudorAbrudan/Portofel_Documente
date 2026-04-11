@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import {
   StyleSheet,
   ScrollView,
@@ -15,7 +15,7 @@ import {
 import { WebView } from 'react-native-webview';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImageManipulator from 'expo-image-manipulator';
-import { useLocalSearchParams, router, Stack } from 'expo-router';
+import { useLocalSearchParams, router, Stack, useFocusEffect } from 'expo-router';
 import { useTheme } from '@react-navigation/native';
 import * as Sharing from 'expo-sharing';
 import * as Print from 'expo-print';
@@ -60,6 +60,15 @@ import { useCustomTypes } from '@/hooks/useCustomTypes';
 import { useEntities } from '@/hooks/useEntities';
 import { DOCUMENT_FIELDS } from '@/types/documentFields';
 import type { FieldDef } from '@/types/documentFields';
+
+function slugify(s: string): string {
+  return s
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
 
 function autoDeleteLabel(rule: string): string {
   if (rule === 'expiry') return 'La data expirării';
@@ -116,6 +125,21 @@ export default function DocumentDetailScreen() {
       })
       .catch(() => {});
   }, [id]);
+
+  // Reîncarcă documentul la revenirea din ecranul de editare
+  useFocusEffect(
+    useCallback(() => {
+      if (!id) return;
+      getDocumentById(id)
+        .then(updated => {
+          if (updated) setDoc(updated);
+        })
+        .catch(() => {});
+      getDocumentEntityLinks(id)
+        .then(links => setEntityLinks(links))
+        .catch(() => {});
+    }, [id])
+  );
 
   const allPages = useMemo(() => {
     if (!doc) return [];
@@ -730,8 +754,8 @@ export default function DocumentDetailScreen() {
     border-bottom: 2px solid ${primary};
     margin-bottom: 6mm;
   }
-  .meta-brand { font-size: 16px; font-weight: 800; color: ${primary}; }
-  .meta-brand-sub { font-size: 9px; color: #aaa; margin-top: 1px; }
+  .meta-brand { font-size: 16px; font-weight: 800; color: #1a1a1a; }
+  .meta-brand-url { font-size: 11px; font-weight: 400; color: #666; margin-left: 8px; vertical-align: middle; }
   .meta-doc-type { font-size: 24px; font-weight: 700; margin-bottom: 6mm; }
   .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 3mm; margin-bottom: 4mm; }
   .field {
@@ -740,7 +764,7 @@ export default function DocumentDetailScreen() {
   }
   .field-label {
     font-size: 8px; font-weight: 700; text-transform: uppercase;
-    letter-spacing: 0.06em; color: ${primary}; margin-bottom: 1.5mm;
+    letter-spacing: 0.06em; color: #374151; margin-bottom: 1.5mm;
   }
   .field-value { font-size: 13px; font-weight: 500; }
   .note-box {
@@ -750,16 +774,16 @@ export default function DocumentDetailScreen() {
   }
   .note-label {
     font-size: 8px; font-weight: 700; text-transform: uppercase;
-    letter-spacing: 0.06em; color: ${primary}; margin-bottom: 1.5mm;
+    letter-spacing: 0.06em; color: #374151; margin-bottom: 1.5mm;
   }
   .note-value { font-size: 12px; color: #444; line-height: 1.6; }
   .meta-footer {
     margin-top: 8mm; padding-top: 3mm;
     border-top: 0.5px solid #e2ebd4;
-    display: flex; justify-content: space-between;
+    display: flex; flex-direction: column; gap: 1mm;
     font-size: 8px; color: #bbb;
   }
-  .meta-footer-brand { color: ${primary}; font-weight: 700; }
+  .meta-footer-brand { color: #1a1a1a; font-weight: 700; }
 
   /* Pagina OCR */
   .ocr-page {
@@ -781,16 +805,15 @@ export default function DocumentDetailScreen() {
   <div class="meta-page">
     <div class="meta-header">
       <div>
-        <div class="meta-brand">Dosar</div>
-        <div class="meta-brand-sub">Aplicație de gestionare documente personale</div>
+        <div class="meta-brand">Dosar <span class="meta-brand-url">tudorabrudan.github.io/Dosar</span></div>
       </div>
     </div>
     <div class="meta-doc-type">${docLabel}</div>
     ${metaFields.length > 0 ? `<div class="fields">${metaFields.join('')}</div>` : ''}
     ${doc.note ? `<div class="note-box"><div class="note-label">Notă</div><div class="note-value">${escapeHtml(doc.note)}</div></div>` : ''}
     <div class="meta-footer">
-      <span class="meta-footer-brand">Dosar</span>
-      <span>tudorabrudan.github.io/Dosar • Generat pe ${generatedDate}</span>
+      <span class="meta-footer-brand">Generat cu Dosar · tudorabrudan.github.io/Dosar · App Store: apps.apple.com/ro/app/dosar-documente-personale/id6760576986</span>
+      <span>Generat pe ${generatedDate}</span>
     </div>
   </div>
 
@@ -800,15 +823,14 @@ export default function DocumentDetailScreen() {
   <div class="ocr-page">
     <div class="meta-header">
       <div>
-        <div class="meta-brand">Dosar</div>
-        <div class="meta-brand-sub">Text identificat automat prin OCR</div>
+        <div class="meta-brand">Dosar <span class="meta-brand-url">tudorabrudan.github.io/Dosar</span></div>
       </div>
     </div>
     <div class="ocr-title">Text extras din document</div>
     <div class="ocr-content">${escapeHtml(doc.ocr_text)}</div>
     <div class="meta-footer" style="margin-top:6mm">
-      <span class="meta-footer-brand">Dosar</span>
-      <span>tudorabrudan.github.io/Dosar • Generat pe ${generatedDate}</span>
+      <span class="meta-footer-brand">Generat cu Dosar · tudorabrudan.github.io/Dosar · App Store: apps.apple.com/ro/app/dosar-documente-personale/id6760576986</span>
+      <span>Generat pe ${generatedDate}</span>
     </div>
   </div>`
       : ''
@@ -816,13 +838,43 @@ export default function DocumentDetailScreen() {
 
 </body></html>`;
       const { uri } = await Print.printToFileAsync({ html, width: 595, height: 842 }); // A4 in points
+
+      // Construiește numele fișierului: entitate-tip_document.pdf
+      const firstLink = entityLinks[0];
+      let entityName = '';
+      if (firstLink) {
+        switch (firstLink.entityType) {
+          case 'person':
+            entityName = persons.find(p => p.id === firstLink.entityId)?.name ?? '';
+            break;
+          case 'vehicle':
+            entityName = vehicles.find(v => v.id === firstLink.entityId)?.name ?? '';
+            break;
+          case 'property':
+            entityName = properties.find(p => p.id === firstLink.entityId)?.name ?? '';
+            break;
+          case 'animal':
+            entityName = animals.find(a => a.id === firstLink.entityId)?.name ?? '';
+            break;
+          case 'company':
+            entityName = companies.find(c => c.id === firstLink.entityId)?.name ?? '';
+            break;
+        }
+      }
+      const docTypeSlug = slugify(getDocumentLabel(doc, customTypes));
+      const parts = [slugify(entityName), docTypeSlug].filter(Boolean);
+      const pdfFilename = parts.join('-') + '.pdf';
+      const namedUri = (FileSystem.cacheDirectory ?? '') + pdfFilename;
+      await FileSystem.copyAsync({ from: uri, to: namedUri });
+
       const available = await Sharing.isAvailableAsync();
       if (available)
-        await Sharing.shareAsync(uri, {
+        await Sharing.shareAsync(namedUri, {
           mimeType: 'application/pdf',
           dialogTitle: 'Exportă ca PDF',
+          UTI: 'com.adobe.pdf',
         });
-      else await Share.share({ message: 'PDF generat', url: uri, title: 'Document PDF' });
+      else await Share.share({ message: 'PDF generat', url: namedUri, title: pdfFilename });
     } catch (e) {
       if ((e as Error)?.message?.includes('cancel')) return;
       Alert.alert('Eroare', (e as Error)?.message ?? 'Nu s-a putut genera PDF');
@@ -879,7 +931,7 @@ export default function DocumentDetailScreen() {
               hitSlop={12}
               style={{ paddingLeft: 8 }}
             >
-              <Ionicons name="pencil-outline" size={22} color={primary} />
+              <Ionicons name="create-outline" size={24} color={primary} />
             </Pressable>
           ),
         }}

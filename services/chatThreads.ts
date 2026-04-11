@@ -119,6 +119,10 @@ export async function saveMessage(
   return { id, thread_id: threadId, role, content, created_at: now };
 }
 
+export async function deleteMessage(messageId: string): Promise<void> {
+  await db.runAsync('DELETE FROM chat_messages WHERE id = ?', [messageId]);
+}
+
 export async function clearThreadMessages(threadId: string): Promise<void> {
   await db.runAsync('DELETE FROM chat_messages WHERE thread_id = ?', [threadId]);
   const now = new Date().toISOString();

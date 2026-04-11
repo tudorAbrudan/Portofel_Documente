@@ -153,7 +153,7 @@ const OCR_LIMIT_FULL = 3000;     // doc găsit prin căutare text — OCR comple
 async function buildContext(
   userMessage: string,
   history: ChatMessage[]
-): Promise<{ contextText: string; filtered: boolean }> {
+): Promise<{ contextText: string; filtered: boolean; docMap: Map<string, string> }> {
   const [persons, properties, vehicles, cards, animals, documents] = await Promise.all([
     getPersons(),
     getProperties(),
@@ -175,6 +175,7 @@ async function buildContext(
     return {
       contextText: 'NU EXISTĂ DATE ÎN APLICAȚIE. Utilizatorul nu a adăugat nicio entitate sau document.',
       filtered: false,
+      docMap: new Map(),
     };
   }
 
@@ -245,20 +246,23 @@ async function buildContext(
 
   if (persons.length) {
     const personStrings = persons.map(p => {
-      const parts: string[] = [p.name];
-      if (p.phone) parts.push(`tel: ${p.phone}`);
-      if (p.email) parts.push(`email: ${p.email}`);
-      if (p.iban) parts.push(`IBAN: ${p.iban}`);
-      return parts.length > 1 ? `${p.name} (${parts.slice(1).join(', ')})` : p.name;
+      const extra: string[] = [];
+      if (p.phone) extra.push(`tel: ${p.phone}`);
+      if (p.email) extra.push(`email: ${p.email}`);
+      if (p.iban) extra.push(`IBAN: ${p.iban}`);
+      const details = extra.length ? ` (${extra.join(', ')})` : '';
+      return `[ENT:${p.name}|person|${p.id}]${details}`;
     });
     lines.push(`Persoane: ${personStrings.join(', ')}`);
   }
-  if (properties.length) lines.push(`Proprietăți: ${properties.map(p => p.name).join(', ')}`);
-  if (vehicles.length) lines.push(`Vehicule: ${vehicles.map(v => v.name).join(', ')}`);
+  if (properties.length)
+    lines.push(`Proprietăți: ${properties.map(p => `[ENT:${p.name}|property|${p.id}]`).join(', ')}`);
+  if (vehicles.length)
+    lines.push(`Vehicule: ${vehicles.map(v => `[ENT:${v.name}|vehicle|${v.id}]`).join(', ')}`);
   if (cards.length)
-    lines.push(`Carduri: ${cards.map(c => `${c.nickname} (****${c.last4})`).join(', ')}`);
+    lines.push(`Carduri: ${cards.map(c => `[ENT:${c.nickname}|card|${c.id}]` + ` (****${c.last4})`).join(', ')}`);
   if (animals.length)
-    lines.push(`Animale: ${animals.map(a => `${a.name} (${a.species})`).join(', ')}`);
+    lines.push(`Animale: ${animals.map(a => `[ENT:${a.name}|animal|${a.id}]` + ` (${a.species})`).join(', ')}`);
 
   // Notă de filtrare (ajută AI-ul să înțeleagă că nu vede tot)
   if (isFiltered && filteredDocs.length < documents.length) {
@@ -313,22 +317,40 @@ async function buildContext(
       ? ` | OCR: ${doc.ocr_text.slice(0, ocrLimit)}${doc.ocr_text.length > ocrLimit ? '…' : ''}`
       : '';
 
-    lines.push(`- [ID:${doc.id}] ${label}${entityStr}${issued}${expiry}${note}${meta}${ocrText}`);
+    lines.push(`- [DOC:${label}|${doc.id}]${entityStr}${issued}${expiry}${note}${meta}${ocrText}`);
   }
 
-  return { contextText: lines.join('\n'), filtered: isFiltered };
+  // Hartă id → label pentru post-procesare răspuns AI
+  const docMap = new Map<string, string>();
+  for (const doc of documents) {
+    docMap.set(doc.id, DOCUMENT_TYPE_LABELS[doc.type] ?? doc.type);
+  }
+
+  return { contextText: lines.join('\n'), filtered: isFiltered, docMap };
 }
 
 // ─── Export principal ─────────────────────────────────────────────────────────
 
 export async function sendMessage(userMessage: string, history: ChatMessage[]): Promise<string> {
-  const { contextText } = await buildContext(userMessage, history);
+  const { contextText, docMap } = await buildContext(userMessage, history);
 
   const systemPrompt = `${buildAppKnowledge()}
 
 ## Datele utilizatorului
 
 ${contextText}
+
+## Regula obligatorie: linkuri spre documente și entități
+Când menționezi un document specific, folosește ÎNTOTDEAUNA exact tag-ul [DOC:...|...] din context, fără modificări.
+Exemple corecte (dacă în context sunt definite astfel):
+- "RCA-ul tău [DOC:RCA|abc123] expiră pe 15 mai 2025."
+- "Am găsit [DOC:ITP|aaa], [DOC:RCA|bbb] și [DOC:Talon|ccc]."
+
+Când menționezi o entitate (persoană, vehicul, proprietate, card, animal) din lista de mai sus, folosește ÎNTOTDEAUNA exact tag-ul [ENT:...|...|...] din context, fără modificări.
+Exemple corecte (dacă în context sunt definite astfel):
+- "La adresa din buletinul lui [ENT:Tudor Vasile|person|id1] este înregistrată doar această persoană."
+- "Vehiculul [ENT:Dacia Logan|vehicle|id2] are ITP-ul expirat."
+Nu rescrie niciodată numele entității ca text simplu — folosește întotdeauna tag-ul [ENT:...] din context.
 
 ## Formate speciale — returnează EXACT formatul de mai jos când e cerut
 
@@ -372,5 +394,14 @@ Când cere "IBAN", "cont bancar", "telefon", "email" pentru o persoană — retu
     { role: 'user', content: userMessage },
   ];
 
-  return sendAiRequest(messages, 500);
+  let reply = await sendAiRequest(messages, 500);
+
+  // Post-procesare: înlocuiește orice [ID:uuid] rămas cu [DOC:label|uuid]
+  // (AI-ul uneori ignoră instrucțiunile și generează formatul vechi)
+  reply = reply.replace(/\[ID:([^\]]+)\]/g, (_match, id: string) => {
+    const label = docMap.get(id);
+    return label ? `[DOC:${label}|${id}]` : _match;
+  });
+
+  return reply;
 }

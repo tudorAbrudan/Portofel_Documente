@@ -35,6 +35,7 @@ import {
   deleteChatThread,
   getThreadMessages,
   saveMessage,
+  deleteMessage,
   clearThreadMessages,
   type ChatThread,
   type StoredMessage,
@@ -79,7 +80,14 @@ function detectMentionQuery(text: string): { query: string; atIndex: number } | 
   return { query: afterAt, atIndex };
 }
 
-const ID_REGEX = /\[ID:([^\]]+)\]/g;
+// Mesaj din conversație (ChatMessage + id opțional din DB)
+interface ConversationMessage extends ChatMessage {
+  id?: string;
+}
+
+// Regex combinat: [ID:docId] | [DOC:label|docId] | [ENT:name|type|id]
+const LINK_REGEX =
+  /\[ID:([^\]]+)\]|\[DOC:([^|]+)\|([^\]]+)\]|\[ENT:([^|]+)\|([^|]+)\|([^\]]+)\]/g;
 
 // ─── Mesaj welcome ─────────────────────────────────────────────────────────────
 
@@ -141,71 +149,103 @@ function SelectTextModal({ visible, text, colors, onClose }: SelectTextModalProp
 function renderMessageContent(
   content: string,
   onIdPress: (id: string) => void,
+  onEntityPress: (id: string) => void,
   linkColor: string,
   textColor: string
 ): React.ReactNode[] {
+  const regex = new RegExp(LINK_REGEX.source, 'g');
   const parts: React.ReactNode[] = [];
   let lastIndex = 0;
   let match: RegExpExecArray | null;
-  const regex = new RegExp(ID_REGEX.source, 'g');
 
   while ((match = regex.exec(content)) !== null) {
     const before = content.slice(lastIndex, match.index);
     if (before) {
+      parts.push(<Text key={`t-${lastIndex}`} style={{ color: textColor }}>{before}</Text>);
+    }
+
+    if (match[1]) {
+      // [ID:docId] — format vechi, afișează tag-ul brut dar clickabil
+      const docId = match[1];
+      const fullTag = match[0];
       parts.push(
-        <Text key={`text-${lastIndex}`} style={{ color: textColor }}>
-          {before}
+        <Text key={`id-${match.index}`} style={[styles.idLink, { color: linkColor }]} onPress={() => onIdPress(docId)}>
+          {fullTag}
+        </Text>
+      );
+    } else if (match[2]) {
+      // [DOC:label|docId] — afișează label-ul ca link
+      const label = match[2];
+      const docId = match[3];
+      parts.push(
+        <Text key={`doc-${match.index}`} style={[styles.idLink, { color: linkColor }]} onPress={() => onIdPress(docId)}>
+          {label}
+        </Text>
+      );
+    } else {
+      // [ENT:name|type|id] — afișează numele entității ca link
+      const entName = match[4];
+      const entId = match[6];
+      parts.push(
+        <Text key={`ent-${match.index}`} style={[styles.idLink, { color: linkColor }]} onPress={() => onEntityPress(entId)}>
+          {entName}
         </Text>
       );
     }
-    const docId = match[1];
-    parts.push(
-      <Text
-        key={`link-${match.index}`}
-        style={[styles.idLink, { color: linkColor }]}
-        onPress={() => onIdPress(docId)}
-      >
-        {match[0]}
-      </Text>
-    );
+
     lastIndex = match.index + match[0].length;
   }
 
   const remaining = content.slice(lastIndex);
   if (remaining) {
-    parts.push(
-      <Text key="text-end" style={{ color: textColor }}>
-        {remaining}
-      </Text>
-    );
+    parts.push(<Text key="t-end" style={{ color: textColor }}>{remaining}</Text>);
   }
 
   return parts;
 }
 
 interface MessageBubbleProps {
-  message: ChatMessage;
+  message: ConversationMessage;
   onIdPress: (id: string) => void;
+  onEntityPress: (id: string) => void;
+  onDelete: (msg: ConversationMessage) => void;
   colors: typeof lightColors;
 }
 
-function MessageBubble({ message, onIdPress, colors }: MessageBubbleProps) {
+function MessageBubble({ message, onIdPress, onEntityPress, onDelete, colors }: MessageBubbleProps) {
   const isUser = message.role === 'user';
   const [showSelectModal, setShowSelectModal] = useState(false);
 
+  function handleLongPress() {
+    if (isUser) {
+      Alert.alert('Mesaj', undefined, [
+        { text: 'Șterge mesaj', style: 'destructive', onPress: () => onDelete(message) },
+        { text: 'Anulează', style: 'cancel' },
+      ]);
+    } else {
+      Alert.alert('Mesaj AI', undefined, [
+        { text: 'Copiază tot', onPress: () => setShowSelectModal(true) },
+        { text: 'Șterge mesaj', style: 'destructive', onPress: () => onDelete(message) },
+        { text: 'Anulează', style: 'cancel' },
+      ]);
+    }
+  }
+
   if (isUser) {
     return (
-      <View style={[styles.bubble, styles.userBubble, { backgroundColor: colors.primary }]}>
-        <Text style={styles.userText}>{message.content}</Text>
-      </View>
+      <Pressable onLongPress={handleLongPress} delayLongPress={400}>
+        <View style={[styles.bubble, styles.userBubble, { backgroundColor: colors.primary }]}>
+          <Text style={styles.userText}>{message.content}</Text>
+        </View>
+      </Pressable>
     );
   }
 
-  const nodes = renderMessageContent(message.content, onIdPress, colors.primary, colors.text);
+  const nodes = renderMessageContent(message.content, onIdPress, onEntityPress, colors.primary, colors.text);
 
   return (
     <>
-      <Pressable onLongPress={() => setShowSelectModal(true)} delayLongPress={400}>
+      <Pressable onLongPress={handleLongPress} delayLongPress={400}>
         <View
           style={[
             styles.bubble,
@@ -481,7 +521,7 @@ function ThreadList({
 
 interface ConversationViewProps {
   thread: ChatThread;
-  messages: ChatMessage[];
+  messages: ConversationMessage[];
   loading: boolean;
   colors: typeof lightColors;
   insets: { top: number; bottom: number };
@@ -490,6 +530,7 @@ interface ConversationViewProps {
   onRename: () => void;
   onClear: () => void;
   onDelete: () => void;
+  onDeleteMessage: (msg: ConversationMessage) => void;
   onSend: (displayText: string, aiText: string) => void;
 }
 
@@ -504,6 +545,7 @@ function ConversationView({
   onRename,
   onClear,
   onDelete,
+  onDeleteMessage,
   onSend,
 }: ConversationViewProps) {
   const [input, setInput] = useState('');
@@ -567,6 +609,10 @@ function ConversationView({
     router.push(`/(tabs)/documente/${id}`);
   }
 
+  function handleEntityPress(id: string) {
+    router.push(`/(tabs)/entitati/${id}`);
+  }
+
   function handleMenuPress() {
     Alert.alert(thread.name, 'Opțiuni conversație', [
       { text: 'Redenumește', onPress: onRename },
@@ -611,7 +657,7 @@ function ConversationView({
         onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: false })}
       >
         {messages.map((msg, index) => (
-          <MessageBubble key={index} message={msg} onIdPress={handleIdPress} colors={colors} />
+          <MessageBubble key={index} message={msg} onIdPress={handleIdPress} onEntityPress={handleEntityPress} onDelete={onDeleteMessage} colors={colors} />
         ))}
         {loading && (
           <View
@@ -731,11 +777,12 @@ export default function ChatScreen() {
   const [activeThread, setActiveThread] = useState<ChatThread | null>(null);
 
   // Mesaje conversație activă
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [sendLoading, setSendLoading] = useState(false);
 
   // Modals
   const [renameTarget, setRenameTarget] = useState<ChatThread | null>(null);
+  const threadInitialized = useRef(false);
 
   // ── Inițializare ────────────────────────────────────────────────────────────
 
@@ -769,6 +816,16 @@ export default function ChatScreen() {
       void loadMentionItems();
     }
   }, [consentAccepted, loadThreads]);
+
+  // Auto-deschide conversație nouă când nu există niciuna
+  useEffect(() => {
+    if (consentAccepted && !threadsLoading && !threadInitialized.current) {
+      threadInitialized.current = true;
+      if (threads.length === 0) {
+        void handleNewThread();
+      }
+    }
+  }, [consentAccepted, threadsLoading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function loadMentionItems() {
     const [persons, properties, vehicles, cards, animals, companies] = await Promise.all([
@@ -832,10 +889,9 @@ export default function ChatScreen() {
     setActiveThread(thread);
     const stored = await getThreadMessages(thread.id);
     if (stored.length === 0) {
-      // Thread nou — mesaj welcome
       setMessages([{ role: 'assistant', content: WELCOME_CONTENT }]);
     } else {
-      setMessages(stored.map((m: StoredMessage) => ({ role: m.role, content: m.content })));
+      setMessages(stored.map((m: StoredMessage) => ({ role: m.role, content: m.content, id: m.id })));
     }
   }
 
@@ -858,12 +914,11 @@ export default function ChatScreen() {
   async function handleSend(displayText: string, aiText: string) {
     if (!activeThread) return;
 
-    const userMsg: ChatMessage = { role: 'user', content: displayText };
+    // Salvăm mai întâi în DB pentru a obține ID-ul
+    const savedUser = await saveMessage(activeThread.id, 'user', displayText);
+    const userMsg: ConversationMessage = { role: 'user', content: displayText, id: savedUser.id };
     setMessages(prev => [...prev, userMsg]);
     setSendLoading(true);
-
-    // Salvăm mesajul user în DB (textul curat, fără context mențiuni)
-    await saveMessage(activeThread.id, 'user', displayText);
 
     // Istoricul pentru AI (fără welcome message)
     const history = messages
@@ -873,9 +928,9 @@ export default function ChatScreen() {
 
     try {
       const reply = await sendMessage(aiText, history.slice(0, -1));
-      const assistantMsg: ChatMessage = { role: 'assistant', content: reply };
+      const savedAssistant = await saveMessage(activeThread.id, 'assistant', reply);
+      const assistantMsg: ConversationMessage = { role: 'assistant', content: reply, id: savedAssistant.id };
       setMessages(prev => [...prev, assistantMsg]);
-      await saveMessage(activeThread.id, 'assistant', reply);
       // Actualizăm thread-ul local
       setThreads(prev =>
         prev.map(t =>
@@ -955,6 +1010,20 @@ export default function ChatScreen() {
     ]);
   }
 
+  // ── Ștergere mesaj individual ────────────────────────────────────────────────
+
+  async function handleDeleteMessage(msg: ConversationMessage) {
+    setMessages(prev => prev.filter(m => m !== msg));
+    if (msg.id) {
+      await deleteMessage(msg.id);
+      setThreads(prev =>
+        prev.map(t =>
+          t.id === activeThread?.id ? { ...t, messageCount: Math.max(0, t.messageCount - 1) } : t
+        )
+      );
+    }
+  }
+
   // ── Consent ─────────────────────────────────────────────────────────────────
 
   function handleAccept() {
@@ -1025,6 +1094,7 @@ export default function ChatScreen() {
           onRename={() => setRenameTarget(activeThread)}
           onClear={handleClearMessages}
           onDelete={() => handleDeleteThread(activeThread)}
+          onDeleteMessage={handleDeleteMessage}
           onSend={handleSend}
         />
       )}
