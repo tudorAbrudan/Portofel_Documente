@@ -232,7 +232,11 @@ export default function AddDocumentScreen() {
         }
       }
 
-      if (!text.trim()) return;
+      if (!text.trim()) {
+        ocrTextsRef.current.delete(localPath);
+        ocrStructuredTextsRef.current.delete(localPath);
+        return;
+      }
 
       ocrTextsRef.current.set(localPath, text);
       const structured = reconstructLayout(rawBlocks);

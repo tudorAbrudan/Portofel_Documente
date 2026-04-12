@@ -50,7 +50,7 @@ function flattenElements(blocks: TextBlock[]): WordBox[] {
 
 /**
  * Grupează cuvintele în rânduri bazat pe coordonata Y.
- * Toleranță = 50% din înălțimea primului cuvânt din rând (relative, nu fixă).
+ * Toleranță = 50% din media înălțimilor rândului curent (robustă la fonturi variabile).
  */
 function groupIntoRows(words: WordBox[]): WordBox[][] {
   if (words.length === 0) return [];
@@ -61,12 +61,12 @@ function groupIntoRows(words: WordBox[]): WordBox[][] {
 
   for (let i = 1; i < sorted.length; i++) {
     const word = sorted[i];
-    const ref = currentRow[0];
-    const tolerance = ref.h * 0.5;
+    const avgYCenter = currentRow.reduce((s, w) => s + (w.y + w.h / 2), 0) / currentRow.length;
+    const avgH = currentRow.reduce((s, w) => s + w.h, 0) / currentRow.length;
+    const tolerance = avgH * 0.5;
     const yCenterWord = word.y + word.h / 2;
-    const yCenterRef = ref.y + ref.h / 2;
 
-    if (Math.abs(yCenterWord - yCenterRef) <= tolerance) {
+    if (Math.abs(yCenterWord - avgYCenter) <= tolerance) {
       currentRow.push(word);
     } else {
       rows.push(currentRow);
