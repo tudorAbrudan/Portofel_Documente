@@ -108,10 +108,6 @@ export default function AddDocumentScreen() {
 
   const [type, setType] = useState<DocumentType>((params.type as DocumentType) || 'buletin');
   const [customTypeId, setCustomTypeId] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (params.type) setType(params.type as DocumentType);
-  }, [params.type]);
   const [metadata, setMetadata] = useState<Record<string, string>>({});
   const [issueDate, setIssueDate] = useState('');
   const [expiryDate, setExpiryDate] = useState('');
@@ -161,17 +157,6 @@ export default function AddDocumentScreen() {
   const hasParamLink = !!(personId || propertyId || vehicleId || cardId || animalId || companyId);
 
   useEffect(() => {
-    const links: DocumentEntityLink[] = [];
-    if (params.person_id) links.push({ entityType: 'person', entityId: params.person_id });
-    if (params.property_id) links.push({ entityType: 'property', entityId: params.property_id });
-    if (params.vehicle_id) links.push({ entityType: 'vehicle', entityId: params.vehicle_id });
-    if (params.card_id) links.push({ entityType: 'card', entityId: params.card_id });
-    if (params.animal_id) links.push({ entityType: 'animal', entityId: params.animal_id });
-    if (params.company_id) links.push({ entityType: 'company', entityId: params.company_id });
-    if (links.length > 0) setEntityLinks(links);
-  }, [params.person_id, params.property_id, params.vehicle_id, params.card_id, params.animal_id, params.company_id]);
-
-  useEffect(() => {
     if (entityLinks.length === 0) {
       setDuplicateDoc(null);
       return;
@@ -211,14 +196,24 @@ export default function AddDocumentScreen() {
       let { text, rawBlocks } = await extractText(localPath);
 
       if (text.trim().length < 50) {
-        const candidates: { deg: number; text: string; rawBlocks: typeof rawBlocks; uri: string }[] = [];
+        const candidates: {
+          deg: number;
+          text: string;
+          rawBlocks: typeof rawBlocks;
+          uri: string;
+        }[] = [];
         for (const deg of [90, 180, 270]) {
           const rotated = await ImageManipulator.manipulateAsync(localPath, [{ rotate: deg }], {
             compress: 1,
             format: ImageManipulator.SaveFormat.JPEG,
           });
           const result = await extractText(rotated.uri);
-          candidates.push({ deg, text: result.text, rawBlocks: result.rawBlocks, uri: rotated.uri });
+          candidates.push({
+            deg,
+            text: result.text,
+            rawBlocks: result.rawBlocks,
+            uri: rotated.uri,
+          });
         }
         const best = candidates.reduce((a, b) =>
           a.text.trim().length >= b.text.trim().length ? a : b
@@ -243,7 +238,9 @@ export default function AddDocumentScreen() {
       const structured = reconstructLayout(rawBlocks);
       ocrStructuredTextsRef.current.set(localPath, structured || text);
       const combinedText = Array.from(ocrTextsRef.current.values()).join('\n\n---\n\n');
-      const structuredCombined = Array.from(ocrStructuredTextsRef.current.values()).join('\n\n---\n\n');
+      const structuredCombined = Array.from(ocrStructuredTextsRef.current.values()).join(
+        '\n\n---\n\n'
+      );
       setLiveOcrText(combinedText);
 
       const detectedType = detectDocumentType(text);
@@ -423,7 +420,9 @@ export default function AddDocumentScreen() {
         }
       }
       const combined = Array.from(ocrTextsRef.current.values()).join('\n\n---\n\n');
-      const structuredCombined = Array.from(ocrStructuredTextsRef.current.values()).join('\n\n---\n\n');
+      const structuredCombined = Array.from(ocrStructuredTextsRef.current.values()).join(
+        '\n\n---\n\n'
+      );
       setLiveOcrText(combined);
       // Trimite la AI pentru cross-validare și completare câmpuri (dacă consent dat)
       if (combined.trim().length > 20) {
@@ -535,8 +534,11 @@ export default function AddDocumentScreen() {
             issueDateRef.current = info.issue_date;
           }
           // Trimite la AI (PDF are text deja disponibil)
-          if (!aiOcrApplied && pdfText.length > 20) {
-            void runAiOcrMapper(pdfText);
+          const allStructured = Array.from(ocrStructuredTextsRef.current.values()).join(
+            '\n\n---\n\n'
+          );
+          if (allStructured.trim().length > 20) {
+            void runAiOcrMapper(allStructured);
           }
         }
       } catch {
@@ -648,16 +650,6 @@ export default function AddDocumentScreen() {
 
   const canSave = pages.length > 0 || hasAnyField;
 
-  // ── Navigare după salvare ─────────────────────────────────────────────────
-
-  function navigateAfterSave() {
-    if (hasParamLink) {
-      router.back();
-    } else {
-      router.replace('/(tabs)/documente');
-    }
-  }
-
   // ── Submit ────────────────────────────────────────────────────────────────
 
   async function handleSubmit() {
@@ -728,7 +720,7 @@ export default function AddDocumentScreen() {
           'Adaugă în calendar?',
           `Vrei să adaugi un reminder în calendar pentru expirarea pe ${finalExpiry}?`,
           [
-            { text: 'Nu', style: 'cancel', onPress: () => navigateAfterSave() },
+            { text: 'Nu', style: 'cancel', onPress: () => router.replace('/(tabs)/documente') },
             {
               text: 'Adaugă',
               onPress: async () => {
@@ -744,7 +736,7 @@ export default function AddDocumentScreen() {
                     'Eroare',
                     'Nu s-a putut accesa calendarul. Verifică permisiunile în Setări.'
                   );
-                navigateAfterSave();
+                router.replace('/(tabs)/documente');
               },
             },
           ]
@@ -760,7 +752,7 @@ export default function AddDocumentScreen() {
           'Adaugă în calendar?',
           `Vrei reminder pentru evenimentul din ${metadata.event_date}?`,
           [
-            { text: 'Nu', style: 'cancel', onPress: () => navigateAfterSave() },
+            { text: 'Nu', style: 'cancel', onPress: () => router.replace('/(tabs)/documente') },
             {
               text: 'Adaugă',
               onPress: async () => {
@@ -771,7 +763,7 @@ export default function AddDocumentScreen() {
                   note: note.trim() || undefined,
                   documentId: newDoc.id,
                 });
-                navigateAfterSave();
+                router.replace('/(tabs)/documente');
               },
             },
           ]
@@ -779,7 +771,7 @@ export default function AddDocumentScreen() {
         return;
       }
 
-      navigateAfterSave();
+      router.replace('/(tabs)/documente');
     } catch (e) {
       Alert.alert('Eroare', e instanceof Error ? e.message : 'Nu s-a putut salva');
     } finally {
@@ -850,16 +842,16 @@ export default function AddDocumentScreen() {
         }}
       />
       <KeyboardAvoidingView
-          style={[styles.container, { backgroundColor: C.background }]}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={[styles.container, { backgroundColor: C.background }]}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView
+          style={[styles.scroll, { backgroundColor: C.background }]}
+          contentContainerStyle={styles.scrollContent}
+          keyboardDismissMode="interactive"
+          keyboardShouldPersistTaps="handled"
+          automaticallyAdjustKeyboardInsets={true}
         >
-          <ScrollView
-            style={[styles.scroll, { backgroundColor: C.background }]}
-            contentContainerStyle={styles.scrollContent}
-            keyboardDismissMode="interactive"
-            keyboardShouldPersistTaps="handled"
-            automaticallyAdjustKeyboardInsets={true}
-          >
           {/* 1. POZE & OCR */}
           <Text style={[styles.label, styles.sectionLabel]}>Poze / scan</Text>
           <DocumentPhotoSection
@@ -907,12 +899,11 @@ export default function AddDocumentScreen() {
               style={styles.duplicateBanner}
               onPress={() => router.push(`/(tabs)/documente/${duplicateDoc.id}`)}
             >
-              <Text style={styles.duplicateBannerTitle}>
-                Document similar găsit
-              </Text>
+              <Text style={styles.duplicateBannerTitle}>Document similar găsit</Text>
               <Text style={styles.duplicateBannerBody}>
                 Există deja un document de tip „
-                {DOCUMENT_TYPE_LABELS[duplicateDoc.type] ?? duplicateDoc.type}" pentru această entitate.
+                {DOCUMENT_TYPE_LABELS[duplicateDoc.type] ?? duplicateDoc.type}" pentru această
+                entitate.
               </Text>
               <Text style={styles.duplicateBannerLink}>Deschide documentul existent →</Text>
             </Pressable>
@@ -1184,16 +1175,15 @@ export default function AddDocumentScreen() {
               </View>
             )}
           </>
-
-          </ScrollView>
-          <BottomActionBar
-            label="Salvează"
-            onPress={handleSubmit}
-            loading={loading}
-            disabled={!canSave}
-            safeArea
-          />
-        </KeyboardAvoidingView>
+        </ScrollView>
+        <BottomActionBar
+          label="Salvează"
+          onPress={handleSubmit}
+          loading={loading}
+          disabled={!canSave}
+          safeArea
+        />
+      </KeyboardAvoidingView>
 
       <Modal visible={!!fullscreenUri} transparent animationType="fade" statusBarTranslucent>
         <View style={styles.fsOverlay}>
