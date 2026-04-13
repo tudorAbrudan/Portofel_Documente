@@ -84,74 +84,74 @@ export default function WizardMasinaScreen() {
           keyboardDismissMode="on-drag"
           keyboardShouldPersistTaps="handled"
         >
-        {/* Step 1 */}
-        <View style={styles.stepBlock}>
-          <Text style={styles.stepTitle}>1. Numele mașinii</Text>
-          <ThemedTextInput
-            style={styles.input}
-            placeholder="ex. Dacia Logan 2020"
-            placeholderTextColor="#999"
-            value={name}
-            onChangeText={setName}
-            editable={!loading}
-          />
-        </View>
+          {/* Step 1 */}
+          <View style={styles.stepBlock}>
+            <Text style={styles.stepTitle}>1. Numele mașinii</Text>
+            <ThemedTextInput
+              style={styles.input}
+              placeholder="ex. Dacia Logan 2020"
+              placeholderTextColor="#999"
+              value={name}
+              onChangeText={setName}
+              editable={!loading}
+            />
+          </View>
 
-        {/* Step 2 + 3 combined */}
-        <View style={styles.stepBlock}>
-          <Text style={styles.stepTitle}>2. Documente de adăugat</Text>
-          <Text style={styles.hint}>
-            Bifează documentele dorite și introdu data expirării (opțional).
-          </Text>
-          {DOC_OPTIONS.map(({ type, label }) => {
-            const isChecked = selected.has(type);
-            return (
-              <View key={type} style={styles.docRow}>
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.checkbox,
-                    isChecked && styles.checkboxChecked,
-                    pressed && styles.checkboxPressed,
-                  ]}
-                  onPress={() => toggleDoc(type)}
-                >
-                  {isChecked && <Text style={styles.checkmark}>✓</Text>}
-                </Pressable>
-                <View style={styles.docInfo}>
-                  <Pressable onPress={() => toggleDoc(type)}>
-                    <Text style={[styles.docLabel, isChecked && styles.docLabelActive]}>
-                      {label}
-                    </Text>
+          {/* Step 2 + 3 combined */}
+          <View style={styles.stepBlock}>
+            <Text style={styles.stepTitle}>2. Documente de adăugat</Text>
+            <Text style={styles.hint}>
+              Bifează documentele dorite și introdu data expirării (opțional).
+            </Text>
+            {DOC_OPTIONS.map(({ type, label }) => {
+              const isChecked = selected.has(type);
+              return (
+                <View key={type} style={styles.docRow}>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.checkbox,
+                      isChecked && styles.checkboxChecked,
+                      pressed && styles.checkboxPressed,
+                    ]}
+                    onPress={() => toggleDoc(type)}
+                  >
+                    {isChecked && <Text style={styles.checkmark}>✓</Text>}
                   </Pressable>
-                  {isChecked && (
-                    <ThemedTextInput
-                      style={styles.inputInline}
-                      placeholder="Data expirare (AAAA-LL-ZZ)"
-                      placeholderTextColor="#aaa"
-                      value={expiries[type] ?? ''}
-                      onChangeText={v => setExpiry(type, v)}
-                      editable={!loading}
-                    />
-                  )}
+                  <View style={styles.docInfo}>
+                    <Pressable onPress={() => toggleDoc(type)}>
+                      <Text style={[styles.docLabel, isChecked && styles.docLabelActive]}>
+                        {label}
+                      </Text>
+                    </Pressable>
+                    {isChecked && (
+                      <ThemedTextInput
+                        style={styles.inputInline}
+                        placeholder="Data expirare (AAAA-LL-ZZ)"
+                        placeholderTextColor="#aaa"
+                        value={expiries[type] ?? ''}
+                        onChangeText={v => setExpiry(type, v)}
+                        editable={!loading}
+                      />
+                    )}
+                  </View>
                 </View>
-              </View>
-            );
-          })}
-        </View>
+              );
+            })}
+          </View>
 
-        <Pressable
-          style={({ pressed }) => [
-            styles.saveButton,
-            pressed && styles.saveButtonPressed,
-            loading && styles.saveButtonDisabled,
-          ]}
-          onPress={handleSave}
-          disabled={loading}
-        >
-          <Text style={styles.saveButtonText}>
-            {loading ? 'Se salvează...' : 'Salvează mașina'}
-          </Text>
-        </Pressable>
+          <Pressable
+            style={({ pressed }) => [
+              styles.saveButton,
+              pressed && styles.saveButtonPressed,
+              loading && styles.saveButtonDisabled,
+            ]}
+            onPress={handleSave}
+            disabled={loading}
+          >
+            <Text style={styles.saveButtonText}>
+              {loading ? 'Se salvează...' : 'Salvează mașina'}
+            </Text>
+          </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
     </Pressable>

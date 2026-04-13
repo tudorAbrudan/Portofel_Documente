@@ -31,9 +31,7 @@ export function UpdateBanner({ version, url, onDismiss }: Props) {
       <Ionicons name="arrow-up-circle-outline" size={18} color={primary} style={styles.icon} />
 
       <Text style={[styles.text, { color: C.text }]} numberOfLines={1}>
-        Versiune{' '}
-        <Text style={[styles.versionBold, { color: primary }]}>{version}</Text>
-        {' '}disponibilă
+        Versiune <Text style={[styles.versionBold, { color: primary }]}>{version}</Text> disponibilă
       </Text>
 
       <Pressable

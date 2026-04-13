@@ -162,122 +162,116 @@ export default function AddEntityScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <Pressable style={{ flex: 1 }} onPress={Keyboard.dismiss} accessible={false}>
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={styles.inner}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-        {!isCard && (
-          <>
-            <Text style={styles.label}>Nume</Text>
-            <ThemedTextInput
-              style={styles.input}
-              placeholder={
-                type === 'company'
-                  ? 'Denumire firmă (ex. ABC SRL)'
-                  : type === 'person'
-                    ? 'Nume persoană'
-                    : type === 'vehicle'
-                      ? 'Mașină (ex. Dacia Logan)'
-                      : type === 'animal'
-                        ? 'Nume animal (ex. Rex)'
-                        : 'Proprietate (ex. Apartament X)'
-              }
-              placeholderTextColor="#999"
-              value={name}
-              onChangeText={setName}
-              editable={!loading}
-            />
-          </>
-        )}
-        {isCompany && (
-          <>
-            <Text style={styles.label}>CUI (opțional)</Text>
-            <ThemedTextInput
-              style={styles.input}
-              placeholder="RO12345678"
-              placeholderTextColor="#999"
-              value={cui}
-              onChangeText={setCui}
-              editable={!loading}
-            />
-            <Text style={styles.label}>Nr. Registru Comerț (opțional)</Text>
-            <ThemedTextInput
-              style={styles.input}
-              placeholder="J40/1234/2020"
-              placeholderTextColor="#999"
-              value={regCom}
-              onChangeText={setRegCom}
-              editable={!loading}
-            />
-          </>
-        )}
-        {isAnimal && (
-          <>
-            <Text style={styles.label}>Specie (opțional)</Text>
-            <ThemedTextInput
-              style={styles.input}
-              placeholder="câine, pisică, papagal..."
-              placeholderTextColor="#999"
-              value={species}
-              onChangeText={setSpecies}
-              editable={!loading}
-            />
-          </>
-        )}
-        {isCard && (
-          <>
-            <Pressable
-              style={({ pressed }) => [styles.scanButton, pressed && styles.buttonPressed]}
-              onPress={scanCard}
-              disabled={ocrLoading || loading}
-            >
-              {ocrLoading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.scanButtonText}>Scanează cardul (OCR)</Text>
-              )}
-            </Pressable>
-            <Text style={styles.label}>Nickname (ex. Card personal)</Text>
-            <ThemedTextInput
-              style={styles.input}
-              placeholder="Nickname"
-              placeholderTextColor="#999"
-              value={nickname}
-              onChangeText={setNickname}
-              editable={!loading}
-            />
-            <Text style={styles.label}>Ultimele 4 cifre (opțional)</Text>
-            <ThemedTextInput
-              style={styles.input}
-              placeholder="1234"
-              placeholderTextColor="#999"
-              value={last4}
-              onChangeText={t => setLast4(t.replace(/\D/g, '').slice(0, 4))}
-              keyboardType="number-pad"
-              editable={!loading}
-            />
-            <Text style={styles.label}>Expirare MM/AA (opțional)</Text>
-            <ThemedTextInput
-              style={styles.input}
-              placeholder="12/28"
-              placeholderTextColor="#999"
-              value={expiry}
-              onChangeText={setExpiry}
-              editable={!loading}
-            />
-          </>
-        )}
-
-      </ScrollView>
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={styles.inner}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {!isCard && (
+            <>
+              <Text style={styles.label}>Nume</Text>
+              <ThemedTextInput
+                style={styles.input}
+                placeholder={
+                  type === 'company'
+                    ? 'Denumire firmă (ex. ABC SRL)'
+                    : type === 'person'
+                      ? 'Nume persoană'
+                      : type === 'vehicle'
+                        ? 'Mașină (ex. Dacia Logan)'
+                        : type === 'animal'
+                          ? 'Nume animal (ex. Rex)'
+                          : 'Proprietate (ex. Apartament X)'
+                }
+                placeholderTextColor="#999"
+                value={name}
+                onChangeText={setName}
+                editable={!loading}
+              />
+            </>
+          )}
+          {isCompany && (
+            <>
+              <Text style={styles.label}>CUI (opțional)</Text>
+              <ThemedTextInput
+                style={styles.input}
+                placeholder="RO12345678"
+                placeholderTextColor="#999"
+                value={cui}
+                onChangeText={setCui}
+                editable={!loading}
+              />
+              <Text style={styles.label}>Nr. Registru Comerț (opțional)</Text>
+              <ThemedTextInput
+                style={styles.input}
+                placeholder="J40/1234/2020"
+                placeholderTextColor="#999"
+                value={regCom}
+                onChangeText={setRegCom}
+                editable={!loading}
+              />
+            </>
+          )}
+          {isAnimal && (
+            <>
+              <Text style={styles.label}>Specie (opțional)</Text>
+              <ThemedTextInput
+                style={styles.input}
+                placeholder="câine, pisică, papagal..."
+                placeholderTextColor="#999"
+                value={species}
+                onChangeText={setSpecies}
+                editable={!loading}
+              />
+            </>
+          )}
+          {isCard && (
+            <>
+              <Pressable
+                style={({ pressed }) => [styles.scanButton, pressed && styles.buttonPressed]}
+                onPress={scanCard}
+                disabled={ocrLoading || loading}
+              >
+                {ocrLoading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.scanButtonText}>Scanează cardul (OCR)</Text>
+                )}
+              </Pressable>
+              <Text style={styles.label}>Nickname (ex. Card personal)</Text>
+              <ThemedTextInput
+                style={styles.input}
+                placeholder="Nickname"
+                placeholderTextColor="#999"
+                value={nickname}
+                onChangeText={setNickname}
+                editable={!loading}
+              />
+              <Text style={styles.label}>Ultimele 4 cifre (opțional)</Text>
+              <ThemedTextInput
+                style={styles.input}
+                placeholder="1234"
+                placeholderTextColor="#999"
+                value={last4}
+                onChangeText={t => setLast4(t.replace(/\D/g, '').slice(0, 4))}
+                keyboardType="number-pad"
+                editable={!loading}
+              />
+              <Text style={styles.label}>Expirare MM/AA (opțional)</Text>
+              <ThemedTextInput
+                style={styles.input}
+                placeholder="12/28"
+                placeholderTextColor="#999"
+                value={expiry}
+                onChangeText={setExpiry}
+                editable={!loading}
+              />
+            </>
+          )}
+        </ScrollView>
       </Pressable>
-      <BottomActionBar
-        label="Salvează"
-        onPress={handleSubmit}
-        loading={loading}
-        safeArea
-      />
+      <BottomActionBar label="Salvează" onPress={handleSubmit} loading={loading} safeArea />
     </KeyboardAvoidingView>
   );
 }

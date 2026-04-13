@@ -151,11 +151,7 @@ function replaceMarker(html, markerName, newContent) {
   }
 
   return (
-    html.slice(0, startIdx + startMarker.length) +
-    '\n' +
-    newContent +
-    '\n  ' +
-    html.slice(endIdx)
+    html.slice(0, startIdx + startMarker.length) + '\n' + newContent + '\n  ' + html.slice(endIdx)
   );
 }
 

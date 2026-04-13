@@ -74,9 +74,7 @@ export function BottomActionBar({ actions, topActions }: Props) {
           {topActions.map((a, i) => renderAction(a, i, topActions.length))}
         </View>
       )}
-      <View style={styles.row}>
-        {actions.map((a, i) => renderAction(a, i, actions.length))}
-      </View>
+      <View style={styles.row}>{actions.map((a, i) => renderAction(a, i, actions.length))}</View>
     </View>
   );
 }

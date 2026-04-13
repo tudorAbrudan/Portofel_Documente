@@ -464,11 +464,7 @@ export async function findDuplicateDocument(
   if (entityLinks.length === 0) return null;
 
   const customFilter =
-    type === 'custom' && customTypeId
-      ? 'AND d.custom_type_id = ?'
-      : type === 'custom'
-        ? ''
-        : '';
+    type === 'custom' && customTypeId ? 'AND d.custom_type_id = ?' : type === 'custom' ? '' : '';
   const params: (string | null)[] = type === 'custom' && customTypeId ? [customTypeId] : [];
 
   for (const link of entityLinks) {

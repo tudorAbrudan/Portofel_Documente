@@ -8,6 +8,7 @@ import {
   TextInput,
   useWindowDimensions,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useColorScheme } from '@/components/useColorScheme';
 import { WebView } from 'react-native-webview';
 import { Text, View } from '@/components/Themed';
@@ -95,7 +96,12 @@ export function DocumentPhotoSection({
                     allowFileAccess
                   />
                 ) : (
-                  <View style={[styles.pdfPlaceholder, { width: screenWidth - 40, backgroundColor: C.surface }]}>
+                  <View
+                    style={[
+                      styles.pdfPlaceholder,
+                      { width: screenWidth - 40, backgroundColor: C.surface },
+                    ]}
+                  >
                     <Text style={styles.pdfIcon}>📄</Text>
                     <Text style={styles.pdfLabel}>Document PDF</Text>
                     <Text style={styles.pdfSubLabel}>Vizualizare disponibilă după salvare</Text>
@@ -120,14 +126,24 @@ export function DocumentPhotoSection({
                 {canReorder && (
                   <>
                     <Pressable
-                      style={[styles.rotateBtn, styles.rotateBtnReorder, styles.rotateBtnBorderRight, isFirst && styles.btnDisabled]}
+                      style={[
+                        styles.rotateBtn,
+                        styles.rotateBtnReorder,
+                        styles.rotateBtnBorderRight,
+                        isFirst && styles.btnDisabled,
+                      ]}
                       onPress={() => !isFirst && onReorderPage!(idx, idx - 1)}
                       disabled={isFirst}
                     >
                       <Text style={[styles.rotateBtnText, isFirst && styles.disabledText]}>↑</Text>
                     </Pressable>
                     <Pressable
-                      style={[styles.rotateBtn, styles.rotateBtnReorder, styles.rotateBtnBorderRight, isLast && styles.btnDisabled]}
+                      style={[
+                        styles.rotateBtn,
+                        styles.rotateBtnReorder,
+                        styles.rotateBtnBorderRight,
+                        isLast && styles.btnDisabled,
+                      ]}
                       onPress={() => !isLast && onReorderPage!(idx, idx + 1)}
                       disabled={isLast}
                     >
@@ -208,7 +224,7 @@ export function DocumentPhotoSection({
                     setOcrExpanded(true);
                   }}
                 >
-                  <Text style={styles.ocrEditBtnText}>✎</Text>
+                  <Ionicons name="create-outline" size={20} color={primary} />
                 </Pressable>
               )}
               {!ocrEditing && (
@@ -377,8 +393,7 @@ const styles = StyleSheet.create({
   ocrToggleLabel: { fontSize: 14, opacity: 0.9, fontWeight: '500' },
   ocrToggleRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   ocrToggleChevron: { color: primary, fontSize: 13, fontWeight: '500' },
-  ocrEditBtn: { paddingHorizontal: 6, paddingVertical: 2 },
-  ocrEditBtnText: { color: primary, fontSize: 13, fontWeight: '500' },
+  ocrEditBtn: { paddingHorizontal: 4, paddingVertical: 2 },
   ocrText: {
     fontSize: 12,
     lineHeight: 18,

@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback, useEffect } from 'react';
+import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import {
   StyleSheet,
   ScrollView,
@@ -195,27 +195,9 @@ function getExpiryInfo(doc: Document): {
   if (daysLeft <= 30) {
     return { label: `${daysLeft}z`, bg: '#F57C00', fg: '#fff' };
   }
-  return { label: formatShortDate(doc.expiry_date), bg: primaryTint, fg: primary };
-}
-
-function formatShortDate(dateStr: string): string {
-  const d = new Date(dateStr);
-  const day = String(d.getDate()).padStart(2, '0');
-  const months = [
-    'Ian',
-    'Feb',
-    'Mar',
-    'Apr',
-    'Mai',
-    'Iun',
-    'Iul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Noi',
-    'Dec',
-  ];
-  return `${day} ${months[d.getMonth()]}`;
+  const date = new Date(doc.expiry_date);
+  const label = date.toLocaleDateString('ro-RO', { month: 'short', year: 'numeric' });
+  return { label, bg: primaryTint, fg: primary };
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -443,6 +425,7 @@ export default function DocumenteListScreen() {
   const scheme = (useColorScheme() ?? 'light') as 'light' | 'dark';
   const C = Colors[scheme];
   const insets = useSafeAreaInsets();
+  const flatListRef = useRef<FlatList>(null);
 
   const { documents, loading, error, refresh, deleteDocument } = useDocuments();
   const { persons, properties, vehicles, cards, animals } = useEntities();
@@ -468,6 +451,7 @@ export default function DocumenteListScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
       refresh();
     }, [])
   );
@@ -508,26 +492,29 @@ export default function DocumenteListScreen() {
     const animalIds = new Set(documents.filter(d => d.animal_id).map(d => d.animal_id!));
 
     const list: { kind: string; id: string; label: string }[] = [];
-    persons.filter(p => personIds.has(p.id)).forEach(p =>
-      list.push({ kind: 'person_id', id: p.id, label: p.name })
-    );
-    properties.filter(p => propertyIds.has(p.id)).forEach(p =>
-      list.push({ kind: 'property_id', id: p.id, label: p.name })
-    );
-    vehicles.filter(v => vehicleIds.has(v.id)).forEach(v =>
-      list.push({ kind: 'vehicle_id', id: v.id, label: v.name })
-    );
-    cards.filter(c => cardIds.has(c.id)).forEach(c =>
-      list.push({ kind: 'card_id', id: c.id, label: c.nickname || c.last4 || c.id })
-    );
-    animals.filter(a => animalIds.has(a.id)).forEach(a =>
-      list.push({ kind: 'animal_id', id: a.id, label: a.name })
-    );
+    persons
+      .filter(p => personIds.has(p.id))
+      .forEach(p => list.push({ kind: 'person_id', id: p.id, label: p.name }));
+    properties
+      .filter(p => propertyIds.has(p.id))
+      .forEach(p => list.push({ kind: 'property_id', id: p.id, label: p.name }));
+    vehicles
+      .filter(v => vehicleIds.has(v.id))
+      .forEach(v => list.push({ kind: 'vehicle_id', id: v.id, label: v.name }));
+    cards
+      .filter(c => cardIds.has(c.id))
+      .forEach(c => list.push({ kind: 'card_id', id: c.id, label: c.nickname || c.last4 || c.id }));
+    animals
+      .filter(a => animalIds.has(a.id))
+      .forEach(a => list.push({ kind: 'animal_id', id: a.id, label: a.name }));
     return list;
   }, [persons, properties, vehicles, cards, animals, documents]);
 
   useEffect(() => {
-    if (filterEntity && !entityOptions.some(o => o.kind === filterEntity.kind && o.id === filterEntity.id)) {
+    if (
+      filterEntity &&
+      !entityOptions.some(o => o.kind === filterEntity.kind && o.id === filterEntity.id)
+    ) {
       setFilterEntity(null);
     }
   }, [entityOptions, filterEntity]);
@@ -760,6 +747,7 @@ export default function DocumenteListScreen() {
 
       {/* ── Document list ── */}
       <FlatList
+        ref={flatListRef}
         data={filtered}
         keyExtractor={keyExtractor}
         renderItem={renderItem}

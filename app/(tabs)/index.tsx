@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import {
   StyleSheet,
   ScrollView,
@@ -20,8 +20,9 @@ import { radius, spacing } from '@/theme/layout';
 import { useDocuments } from '@/hooks/useDocuments';
 import { useEntities } from '@/hooks/useEntities';
 import { useCustomTypes } from '@/hooks/useCustomTypes';
-import { DOCUMENT_TYPE_LABELS, getDocumentLabel } from '@/types';
-import type { Document, DocumentType } from '@/types';
+import { DOCUMENT_TYPE_LABELS, getDocumentLabel, DOC_PRIMARY_ENTITY } from '@/types';
+import type { Document, DocumentType, EntityType } from '@/types';
+import { useVisibilitySettings } from '@/hooks/useVisibilitySettings';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -159,87 +160,96 @@ interface SmartAlert {
 function buildAlerts(
   documents: Document[],
   vehicles: { id: string; name: string }[],
-  persons: { id: string; name: string }[]
+  persons: { id: string; name: string }[],
+  visibleDocTypes: DocumentType[]
 ): SmartAlert[] {
   const alerts: SmartAlert[] = [];
 
-  // Verifică vehicule fără talon
-  for (const v of vehicles) {
-    const hasTalon = documents.some(d => d.vehicle_id === v.id && d.type === 'talon');
-    if (!hasTalon) {
-      alerts.push({
-        id: `no-talon-${v.id}`,
-        message: `${v.name} nu are talon`,
-        icon: 'document-text-outline',
-        iconBg: '#E0F2F1',
-        iconColor: '#00695C',
-        action: () =>
-          router.push({
-            pathname: '/(tabs)/documente/add',
-            params: { vehicle_id: v.id, type: 'talon' },
-          }),
-        actionLabel: 'Adaugă',
-      });
+  // Verifică vehicule fără talon (doar dacă talon e activat în setări)
+  if (visibleDocTypes.includes('talon')) {
+    for (const v of vehicles) {
+      const hasTalon = documents.some(d => d.vehicle_id === v.id && d.type === 'talon');
+      if (!hasTalon) {
+        alerts.push({
+          id: `no-talon-${v.id}`,
+          message: `${v.name} nu are talon`,
+          icon: 'document-text-outline',
+          iconBg: '#E0F2F1',
+          iconColor: '#00695C',
+          action: () =>
+            router.push({
+              pathname: '/(tabs)/documente/add',
+              params: { vehicle_id: v.id, type: 'talon' },
+            }),
+          actionLabel: 'Adaugă',
+        });
+      }
     }
   }
 
-  // Verifică vehicule fără RCA
-  for (const v of vehicles) {
-    const hasRca = documents.some(d => d.vehicle_id === v.id && d.type === 'rca');
-    if (!hasRca) {
-      alerts.push({
-        id: `no-rca-${v.id}`,
-        message: `${v.name} nu are RCA`,
-        icon: 'shield-outline',
-        iconBg: '#FCE4EC',
-        iconColor: '#C62828',
-        action: () =>
-          router.push({
-            pathname: '/(tabs)/documente/add',
-            params: { vehicle_id: v.id, type: 'rca' },
-          }),
-        actionLabel: 'Adaugă',
-      });
+  // Verifică vehicule fără RCA (doar dacă rca e activat în setări)
+  if (visibleDocTypes.includes('rca')) {
+    for (const v of vehicles) {
+      const hasRca = documents.some(d => d.vehicle_id === v.id && d.type === 'rca');
+      if (!hasRca) {
+        alerts.push({
+          id: `no-rca-${v.id}`,
+          message: `${v.name} nu are RCA`,
+          icon: 'shield-outline',
+          iconBg: '#FCE4EC',
+          iconColor: '#C62828',
+          action: () =>
+            router.push({
+              pathname: '/(tabs)/documente/add',
+              params: { vehicle_id: v.id, type: 'rca' },
+            }),
+          actionLabel: 'Adaugă',
+        });
+      }
     }
   }
 
-  // Verifică vehicule fără ITP
-  for (const v of vehicles) {
-    const hasItp = documents.some(d => d.vehicle_id === v.id && d.type === 'itp');
-    if (!hasItp) {
-      alerts.push({
-        id: `no-itp-${v.id}`,
-        message: `${v.name} nu are ITP`,
-        icon: 'checkmark-circle-outline',
-        iconBg: '#F3E5F5',
-        iconColor: '#6A1B9A',
-        action: () =>
-          router.push({
-            pathname: '/(tabs)/documente/add',
-            params: { vehicle_id: v.id, type: 'itp' },
-          }),
-        actionLabel: 'Adaugă',
-      });
+  // Verifică vehicule fără ITP (doar dacă itp e activat în setări)
+  if (visibleDocTypes.includes('itp')) {
+    for (const v of vehicles) {
+      const hasItp = documents.some(d => d.vehicle_id === v.id && d.type === 'itp');
+      if (!hasItp) {
+        alerts.push({
+          id: `no-itp-${v.id}`,
+          message: `${v.name} nu are ITP`,
+          icon: 'checkmark-circle-outline',
+          iconBg: '#F3E5F5',
+          iconColor: '#6A1B9A',
+          action: () =>
+            router.push({
+              pathname: '/(tabs)/documente/add',
+              params: { vehicle_id: v.id, type: 'itp' },
+            }),
+          actionLabel: 'Adaugă',
+        });
+      }
     }
   }
 
-  // Verifică persoane fără buletin
-  for (const p of persons) {
-    const hasBuletin = documents.some(d => d.person_id === p.id && d.type === 'buletin');
-    if (!hasBuletin) {
-      alerts.push({
-        id: `no-buletin-${p.id}`,
-        message: `${p.name} nu are buletin`,
-        icon: 'id-card-outline',
-        iconBg: '#E3F2FD',
-        iconColor: '#1565C0',
-        action: () =>
-          router.push({
-            pathname: '/(tabs)/documente/add',
-            params: { person_id: p.id, type: 'buletin' },
-          }),
-        actionLabel: 'Adaugă',
-      });
+  // Verifică persoane fără buletin (doar dacă buletin e activat în setări)
+  if (visibleDocTypes.includes('buletin')) {
+    for (const p of persons) {
+      const hasBuletin = documents.some(d => d.person_id === p.id && d.type === 'buletin');
+      if (!hasBuletin) {
+        alerts.push({
+          id: `no-buletin-${p.id}`,
+          message: `${p.name} nu are buletin`,
+          icon: 'id-card-outline',
+          iconBg: '#E3F2FD',
+          iconColor: '#1565C0',
+          action: () =>
+            router.push({
+              pathname: '/(tabs)/documente/add',
+              params: { person_id: p.id, type: 'buletin' },
+            }),
+          actionLabel: 'Adaugă',
+        });
+      }
     }
   }
 
@@ -252,14 +262,26 @@ export default function HomeScreen() {
   const scheme = (useColorScheme() ?? 'light') as 'light' | 'dark';
   const C = Colors[scheme];
   const insets = useSafeAreaInsets();
+  const scrollRef = useRef<ScrollView>(null);
 
   const { documents, loading, refresh } = useDocuments();
-  const { persons, properties, vehicles, cards, animals, companies } = useEntities();
+  const {
+    persons,
+    properties,
+    vehicles,
+    cards,
+    animals,
+    companies,
+    refresh: refreshEntities,
+  } = useEntities();
   const { customTypes } = useCustomTypes();
+  const { visibleDocTypes } = useVisibilitySettings();
 
   useFocusEffect(
     useCallback(() => {
+      scrollRef.current?.scrollTo({ y: 0, animated: false });
       refresh();
+      refreshEntities();
     }, [])
   );
 
@@ -303,21 +325,55 @@ export default function HomeScreen() {
 
   // ── Smart alerts ─────────────────────────────────────────────────────────────
   const alerts = useMemo(
-    () => buildAlerts(documents, vehicles, persons),
-    [documents, vehicles, persons]
+    () => buildAlerts(documents, vehicles, persons, visibleDocTypes),
+    [documents, vehicles, persons, visibleDocTypes]
   );
 
   // ── Entity helpers ────────────────────────────────────────────────────────────
   function resolveEntityName(doc: Document): string | null {
-    if (doc.person_id) return persons.find(p => p.id === doc.person_id)?.name ?? null;
-    if (doc.property_id) return properties.find(p => p.id === doc.property_id)?.name ?? null;
-    if (doc.vehicle_id) return vehicles.find(v => v.id === doc.vehicle_id)?.name ?? null;
-    if (doc.card_id) {
-      const c = cards.find(c => c.id === doc.card_id);
-      return c ? `${c.nickname ?? ''} ····${c.last4}`.trim() : null;
+    function getByType(type: EntityType): string | null {
+      switch (type) {
+        case 'vehicle':
+          return doc.vehicle_id
+            ? (vehicles.find(v => v.id === doc.vehicle_id)?.name ?? null)
+            : null;
+        case 'person':
+          return doc.person_id ? (persons.find(p => p.id === doc.person_id)?.name ?? null) : null;
+        case 'property':
+          return doc.property_id
+            ? (properties.find(p => p.id === doc.property_id)?.name ?? null)
+            : null;
+        case 'animal':
+          return doc.animal_id ? (animals.find(a => a.id === doc.animal_id)?.name ?? null) : null;
+        case 'company':
+          return doc.company_id
+            ? (companies.find(c => c.id === doc.company_id)?.name ?? null)
+            : null;
+        case 'card': {
+          if (!doc.card_id) return null;
+          const c = cards.find(c => c.id === doc.card_id);
+          return c ? `${c.nickname ?? ''} ····${c.last4}`.trim() : null;
+        }
+      }
     }
-    if (doc.animal_id) return animals.find(a => a.id === doc.animal_id)?.name ?? null;
-    if (doc.company_id) return companies.find(c => c.id === doc.company_id)?.name ?? null;
+    // Entitatea primară conform tipului documentului
+    const primary = DOC_PRIMARY_ENTITY[doc.type];
+    if (primary) {
+      const name = getByType(primary);
+      if (name) return name;
+    }
+    // Fallback: prima entitate disponibilă
+    for (const type of [
+      'vehicle',
+      'person',
+      'property',
+      'animal',
+      'company',
+      'card',
+    ] as EntityType[]) {
+      const name = getByType(type);
+      if (name) return name;
+    }
     return null;
   }
 
@@ -342,6 +398,7 @@ export default function HomeScreen() {
       </RNView>
 
       <ScrollView
+        ref={scrollRef}
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         refreshControl={

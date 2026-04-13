@@ -551,7 +551,14 @@ export default function EditDocumentScreen() {
           'Adaugă în calendar?',
           `Vrei să adaugi un reminder pentru expirarea pe ${finalExpiry}?`,
           [
-            { text: 'Nu', style: 'cancel', onPress: () => { if (router.canGoBack()) router.back(); else router.replace('/(tabs)/documente'); } },
+            {
+              text: 'Nu',
+              style: 'cancel',
+              onPress: () => {
+                if (router.canGoBack()) router.back();
+                else router.replace('/(tabs)/documente');
+              },
+            },
             {
               text: 'Adaugă',
               onPress: async () => {
@@ -563,7 +570,8 @@ export default function EditDocumentScreen() {
                   note: note.trim() || undefined,
                 });
                 if (!calId) Alert.alert('Eroare', 'Nu s-a putut accesa calendarul.');
-                if (router.canGoBack()) router.back(); else router.replace('/(tabs)/documente');
+                if (router.canGoBack()) router.back();
+                else router.replace('/(tabs)/documente');
               },
             },
           ]
@@ -571,7 +579,8 @@ export default function EditDocumentScreen() {
         return;
       }
 
-      if (router.canGoBack()) router.back(); else router.replace('/(tabs)/documente');
+      if (router.canGoBack()) router.back();
+      else router.replace('/(tabs)/documente');
     } catch (e) {
       Alert.alert('Eroare', e instanceof Error ? e.message : 'Nu s-a putut salva');
     } finally {
@@ -608,16 +617,16 @@ export default function EditDocumentScreen() {
         }}
       />
       <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView
           style={styles.flex}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+          automaticallyAdjustKeyboardInsets={true}
         >
-          <ScrollView
-            style={styles.flex}
-            contentContainerStyle={styles.content}
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="interactive"
-            automaticallyAdjustKeyboardInsets={true}
-          >
           {/* 1. POZE & OCR */}
           <Text style={styles.sectionLabel}>Poze / scan</Text>
           <DocumentPhotoSection
@@ -829,39 +838,33 @@ export default function EditDocumentScreen() {
             multiline
             editable={!saving}
           />
-
-          </ScrollView>
-          <BottomActionBar
-            label="Salvează"
-            onPress={handleSave}
-            loading={saving}
-            safeArea
-          />
-        </KeyboardAvoidingView>
+        </ScrollView>
+        <BottomActionBar label="Salvează" onPress={handleSave} loading={saving} safeArea />
+      </KeyboardAvoidingView>
 
       {/* Fullscreen modal */}
       <Modal visible={!!fullscreenUri} transparent animationType="fade" statusBarTranslucent>
         <View style={styles.fsOverlay}>
           <StatusBar hidden />
           <View key={fsKey} style={{ flex: 1 }}>
-          <ScrollView
-            style={{ flex: 1 }}
-            contentContainerStyle={styles.fsScrollContent}
-            maximumZoomScale={6}
-            minimumZoomScale={1}
-            showsHorizontalScrollIndicator={false}
-            showsVerticalScrollIndicator={false}
-            centerContent
-            bouncesZoom
-          >
-            {fullscreenUri && (
-              <Image
-                source={{ uri: fullscreenUri }}
-                style={{ width: screenWidth, height: screenHeight }}
-                resizeMode="contain"
-              />
-            )}
-          </ScrollView>
+            <ScrollView
+              style={{ flex: 1 }}
+              contentContainerStyle={styles.fsScrollContent}
+              maximumZoomScale={6}
+              minimumZoomScale={1}
+              showsHorizontalScrollIndicator={false}
+              showsVerticalScrollIndicator={false}
+              centerContent
+              bouncesZoom
+            >
+              {fullscreenUri && (
+                <Image
+                  source={{ uri: fullscreenUri }}
+                  style={{ width: screenWidth, height: screenHeight }}
+                  resizeMode="contain"
+                />
+              )}
+            </ScrollView>
           </View>
           <Pressable style={styles.fsCloseBtn} onPress={() => setFullscreenUri(null)}>
             <Text style={styles.fsCloseBtnText}>✕</Text>
@@ -886,7 +889,9 @@ export default function EditDocumentScreen() {
                       <Pressable
                         key={p.id}
                         style={[styles.entityPickerRow, { borderBottomColor: colors.border }]}
-                        onPress={() => handleAddEntityLink({ entityType: 'person', entityId: p.id })}
+                        onPress={() =>
+                          handleAddEntityLink({ entityType: 'person', entityId: p.id })
+                        }
                       >
                         <Text style={styles.entityPickerText}>{p.name}</Text>
                         {linked && <Text style={{ color: primary, fontSize: 13 }}>✓ Adăugat</Text>}

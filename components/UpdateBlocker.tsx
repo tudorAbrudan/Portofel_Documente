@@ -33,8 +33,7 @@ export function UpdateBlocker({ version, url }: Props) {
         <Text style={[styles.body, { color: C.textSecondary }]}>
           Versiunea ta de Dosar nu mai este suportată.{'\n'}
           Instalează versiunea{' '}
-          <Text style={[styles.versionBold, { color: C.text }]}>{version}</Text>
-          {' '}pentru a continua.
+          <Text style={[styles.versionBold, { color: C.text }]}>{version}</Text> pentru a continua.
         </Text>
 
         <Pressable

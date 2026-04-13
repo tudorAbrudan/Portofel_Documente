@@ -58,8 +58,21 @@ function extractBuletin(text: string): ExtractResult {
   const series = text.match(/\b([A-Z]{2})\s*(\d{6})\b/);
   if (series) meta['series'] = `${series[1]} ${series[2]}`;
 
-  const expiry = findDateNear(text, /valabil[ăa]?\s*p[âa]n[ăa]\s*la|valid\s*until/i);
-  const issue = findDateNear(text, /eliberat|emis[aă]/i);
+  // Format specific CI română: "07.07.16-28.09.2026" (emisiune YY – expirare YYYY)
+  let expiry: string | undefined;
+  let issue: string | undefined;
+  const validityRange = text.match(
+    /(\d{2})[.\/-](\d{2})[.\/-](\d{2})\s*[-–]\s*(\d{2})[.\/-](\d{2})[.\/-](\d{4})/
+  );
+  if (validityRange) {
+    const issueYearShort = parseInt(validityRange[3], 10);
+    const issueYear = issueYearShort < 50 ? 2000 + issueYearShort : 1900 + issueYearShort;
+    issue = `${issueYear}-${validityRange[2]}-${validityRange[1]}`;
+    expiry = `${validityRange[6]}-${validityRange[5]}-${validityRange[4]}`;
+  } else {
+    expiry = findDateNear(text, /valabil[ăa]?\s*p[âa]n[ăa]\s*la|valid\s*until/i);
+    issue = findDateNear(text, /eliberat|emis[aă]/i);
+  }
 
   return { metadata: meta, expiry_date: expiry, issue_date: issue };
 }
@@ -119,48 +132,61 @@ function extractTalonDoc(text: string): ExtractResult {
   if (vin) meta['vin'] = vin[1];
 
   // D.1 = marcă / tip
-  const d1 = text.match(/D\.?1\s*[:\s]*\n?\s*([A-Z][A-Z\s\-\/]{1,40})/im);
+  // [A-Z \-\/] — fără \s, ca să nu treacă pe linia următoare (D.2)
+  const d1 = text.match(/D\.?1\s*[:\s]*\n?\s*([A-Z][A-Z \-\/]{1,40})/im);
   if (d1) {
     const parts = d1[1].trim().split(/\s*\/\s*/);
     meta['marca'] = parts[0].trim();
     if (parts[1]) meta['model'] = parts[1].trim();
   }
 
-  // ITP: colectează TOATE datele MM/YYYY sau MM.YYYY și ia cea mai viitoare (max).
-  // Talonul conține: data fabricației (trecut), prima înmatriculare (trecut), ștampila RAR ITP (viitor).
-  const allMmYyyy: Array<{ mm: string; yyyy: string }> = [];
+  // ITP — prioritate 0: "Data urmatoarei inspectii tehnice ZZ.LL.AAAA"
+  // Ștampila RAR din talon conține exact această frază urmată de data ZZ.LL.AAAA.
+  // OCR-ul o poate sparge pe mai multe linii; [^\d]{0,80} acoperă newline-urile.
+  let itpIso: string | undefined;
 
-  // 1. Căutare lângă cuvinte cheie ITP/RAR (prioritate)
-  const itpKwMatches = [
-    ...text.matchAll(
-      /(?:ITP|INSPEC[TȚ]IE|RAR)[^\n]{0,30}\n?\s*(0[1-9]|1[0-2])\s*[.\/\s]\s*(20\d{2})/gi
-    ),
-    ...text.matchAll(
-      /(0[1-9]|1[0-2])\s*[.\/\s]\s*(20\d{2})\s*[^\n]{0,20}(?:ITP|INSPEC[TȚ]IE|RAR)/gi
-    ),
-  ];
-  for (const m of itpKwMatches) {
-    allMmYyyy.push({ mm: m[1], yyyy: m[2] });
-  }
+  const explicitItpMatch = text.match(
+    /data\s+urm[^\d]{0,80}(0[1-9]|[12]\d|3[01])[.\/-](0[1-9]|1[0-2])[.\/-](20\d{2})/i
+  );
+  if (explicitItpMatch) {
+    const [, dd, mm, yyyy] = explicitItpMatch;
+    itpIso = `${yyyy}-${mm}-${dd}`;
+    meta['itp_expiry_date'] = `${dd}.${mm}.${yyyy}`;
+  } else {
+    // ITP — prioritate 1/2: colectează MM/YYYY sau MM.YYYY și ia maximul.
+    // Talonul conține: data fabricației (trecut), prima înmatriculare (trecut), ștampila RAR ITP (viitor).
+    const allMmYyyy: Array<{ mm: string; yyyy: string }> = [];
 
-  // 2. Fallback: toate MM/YYYY standalone (nu parte din DD.MM.YYYY)
-  if (allMmYyyy.length === 0) {
-    const standalone = [...text.matchAll(/(?<!\d\.)(0[1-9]|1[0-2])[.\/](20[2-9]\d)(?!\d)/g)];
-    for (const m of standalone) {
+    // 1. Căutare lângă cuvinte cheie ITP/RAR
+    const itpKwMatches = [
+      ...text.matchAll(
+        /(?:ITP|INSPEC[TȚ]IE|RAR)[^\n]{0,30}\n?\s*(0[1-9]|1[0-2])\s*[.\/\s]\s*(20\d{2})/gi
+      ),
+      ...text.matchAll(
+        /(0[1-9]|1[0-2])\s*[.\/\s]\s*(20\d{2})\s*[^\n]{0,20}(?:ITP|INSPEC[TȚ]IE|RAR)/gi
+      ),
+    ];
+    for (const m of itpKwMatches) {
       allMmYyyy.push({ mm: m[1], yyyy: m[2] });
     }
-  }
 
-  // Ia cea mai viitoare dată (maximum)
-  let itpIso: string | undefined;
-  if (allMmYyyy.length > 0) {
-    const best = allMmYyyy.reduce((prev, cur) =>
-      mmYyyyToSortKey(cur.mm, cur.yyyy) > mmYyyyToSortKey(prev.mm, prev.yyyy) ? cur : prev
-    );
-    const lastDay = new Date(parseInt(best.yyyy), parseInt(best.mm), 0).getDate();
-    const dd = String(lastDay).padStart(2, '0');
-    itpIso = `${best.yyyy}-${best.mm}-${dd}`;
-    meta['itp_expiry_date'] = `${dd}.${best.mm}.${best.yyyy}`; // ZZ.LL.AAAA
+    // 2. Fallback: toate MM/YYYY standalone (nu parte din DD.MM.YYYY)
+    if (allMmYyyy.length === 0) {
+      const standalone = [...text.matchAll(/(?<!\d\.)(0[1-9]|1[0-2])[.\/](20[2-9]\d)(?!\d)/g)];
+      for (const m of standalone) {
+        allMmYyyy.push({ mm: m[1], yyyy: m[2] });
+      }
+    }
+
+    if (allMmYyyy.length > 0) {
+      const best = allMmYyyy.reduce((prev, cur) =>
+        mmYyyyToSortKey(cur.mm, cur.yyyy) > mmYyyyToSortKey(prev.mm, prev.yyyy) ? cur : prev
+      );
+      const lastDay = new Date(parseInt(best.yyyy), parseInt(best.mm), 0).getDate();
+      const dd = String(lastDay).padStart(2, '0');
+      itpIso = `${best.yyyy}-${best.mm}-${dd}`;
+      meta['itp_expiry_date'] = `${dd}.${best.mm}.${best.yyyy}`; // ZZ.LL.AAAA
+    }
   }
 
   return { metadata: meta, expiry_date: itpIso };

@@ -92,7 +92,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="documente"
         listeners={() => ({
-          tabPress: (e) => {
+          tabPress: e => {
             e.preventDefault();
             router.navigate('/(tabs)/documente');
           },

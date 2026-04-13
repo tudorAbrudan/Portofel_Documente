@@ -128,7 +128,8 @@ export default function EntityDetailScreen() {
   useFocusEffect(
     useCallback(() => {
       refreshEntities();
-    }, [])
+      if (id && entityName) loadDocs(entityKind, id);
+    }, [id, entityKind, entityName])
   );
 
   const refresh = () => {
@@ -266,7 +267,9 @@ export default function EntityDetailScreen() {
   // Tipuri unice prezente în documente (ordinea primei apariții)
   const presentTypes = Array.from(new Set(documents.map(d => d.type)));
   const showFilter = presentTypes.length >= 2;
-  const visibleDocuments = selectedType ? documents.filter(d => d.type === selectedType) : documents;
+  const visibleDocuments = selectedType
+    ? documents.filter(d => d.type === selectedType)
+    : documents;
 
   return (
     <RNView style={[styles.container, { backgroundColor: C.background }]}>
@@ -280,7 +283,7 @@ export default function EntityDetailScreen() {
           ),
           headerRight: () => (
             <Pressable onPress={openEditModal} hitSlop={12} style={{ paddingLeft: 8 }}>
-              <Ionicons name="pencil-outline" size={22} color={primary} />
+              <Ionicons name="create-outline" size={24} color={primary} />
             </Pressable>
           ),
         }}
@@ -393,7 +396,10 @@ export default function EntityDetailScreen() {
               pressed && styles.docRowPressed,
             ]}
             onPress={() =>
-              router.push({ pathname: '/(tabs)/documente/[id]', params: { id: doc.id, from: 'entity', entityId: id } })
+              router.push({
+                pathname: '/(tabs)/documente/[id]',
+                params: { id: doc.id, from: 'entity', entityId: id },
+              })
             }
           >
             <RNView style={styles.docRowText}>
@@ -418,22 +424,29 @@ export default function EntityDetailScreen() {
 
       {/* ── Bottom actions ── */}
       <BottomActionBar
-        topActions={isVehicle ? [
-          {
-            icon: 'flame-outline',
-            label: 'Carburant',
-            onPress: () =>
-              router.push(
-                `/(tabs)/entitati/fuel?vehicleId=${id}&vehicleName=${encodeURIComponent(entityName)}`
-              ),
-          },
-          {
-            icon: 'globe-outline',
-            label: 'Vignetă',
-            onPress: () =>
-              router.push({ pathname: '/(tabs)/entitati/vigneta', params: { vehicleId: id } }),
-          },
-        ] as BottomAction[] : undefined}
+        topActions={
+          isVehicle
+            ? ([
+                {
+                  icon: 'flame-outline',
+                  label: 'Carburant',
+                  onPress: () =>
+                    router.push(
+                      `/(tabs)/entitati/fuel?vehicleId=${id}&vehicleName=${encodeURIComponent(entityName)}`
+                    ),
+                },
+                {
+                  icon: 'globe-outline',
+                  label: 'Vignetă',
+                  onPress: () =>
+                    router.push({
+                      pathname: '/(tabs)/entitati/vigneta',
+                      params: { vehicleId: id },
+                    }),
+                },
+              ] as BottomAction[])
+            : undefined
+        }
         actions={[
           {
             icon: 'add-circle-outline',

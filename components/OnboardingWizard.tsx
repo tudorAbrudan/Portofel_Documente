@@ -710,27 +710,39 @@ export default function OnboardingWizard({ onComplete }: Props) {
           },
         ]}
       >
-        {step > WELCOME && (
+        <View style={styles.footerRow}>
+          {step > WELCOME && (
+            <Pressable
+              style={({ pressed }) => [
+                styles.btnBack,
+                { borderColor: C.primary, opacity: pressed ? 0.7 : 1 },
+              ]}
+              onPress={handleBack}
+            >
+              <Text style={[styles.btnBackText, { color: C.primary }]}>Înapoi</Text>
+            </Pressable>
+          )}
           <Pressable
             style={({ pressed }) => [
-              styles.btnBack,
-              { borderColor: C.primary, opacity: pressed ? 0.7 : 1 },
+              styles.btnNext,
+              step === WELCOME && styles.btnNextSingle,
+              { backgroundColor: C.primary, opacity: pressed ? 0.85 : 1 },
             ]}
-            onPress={handleBack}
+            onPress={handleFooterPrimary}
           >
-            <Text style={[styles.btnBackText, { color: C.primary }]}>Înapoi</Text>
+            <Text style={styles.btnNextText}>{step === SUMMARY ? 'Finalizează' : 'Continuă'}</Text>
+          </Pressable>
+        </View>
+        {step < SUMMARY && (
+          <Pressable
+            style={({ pressed }) => [styles.btnSkip, { opacity: pressed ? 0.6 : 1 }]}
+            onPress={() => void handleComplete()}
+          >
+            <Text style={[styles.btnSkipText, { color: C.textSecondary }]}>
+              Sari peste configurare
+            </Text>
           </Pressable>
         )}
-        <Pressable
-          style={({ pressed }) => [
-            styles.btnNext,
-            step === WELCOME && styles.btnNextSingle,
-            { backgroundColor: C.primary, opacity: pressed ? 0.85 : 1 },
-          ]}
-          onPress={handleFooterPrimary}
-        >
-          <Text style={styles.btnNextText}>{step === SUMMARY ? 'Finalizează' : 'Continuă'}</Text>
-        </Pressable>
       </View>
 
       <AppLockPinModal
@@ -921,11 +933,15 @@ const styles = StyleSheet.create({
   aiPrivacyNote: { fontSize: 12, lineHeight: 18, fontStyle: 'italic' },
 
   footer: {
-    flexDirection: 'row',
-    gap: 10,
+    flexDirection: 'column',
+    gap: 4,
     paddingHorizontal: 16,
     paddingTop: 12,
     borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  footerRow: {
+    flexDirection: 'row',
+    gap: 10,
   },
   btnBack: {
     flex: 1,
@@ -943,4 +959,12 @@ const styles = StyleSheet.create({
   },
   btnNextSingle: { flex: 1 },
   btnNextText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  btnSkip: {
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  btnSkipText: {
+    fontSize: 13,
+    textDecorationLine: 'underline',
+  },
 });

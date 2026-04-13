@@ -143,33 +143,35 @@ function RootLayoutNav() {
 
   return (
     <ThemePreferenceContext.Provider value={{ preference: themePreference, setPreference }}>
-    <ThemeProvider value={effectiveScheme === 'dark' ? AppDarkTheme : AppLightTheme}>
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
-      </Stack>
-      {updateInfo && onboardingDone === true && updateInfo.mandatory && (
-        <UpdateBlocker version={updateInfo.version} url={updateInfo.url} />
-      )}
-      {updateInfo && !appLock.locked && onboardingDone === true && !updateInfo.mandatory && (
-        <UpdateBanner
-          version={updateInfo.version}
-          url={updateInfo.url}
-          onDismiss={() => {
-            dismissUpdate(updateInfo.version);
-            setUpdateInfo(null);
-          }}
-        />
-      )}
-      {appLock.locked && (
-        <AppLockScreen
-          biometricAvailable={appLock.biometricAvailable}
-          onUnlockBiometric={appLock.unlockWithBiometric}
-          onUnlockPin={appLock.unlockWithPin}
-        />
-      )}
-      {onboardingDone === false && <OnboardingWizard onComplete={() => setOnboardingDone(true)} />}
-    </ThemeProvider>
+      <ThemeProvider value={effectiveScheme === 'dark' ? AppDarkTheme : AppLightTheme}>
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
+        </Stack>
+        {updateInfo && onboardingDone === true && updateInfo.mandatory && (
+          <UpdateBlocker version={updateInfo.version} url={updateInfo.url} />
+        )}
+        {updateInfo && !appLock.locked && onboardingDone === true && !updateInfo.mandatory && (
+          <UpdateBanner
+            version={updateInfo.version}
+            url={updateInfo.url}
+            onDismiss={() => {
+              dismissUpdate(updateInfo.version);
+              setUpdateInfo(null);
+            }}
+          />
+        )}
+        {appLock.locked && (
+          <AppLockScreen
+            biometricAvailable={appLock.biometricAvailable}
+            onUnlockBiometric={appLock.unlockWithBiometric}
+            onUnlockPin={appLock.unlockWithPin}
+          />
+        )}
+        {onboardingDone === false && (
+          <OnboardingWizard onComplete={() => setOnboardingDone(true)} />
+        )}
+      </ThemeProvider>
     </ThemePreferenceContext.Provider>
   );
 }

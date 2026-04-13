@@ -71,11 +71,61 @@ function normalize(text: string): string {
 
 // Cuvinte comune care nu ajută la căutare
 const STOP_WORDS = new Set([
-  'ce', 'care', 'cum', 'cand', 'când', 'unde', 'de', 'la', 'in', 'în', 'pe', 'cu',
-  'și', 'si', 'sau', 'dar', 'ca', 'sa', 'să', 'nu', 'este', 'e', 'are', 'am',
-  'al', 'ale', 'ai', 'un', 'o', 'unei', 'unui', 'mi', 'îmi', 'imi', 'iti', 'îți',
-  'mai', 'fi', 'fii', 'fost', 'fi', 'pot', 'poti', 'poți', 'vrea', 'vreau',
-  'imi', 'spune', 'spui', 'arata', 'arată', 'gaseste', 'găsește', 'cauta', 'caută',
+  'ce',
+  'care',
+  'cum',
+  'cand',
+  'când',
+  'unde',
+  'de',
+  'la',
+  'in',
+  'în',
+  'pe',
+  'cu',
+  'și',
+  'si',
+  'sau',
+  'dar',
+  'ca',
+  'sa',
+  'să',
+  'nu',
+  'este',
+  'e',
+  'are',
+  'am',
+  'al',
+  'ale',
+  'ai',
+  'un',
+  'o',
+  'unei',
+  'unui',
+  'mi',
+  'îmi',
+  'imi',
+  'iti',
+  'îți',
+  'mai',
+  'fi',
+  'fii',
+  'fost',
+  'fi',
+  'pot',
+  'poti',
+  'poți',
+  'vrea',
+  'vreau',
+  'imi',
+  'spune',
+  'spui',
+  'arata',
+  'arată',
+  'gaseste',
+  'găsește',
+  'cauta',
+  'caută',
 ]);
 
 /**
@@ -144,11 +194,11 @@ function collectHistoryMentions(history: ChatMessage[], lastN = 6): Set<string> 
 
 // ─── Construire context filtrat ───────────────────────────────────────────────
 
-const MAX_DOCS_FULL = 80;     // fără filtrare: max 80 doc
+const MAX_DOCS_FULL = 80; // fără filtrare: max 80 doc
 const MAX_DOCS_FILTERED = 40; // cu filtrare: mai mult spațiu per doc
-const OCR_LIMIT_DEFAULT = 300;   // caractere OCR pentru doc obișnuit
-const OCR_LIMIT_FILTERED = 800;  // doc relevant prin entitate/tip
-const OCR_LIMIT_FULL = 3000;     // doc găsit prin căutare text — OCR complet
+const OCR_LIMIT_DEFAULT = 300; // caractere OCR pentru doc obișnuit
+const OCR_LIMIT_FILTERED = 800; // doc relevant prin entitate/tip
+const OCR_LIMIT_FULL = 3000; // doc găsit prin căutare text — OCR complet
 
 async function buildContext(
   userMessage: string,
@@ -173,7 +223,8 @@ async function buildContext(
 
   if (noData) {
     return {
-      contextText: 'NU EXISTĂ DATE ÎN APLICAȚIE. Utilizatorul nu a adăugat nicio entitate sau document.',
+      contextText:
+        'NU EXISTĂ DATE ÎN APLICAȚIE. Utilizatorul nu a adăugat nicio entitate sau document.',
       filtered: false,
       docMap: new Map(),
     };
@@ -256,13 +307,19 @@ async function buildContext(
     lines.push(`Persoane: ${personStrings.join(', ')}`);
   }
   if (properties.length)
-    lines.push(`Proprietăți: ${properties.map(p => `[ENT:${p.name}|property|${p.id}]`).join(', ')}`);
+    lines.push(
+      `Proprietăți: ${properties.map(p => `[ENT:${p.name}|property|${p.id}]`).join(', ')}`
+    );
   if (vehicles.length)
     lines.push(`Vehicule: ${vehicles.map(v => `[ENT:${v.name}|vehicle|${v.id}]`).join(', ')}`);
   if (cards.length)
-    lines.push(`Carduri: ${cards.map(c => `[ENT:${c.nickname}|card|${c.id}]` + ` (****${c.last4})`).join(', ')}`);
+    lines.push(
+      `Carduri: ${cards.map(c => `[ENT:${c.nickname}|card|${c.id}]` + ` (****${c.last4})`).join(', ')}`
+    );
   if (animals.length)
-    lines.push(`Animale: ${animals.map(a => `[ENT:${a.name}|animal|${a.id}]` + ` (${a.species})`).join(', ')}`);
+    lines.push(
+      `Animale: ${animals.map(a => `[ENT:${a.name}|animal|${a.id}]` + ` (${a.species})`).join(', ')}`
+    );
 
   // Notă de filtrare (ajută AI-ul să înțeleagă că nu vede tot)
   if (isFiltered && filteredDocs.length < documents.length) {

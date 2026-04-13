@@ -3,6 +3,7 @@ import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
 import JSZip from 'jszip';
 import type { DocumentType } from '@/types';
+import { DOCUMENT_TYPE_LABELS } from '@/types';
 import * as entities from './entities';
 import * as docs from './documents';
 import { getCustomTypes, createCustomType } from './customTypes';
@@ -21,28 +22,75 @@ async function readFileBase64(storedPath: string): Promise<string | null> {
 }
 
 /**
- * Colectează path-urile relative unice ale fișierelor asociate documentelor și paginilor.
+ * Sanitizează un string pentru utilizare ca nume de folder în arhivă.
  */
-function collectFilePaths(
-  documents: Awaited<ReturnType<typeof docs.getDocuments>>,
-  allPages: Awaited<ReturnType<typeof docs.getAllDocumentPages>>
-): string[] {
-  const paths = new Set<string>();
-  for (const doc of documents) {
-    if (doc.file_path) paths.add(toRelativePath(doc.file_path));
+function sanitizeFolderName(name: string): string {
+  return name.replace(/[/\\?%*:|"<>]/g, '_').trim() || 'General';
+}
+
+/**
+ * Construiește un map: diskRelativePath → zipRelativePath (în interiorul files/).
+ * Organizează fișierele în foldere cu numele entităților și tipului de document.
+ */
+function buildFileMap(
+  allDocuments: Awaited<ReturnType<typeof docs.getDocuments>>,
+  allPages: Awaited<ReturnType<typeof docs.getAllDocumentPages>>,
+  personNames: Map<string, string>,
+  vehicleNames: Map<string, string>,
+  propertyNames: Map<string, string>,
+  cardNames: Map<string, string>,
+  animalNames: Map<string, string>,
+  companyNames: Map<string, string>
+): Record<string, string> {
+  const fileMap: Record<string, string> = {};
+  const docById = new Map(allDocuments.map(d => [d.id, d]));
+
+  function entityFolder(doc: (typeof allDocuments)[number]): string {
+    if (doc.vehicle_id) return vehicleNames.get(doc.vehicle_id) ?? 'General';
+    if (doc.person_id) return personNames.get(doc.person_id) ?? 'General';
+    if (doc.property_id) return propertyNames.get(doc.property_id) ?? 'General';
+    if (doc.animal_id) return animalNames.get(doc.animal_id) ?? 'General';
+    if (doc.company_id) return companyNames.get(doc.company_id) ?? 'General';
+    if (doc.card_id) return cardNames.get(doc.card_id) ?? 'General';
+    return 'General';
   }
+
+  function zipPath(entityName: string, docType: DocumentType, diskRelPath: string): string {
+    const filename = diskRelPath.split('/').pop() ?? diskRelPath;
+    const ef = sanitizeFolderName(entityName);
+    const tf = sanitizeFolderName(DOCUMENT_TYPE_LABELS[docType] ?? docType);
+    return `${ef}/${tf}/${filename}`;
+  }
+
+  for (const doc of allDocuments) {
+    if (!doc.file_path) continue;
+    const rel = toRelativePath(doc.file_path);
+    if (!fileMap[rel]) {
+      fileMap[rel] = zipPath(entityFolder(doc), doc.type, rel);
+    }
+  }
+
   for (const page of allPages) {
-    if (page.file_path) paths.add(toRelativePath(page.file_path));
+    if (!page.file_path) continue;
+    const rel = toRelativePath(page.file_path);
+    if (fileMap[rel]) continue;
+    const parentDoc = docById.get(page.document_id);
+    if (parentDoc) {
+      fileMap[rel] = zipPath(entityFolder(parentDoc), parentDoc.type, rel);
+    } else {
+      fileMap[rel] = rel; // fallback: cale originală
+    }
   }
-  return Array.from(paths);
+
+  return fileMap;
 }
 
 /**
  * Exportă toate datele ca fișier ZIP conținând:
- *  - backup.json  (manifest cu entități + documente, fără imagini base64)
- *  - files/<relativePath>  (pozele și PDF-urile nativ în ZIP)
+ *  - backup.json  (manifest cu entități + documente + fileMap)
+ *  - files/<NumeEntitate>/<TipDocument>/<fisier>  (pozele și PDF-urile organizate pe entități)
  *
- * Format version: 4
+ * Format version: 5
  */
 export async function exportBackup(): Promise<void> {
   const [
@@ -67,8 +115,28 @@ export async function exportBackup(): Promise<void> {
     getCustomTypes(),
   ]);
 
+  const personNames = new Map(persons.map(p => [p.id, p.name]));
+  const vehicleNames = new Map(vehicles.map(v => [v.id, v.name]));
+  const propertyNames = new Map(properties.map(p => [p.id, p.name]));
+  const cardNames = new Map(
+    cards.map(c => [c.id, c.nickname ? `${c.nickname} ····${c.last4}` : `Card ····${c.last4}`])
+  );
+  const animalNames = new Map(animals.map(a => [a.id, a.name]));
+  const companyNames = new Map(companies.map(c => [c.id, c.name]));
+
+  const fileMap = buildFileMap(
+    documents,
+    allPages,
+    personNames,
+    vehicleNames,
+    propertyNames,
+    cardNames,
+    animalNames,
+    companyNames
+  );
+
   const manifest = {
-    version: 4,
+    version: 5,
     exportDate: new Date().toISOString(),
     persons,
     properties,
@@ -79,17 +147,17 @@ export async function exportBackup(): Promise<void> {
     customTypes,
     documents,
     documentPages: allPages,
+    fileMap,
   };
 
   const zip = new JSZip();
   zip.file('backup.json', JSON.stringify(manifest, null, 2));
 
-  const filePaths = collectFilePaths(documents, allPages);
-  for (const relativePath of filePaths) {
+  for (const [diskRelPath, zipRelPath] of Object.entries(fileMap)) {
     try {
-      const b64 = await readFileBase64(relativePath);
+      const b64 = await readFileBase64(diskRelPath);
       if (b64) {
-        zip.file(`files/${relativePath}`, b64, { base64: true });
+        zip.file(`files/${zipRelPath}`, b64, { base64: true });
       }
     } catch {
       // Fișier inaccesibil — continuă fără el
@@ -120,11 +188,20 @@ export interface ImportResult {
 
 /**
  * Extrage fișierele dintr-un ZIP și le scrie pe disk.
- * Fișierele lipsă sunt ignorate silențios.
+ * Dacă există fileMap (version 5+), îl folosește pentru a determina calea pe disk.
+ * Backward compatible cu version 4 (fără fileMap).
  */
-async function extractFilesFromZip(zip: JSZip): Promise<void> {
+async function extractFilesFromZip(zip: JSZip, fileMap?: Record<string, string>): Promise<void> {
   const filesFolder = zip.folder('files');
   if (!filesFolder) return;
+
+  // Reverse map: zipRelPath → diskRelPath (din fileMap al manifestului)
+  const reverseMap = new Map<string, string>();
+  if (fileMap) {
+    for (const [diskPath, zipPath] of Object.entries(fileMap)) {
+      reverseMap.set(zipPath, diskPath);
+    }
+  }
 
   const fileEntries: Array<{ relativePath: string; file: JSZip.JSZipObject }> = [];
   filesFolder.forEach((relativePath, file) => {
@@ -136,9 +213,10 @@ async function extractFilesFromZip(zip: JSZip): Promise<void> {
   for (const { relativePath, file } of fileEntries) {
     try {
       const b64 = await file.async('base64');
-      // relativePath este relativ față de folderul "files/" din ZIP,
-      // deci corespunde direct cu calea relativă față de documentDirectory
-      const dest = `${FileSystem.documentDirectory}${relativePath}`;
+      // Version 5+: folosește reverse map pentru calea pe disk
+      // Version 4 și mai vechi: relativePath din ZIP = calea pe disk
+      const diskRelPath = reverseMap.get(relativePath) ?? relativePath;
+      const dest = `${FileSystem.documentDirectory}${diskRelPath}`;
       const destDir = dest.substring(0, dest.lastIndexOf('/'));
       await FileSystem.makeDirectoryAsync(destDir, { intermediates: true });
       await FileSystem.writeAsStringAsync(dest, b64, { encoding: FileSystem.EncodingType.Base64 });
@@ -203,8 +281,12 @@ export async function importBackup(): Promise<ImportResult> {
       throw new Error('Manifestul backup.json este invalid.');
     }
 
-    // Extrage fișierele din ZIP pe disk
-    await extractFilesFromZip(zip);
+    // Extrage fișierele din ZIP pe disk (pasează fileMap pentru version 5+)
+    const manifestFileMap =
+      payload.fileMap && typeof payload.fileMap === 'object'
+        ? (payload.fileMap as Record<string, string>)
+        : undefined;
+    await extractFilesFromZip(zip, manifestFileMap);
   } else {
     // --- Format JSON vechi (version 1-3) ---
     const json = await FileSystem.readAsStringAsync(uri, {

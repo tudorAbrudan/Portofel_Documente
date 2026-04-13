@@ -109,7 +109,7 @@ MEDICAL:
 
 ━━━ CÂMPURI EXACTE PER TIP (folosește EXACT aceste chei în "fields") ━━━
 
-talon: plate="B 123 ABC", marca="VW", model="Golf", vin="VIN17CARACTERE", itp_expiry_date="ZZ.LL.AAAA" (data din ștampila ITP/RAR)
+talon: plate="B 123 ABC", marca="VW", model="Golf", vin="VIN17CARACTERE", itp_expiry_date="ZZ.LL.AAAA" (data din ștampila ITP/RAR sau din "Data urmatoarei inspectii tehnice")
 carte_auto: plate="B 123 ABC", vin="VIN17CARACTERE"
 itp: plate="B 123 ABC"
 rca: policy_number="RO/XX/...", insurer="Allianz", plate="B 123 ABC"
@@ -136,7 +136,7 @@ bilet: categorie="Avion", venue="OTP→LHR", eveniment_artist="RO123"
 
 - issueDate: data emiterii/eliberării documentului (YYYY-MM-DD). null dacă nu există.
 - expiryDate: data expirării documentului (YYYY-MM-DD). EXCEPȚII — pune null pentru: carte_auto, analize_medicale, buletin (expiryDate e separat), cadastru, act_proprietate.
-- Pentru "talon": expiryDate = data ITP din ștampila RAR (YYYY-MM-DD). Pune și în fields.itp_expiry_date (ZZ.LL.AAAA). NU pune data emiterii talonului în expiryDate.
+- Pentru "talon": expiryDate = data ITP din ștampila RAR sau din "Data urmatoarei inspectii tehnice" (YYYY-MM-DD). Pune și în fields.itp_expiry_date (ZZ.LL.AAAA). NU pune data emiterii talonului în expiryDate.
 - Nr. înmatriculare românesc: format "B 123 ABC" sau "CJ 01 XYZ" etc.
 - VIN: 17 caractere alfanumerice (niciodată litere I, O, Q).
 
@@ -182,10 +182,7 @@ function buildEntityContext(entities: AvailableEntities): {
   const indexToId = new Map<string, string>();
   let idx = 0;
 
-  const addGroup = (
-    label: string,
-    items: Array<{ id: string; display: string }>
-  ) => {
+  const addGroup = (label: string, items: Array<{ id: string; display: string }>) => {
     if (items.length === 0) return;
     const parts = items.map(item => {
       const key = `e${idx++}`;
@@ -195,12 +192,30 @@ function buildEntityContext(entities: AvailableEntities): {
     lines.push(`${label}: ${parts.join(', ')}`);
   };
 
-  addGroup('Persoane', entities.persons.map(p => ({ id: p.id, display: p.name })));
-  addGroup('Vehicule', entities.vehicles.map(v => ({ id: v.id, display: v.name })));
-  addGroup('Proprietăți', entities.properties.map(p => ({ id: p.id, display: p.name })));
-  addGroup('Carduri', entities.cards.map(c => ({ id: c.id, display: `${c.nickname} (****${c.last4})` })));
-  addGroup('Animale', entities.animals.map(a => ({ id: a.id, display: `${a.name} (${a.species})` })));
-  addGroup('Firme', entities.companies.map(c => ({ id: c.id, display: c.name })));
+  addGroup(
+    'Persoane',
+    entities.persons.map(p => ({ id: p.id, display: p.name }))
+  );
+  addGroup(
+    'Vehicule',
+    entities.vehicles.map(v => ({ id: v.id, display: v.name }))
+  );
+  addGroup(
+    'Proprietăți',
+    entities.properties.map(p => ({ id: p.id, display: p.name }))
+  );
+  addGroup(
+    'Carduri',
+    entities.cards.map(c => ({ id: c.id, display: `${c.nickname} (****${c.last4})` }))
+  );
+  addGroup(
+    'Animale',
+    entities.animals.map(a => ({ id: a.id, display: `${a.name} (${a.species})` }))
+  );
+  addGroup(
+    'Firme',
+    entities.companies.map(c => ({ id: c.id, display: c.name }))
+  );
 
   return {
     entityContext: lines.length > 0 ? lines.join('\n') : 'Nicio entitate disponibilă.',
@@ -271,7 +286,10 @@ function parseAiResponse(
   // aiNotes — limităm lungimea și eliminăm caractere de control
   let aiNotes: string | undefined;
   if (typeof parsed.aiNotes === 'string' && parsed.aiNotes.trim()) {
-    aiNotes = parsed.aiNotes.replace(/[\x00-\x1F\x7F]/g, ' ').trim().slice(0, AI_NOTES_MAX_LENGTH);
+    aiNotes = parsed.aiNotes
+      .replace(/[\x00-\x1F\x7F]/g, ' ')
+      .trim()
+      .slice(0, AI_NOTES_MAX_LENGTH);
     if (!aiNotes) aiNotes = undefined;
   }
 

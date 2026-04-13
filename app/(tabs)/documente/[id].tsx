@@ -85,7 +85,11 @@ function autoDeleteLabel(rule: string): string {
 }
 
 export default function DocumentDetailScreen() {
-  const { id, from, entityId } = useLocalSearchParams<{ id: string; from?: string; entityId?: string }>();
+  const { id, from, entityId } = useLocalSearchParams<{
+    id: string;
+    from?: string;
+    entityId?: string;
+  }>();
   const { colors } = useTheme();
   const { customTypes } = useCustomTypes();
   const { companies, persons, properties, vehicles, cards, animals } = useEntities();
@@ -1206,7 +1210,6 @@ export default function DocumentDetailScreen() {
           </Pressable>
         </View>
       </Modal>
-
     </View>
   );
 }

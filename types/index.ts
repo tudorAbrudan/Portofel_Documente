@@ -189,7 +189,8 @@ export const DEFAULT_VISIBLE_DOC_TYPES: DocumentType[] = [
   'talon',
   'carte_auto',
   'rca',
-  'itp',
+  'vigneta',
+  // 'itp' dezactivat by default — data ITP e stocată pe talon; utilizatorul poate activa din Setări
   // Financiar — toată lumea
   'factura',
   'contract',
@@ -305,6 +306,47 @@ export const ENTITY_DOCUMENT_TYPES: Record<EntityType, DocumentType[]> = {
     'altul',
     'custom',
   ],
+};
+
+/**
+ * Entitatea „acasă" pentru fiecare tip de document.
+ * Folosită în liste (Expirări, Home) pentru a afișa contextul corect
+ * atunci când un document e legat la mai multe entități.
+ */
+export const DOC_PRIMARY_ENTITY: Partial<Record<DocumentType, EntityType>> = {
+  // Persoană
+  buletin: 'person',
+  pasaport: 'person',
+  permis_auto: 'person',
+  reteta_medicala: 'person',
+  analize_medicale: 'person',
+  diploma: 'person',
+  foaie_matricola: 'person',
+  certificat_absolvire: 'person',
+  certificat_curs: 'person',
+  adeverinta_studii: 'person',
+  // Vehicul
+  talon: 'vehicle',
+  carte_auto: 'vehicle',
+  rca: 'vehicle',
+  casco: 'vehicle',
+  itp: 'vehicle',
+  vigneta: 'vehicle',
+  // Proprietate
+  act_proprietate: 'property',
+  cadastru: 'property',
+  pad: 'property',
+  impozit_proprietate: 'property',
+  // Animal
+  vaccin_animal: 'animal',
+  deparazitare: 'animal',
+  vizita_vet: 'animal',
+  // Firmă
+  certificat_inregistrare: 'company',
+  autorizatie_activitate: 'company',
+  act_constitutiv: 'company',
+  certificat_tva: 'company',
+  asigurare_profesionala: 'company',
 };
 
 export function getDocumentLabel(

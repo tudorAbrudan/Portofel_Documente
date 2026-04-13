@@ -583,8 +583,8 @@ export default function SetariScreen() {
         {appLockEnabled && (
           <RNText style={[styles.lockHint, { color: C.textSecondary }]}>
             Dacă ai Face ID configurat pe telefon, poți debloca aplicația cu el chiar dacă uiți
-            PIN-ul. Dacă ai uitat PIN-ul și nu ai Face ID, dezactivează blocarea din Setări iPhone
-            → Parolă și Face ID → resetează datele aplicației.
+            PIN-ul. Dacă ai uitat PIN-ul și nu ai Face ID, dezactivează blocarea din Setări iPhone →
+            Parolă și Face ID → resetează datele aplicației.
           </RNText>
         )}
 

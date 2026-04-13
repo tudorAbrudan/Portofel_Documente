@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
 import {
   StyleSheet,
   ScrollView,
@@ -67,6 +67,7 @@ export default function EntitatiListScreen() {
   const scheme = (useColorScheme() ?? 'light') as 'light' | 'dark';
   const C = Colors[scheme];
   const insets = useSafeAreaInsets();
+  const scrollRef = useRef<ScrollView>(null);
 
   const [tab, setTab] = useState<EntityTab>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -94,6 +95,7 @@ export default function EntitatiListScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      scrollRef.current?.scrollTo({ y: 0, animated: false });
       refresh();
     }, [])
   );
@@ -259,6 +261,7 @@ export default function EntitatiListScreen() {
 
       {/* ── Entity list ── */}
       <ScrollView
+        ref={scrollRef}
         style={styles.scroll}
         contentContainerStyle={[
           styles.scrollContent,

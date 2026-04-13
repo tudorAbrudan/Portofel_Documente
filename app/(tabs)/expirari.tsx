@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import {
   StyleSheet,
   ScrollView,
@@ -17,8 +17,8 @@ import { primary, primaryTint } from '@/theme/colors';
 import { useDocuments } from '@/hooks/useDocuments';
 import { useEntities } from '@/hooks/useEntities';
 import { useVisibilitySettings } from '@/hooks/useVisibilitySettings';
-import { DOCUMENT_TYPE_LABELS } from '@/types';
-import type { Document, DocumentType } from '@/types';
+import { DOCUMENT_TYPE_LABELS, DOC_PRIMARY_ENTITY } from '@/types';
+import type { Document, DocumentType, EntityType } from '@/types';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -182,10 +182,6 @@ function getExpiryInfo(doc: Document): { label: string; bg: string; fg: string }
   if (daysLeft <= 30) {
     return { label: `${daysLeft}z`, bg: '#F9A825', fg: '#fff' };
   }
-  if (daysLeft <= 365) {
-    return { label: `${daysLeft}z`, bg: primaryTint, fg: primary };
-  }
-  // Pentru date departe: afișează luna și anul
   const date = new Date(doc.expiry_date);
   const label = date.toLocaleDateString('ro-RO', { month: 'short', year: 'numeric' });
   return { label, bg: primaryTint, fg: primary };
@@ -197,13 +193,15 @@ export default function ExpirariScreen() {
   const scheme = (useColorScheme() ?? 'light') as 'light' | 'dark';
   const C = Colors[scheme];
   const insets = useSafeAreaInsets();
+  const scrollRef = useRef<ScrollView>(null);
 
   const { documents, loading, refresh } = useDocuments();
-  const { persons, properties, vehicles, cards, animals } = useEntities();
+  const { persons, properties, vehicles, cards, animals, companies } = useEntities();
   const { visibleDocTypes } = useVisibilitySettings();
 
   useFocusEffect(
     useCallback(() => {
+      scrollRef.current?.scrollTo({ y: 0, animated: false });
       refresh();
     }, [])
   );
@@ -222,14 +220,49 @@ export default function ExpirariScreen() {
       : `${expired.length > 0 ? `${expired.length} expirate · ` : ''}${upcoming.length} viitoare`;
 
   function resolveEntityName(doc: Document): string | null {
-    if (doc.person_id) return persons.find(p => p.id === doc.person_id)?.name ?? null;
-    if (doc.vehicle_id) return vehicles.find(v => v.id === doc.vehicle_id)?.name ?? null;
-    if (doc.property_id) return properties.find(p => p.id === doc.property_id)?.name ?? null;
-    if (doc.card_id) {
-      const card = cards.find(c => c.id === doc.card_id);
-      return card ? `${card.nickname ?? ''} ••${card.last4}`.trim() : null;
+    function getByType(type: EntityType): string | null {
+      switch (type) {
+        case 'vehicle':
+          return doc.vehicle_id
+            ? (vehicles.find(v => v.id === doc.vehicle_id)?.name ?? null)
+            : null;
+        case 'person':
+          return doc.person_id ? (persons.find(p => p.id === doc.person_id)?.name ?? null) : null;
+        case 'property':
+          return doc.property_id
+            ? (properties.find(p => p.id === doc.property_id)?.name ?? null)
+            : null;
+        case 'animal':
+          return doc.animal_id ? (animals.find(a => a.id === doc.animal_id)?.name ?? null) : null;
+        case 'company':
+          return doc.company_id
+            ? (companies.find(c => c.id === doc.company_id)?.name ?? null)
+            : null;
+        case 'card': {
+          if (!doc.card_id) return null;
+          const card = cards.find(c => c.id === doc.card_id);
+          return card ? `${card.nickname ?? ''} ••${card.last4}`.trim() : null;
+        }
+      }
     }
-    if (doc.animal_id) return animals.find(a => a.id === doc.animal_id)?.name ?? null;
+    // Entitatea primară conform tipului documentului
+    const primary = DOC_PRIMARY_ENTITY[doc.type];
+    if (primary) {
+      const name = getByType(primary);
+      if (name) return name;
+    }
+    // Fallback: prima entitate disponibilă
+    for (const type of [
+      'vehicle',
+      'person',
+      'property',
+      'animal',
+      'company',
+      'card',
+    ] as EntityType[]) {
+      const name = getByType(type);
+      if (name) return name;
+    }
     return null;
   }
 
@@ -294,6 +327,7 @@ export default function ExpirariScreen() {
       </RNView>
 
       <ScrollView
+        ref={scrollRef}
         style={styles.scroll}
         contentContainerStyle={[
           styles.scrollContent,

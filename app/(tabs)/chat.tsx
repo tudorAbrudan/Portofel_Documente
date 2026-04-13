@@ -86,8 +86,7 @@ interface ConversationMessage extends ChatMessage {
 }
 
 // Regex combinat: [ID:docId] | [DOC:label|docId] | [ENT:name|type|id]
-const LINK_REGEX =
-  /\[ID:([^\]]+)\]|\[DOC:([^|]+)\|([^\]]+)\]|\[ENT:([^|]+)\|([^|]+)\|([^\]]+)\]/g;
+const LINK_REGEX = /\[ID:([^\]]+)\]|\[DOC:([^|]+)\|([^\]]+)\]|\[ENT:([^|]+)\|([^|]+)\|([^\]]+)\]/g;
 
 // ─── Mesaj welcome ─────────────────────────────────────────────────────────────
 
@@ -161,7 +160,11 @@ function renderMessageContent(
   while ((match = regex.exec(content)) !== null) {
     const before = content.slice(lastIndex, match.index);
     if (before) {
-      parts.push(<Text key={`t-${lastIndex}`} style={{ color: textColor }}>{before}</Text>);
+      parts.push(
+        <Text key={`t-${lastIndex}`} style={{ color: textColor }}>
+          {before}
+        </Text>
+      );
     }
 
     if (match[1]) {
@@ -169,7 +172,11 @@ function renderMessageContent(
       const docId = match[1];
       const fullTag = match[0];
       parts.push(
-        <Text key={`id-${match.index}`} style={[styles.idLink, { color: linkColor }]} onPress={() => onIdPress(docId)}>
+        <Text
+          key={`id-${match.index}`}
+          style={[styles.idLink, { color: linkColor }]}
+          onPress={() => onIdPress(docId)}
+        >
           {fullTag}
         </Text>
       );
@@ -178,7 +185,11 @@ function renderMessageContent(
       const label = match[2];
       const docId = match[3];
       parts.push(
-        <Text key={`doc-${match.index}`} style={[styles.idLink, { color: linkColor }]} onPress={() => onIdPress(docId)}>
+        <Text
+          key={`doc-${match.index}`}
+          style={[styles.idLink, { color: linkColor }]}
+          onPress={() => onIdPress(docId)}
+        >
           {label}
         </Text>
       );
@@ -187,7 +198,11 @@ function renderMessageContent(
       const entName = match[4];
       const entId = match[6];
       parts.push(
-        <Text key={`ent-${match.index}`} style={[styles.idLink, { color: linkColor }]} onPress={() => onEntityPress(entId)}>
+        <Text
+          key={`ent-${match.index}`}
+          style={[styles.idLink, { color: linkColor }]}
+          onPress={() => onEntityPress(entId)}
+        >
           {entName}
         </Text>
       );
@@ -198,7 +213,11 @@ function renderMessageContent(
 
   const remaining = content.slice(lastIndex);
   if (remaining) {
-    parts.push(<Text key="t-end" style={{ color: textColor }}>{remaining}</Text>);
+    parts.push(
+      <Text key="t-end" style={{ color: textColor }}>
+        {remaining}
+      </Text>
+    );
   }
 
   return parts;
@@ -212,7 +231,13 @@ interface MessageBubbleProps {
   colors: typeof lightColors;
 }
 
-function MessageBubble({ message, onIdPress, onEntityPress, onDelete, colors }: MessageBubbleProps) {
+function MessageBubble({
+  message,
+  onIdPress,
+  onEntityPress,
+  onDelete,
+  colors,
+}: MessageBubbleProps) {
   const isUser = message.role === 'user';
   const [showSelectModal, setShowSelectModal] = useState(false);
 
@@ -241,7 +266,13 @@ function MessageBubble({ message, onIdPress, onEntityPress, onDelete, colors }: 
     );
   }
 
-  const nodes = renderMessageContent(message.content, onIdPress, onEntityPress, colors.primary, colors.text);
+  const nodes = renderMessageContent(
+    message.content,
+    onIdPress,
+    onEntityPress,
+    colors.primary,
+    colors.text
+  );
 
   return (
     <>
@@ -657,7 +688,14 @@ function ConversationView({
         onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: false })}
       >
         {messages.map((msg, index) => (
-          <MessageBubble key={index} message={msg} onIdPress={handleIdPress} onEntityPress={handleEntityPress} onDelete={onDeleteMessage} colors={colors} />
+          <MessageBubble
+            key={index}
+            message={msg}
+            onIdPress={handleIdPress}
+            onEntityPress={handleEntityPress}
+            onDelete={onDeleteMessage}
+            colors={colors}
+          />
         ))}
         {loading && (
           <View
@@ -891,7 +929,9 @@ export default function ChatScreen() {
     if (stored.length === 0) {
       setMessages([{ role: 'assistant', content: WELCOME_CONTENT }]);
     } else {
-      setMessages(stored.map((m: StoredMessage) => ({ role: m.role, content: m.content, id: m.id })));
+      setMessages(
+        stored.map((m: StoredMessage) => ({ role: m.role, content: m.content, id: m.id }))
+      );
     }
   }
 
@@ -929,7 +969,11 @@ export default function ChatScreen() {
     try {
       const reply = await sendMessage(aiText, history.slice(0, -1));
       const savedAssistant = await saveMessage(activeThread.id, 'assistant', reply);
-      const assistantMsg: ConversationMessage = { role: 'assistant', content: reply, id: savedAssistant.id };
+      const assistantMsg: ConversationMessage = {
+        role: 'assistant',
+        content: reply,
+        id: savedAssistant.id,
+      };
       setMessages(prev => [...prev, assistantMsg]);
       // Actualizăm thread-ul local
       setThreads(prev =>
