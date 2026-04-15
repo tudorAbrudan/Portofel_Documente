@@ -11,6 +11,8 @@
  */
 
 import * as Device from 'expo-device';
+import * as FileSystem from 'expo-file-system/legacy';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // ─── Tipuri ───────────────────────────────────────────────────────────────────
 
@@ -147,4 +149,83 @@ export function getCompatibleModels(): LocalModelEntry[] {
   const ramBytes = Device.totalMemory;
   const iphoneGen = getIphoneGeneration(Device.modelName);
   return LOCAL_MODEL_CATALOG.filter(m => isModelCompatible(m, ramBytes, iphoneGen));
+}
+
+// ─── Persistență ─────────────────────────────────────────────────────────────
+
+const KEY_SELECTED = 'local_model_selected';
+const KEY_OCR_ENABLED = 'local_model_ocr_enabled';
+
+function getModelsDir(): string {
+  return (FileSystem.documentDirectory ?? '') + 'models/';
+}
+
+export function getModelPath(modelId: string): string {
+  return getModelsDir() + modelId + '.gguf';
+}
+
+export async function isModelDownloaded(modelId: string): Promise<boolean> {
+  const info = await FileSystem.getInfoAsync(getModelPath(modelId));
+  return info.exists && !(info as { isDirectory?: boolean }).isDirectory;
+}
+
+export async function getSelectedModelId(): Promise<string | null> {
+  return AsyncStorage.getItem(KEY_SELECTED);
+}
+
+export async function setSelectedModelId(modelId: string): Promise<void> {
+  await AsyncStorage.setItem(KEY_SELECTED, modelId);
+}
+
+export async function clearSelectedModelId(): Promise<void> {
+  await AsyncStorage.removeItem(KEY_SELECTED);
+}
+
+export async function isLocalOcrEnabled(): Promise<boolean> {
+  const v = await AsyncStorage.getItem(KEY_OCR_ENABLED);
+  return v === 'true';
+}
+
+export async function setLocalOcrEnabled(enabled: boolean): Promise<void> {
+  await AsyncStorage.setItem(KEY_OCR_ENABLED, enabled ? 'true' : 'false');
+}
+
+// ─── Download ────────────────────────────────────────────────────────────────
+
+/**
+ * Creează un download resumable pentru modelul dat.
+ * UI-ul apelează .downloadAsync() și poate apela .pauseAsync() pentru anulare.
+ * La anulare, UI-ul trebuie să apeleze deleteModel(modelId) pentru curățare.
+ */
+export function createModelDownload(
+  modelId: string,
+  onProgress: DownloadProgressCallback
+): ReturnType<typeof FileSystem.createDownloadResumable> {
+  const model = LOCAL_MODEL_CATALOG.find(m => m.id === modelId);
+  if (!model) throw new Error(`Model necunoscut: ${modelId}`);
+
+  return FileSystem.createDownloadResumable(
+    model.downloadUrl,
+    getModelPath(modelId),
+    {},
+    ({ totalBytesWritten, totalBytesExpectedToWrite }) => {
+      const total = totalBytesExpectedToWrite > 0 ? totalBytesExpectedToWrite : model.sizeBytes;
+      const progress = totalBytesWritten / total;
+      const downloadedMb = totalBytesWritten / (1024 * 1024);
+      const totalMb = total / (1024 * 1024);
+      onProgress(progress, downloadedMb, totalMb);
+    }
+  );
+}
+
+export async function deleteModel(modelId: string): Promise<void> {
+  const path = getModelPath(modelId);
+  const info = await FileSystem.getInfoAsync(path);
+  if (info.exists) {
+    await FileSystem.deleteAsync(path, { idempotent: true });
+  }
+  const selected = await getSelectedModelId();
+  if (selected === modelId) {
+    await clearSelectedModelId();
+  }
 }

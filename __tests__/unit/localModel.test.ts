@@ -127,3 +127,73 @@ describe('getCompatibleModels', () => {
     expect(compatible.find(m => m.id === 'gemma4-2b')).toBeDefined();
   });
 });
+
+import * as FileSystem from 'expo-file-system/legacy';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// AsyncStorage mock has __esModule: true so the default import gives the mock object directly.
+const AsyncStorageMock = AsyncStorage as unknown as {
+  getItem: jest.Mock;
+  setItem: jest.Mock;
+  removeItem: jest.Mock;
+};
+
+describe('isModelDownloaded', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('returnează false când fișierul nu există', async () => {
+    (FileSystem.getInfoAsync as jest.Mock).mockResolvedValue({ exists: false });
+    const { isModelDownloaded } = require('@/services/localModel');
+    expect(await isModelDownloaded('llama3-1b')).toBe(false);
+  });
+
+  it('returnează true când fișierul există', async () => {
+    (FileSystem.getInfoAsync as jest.Mock).mockResolvedValue({ exists: true, isDirectory: false });
+    const { isModelDownloaded } = require('@/services/localModel');
+    expect(await isModelDownloaded('llama3-1b')).toBe(true);
+  });
+});
+
+describe('getSelectedModelId / setSelectedModelId', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('returnează null când nu e setat nimic', async () => {
+    AsyncStorageMock.getItem.mockResolvedValue(null);
+    const { getSelectedModelId } = require('@/services/localModel');
+    expect(await getSelectedModelId()).toBeNull();
+  });
+
+  it('returnează id-ul salvat', async () => {
+    AsyncStorageMock.getItem.mockResolvedValue('phi3-mini');
+    const { getSelectedModelId } = require('@/services/localModel');
+    expect(await getSelectedModelId()).toBe('phi3-mini');
+  });
+
+  it('salvează id-ul în AsyncStorage', async () => {
+    const { setSelectedModelId } = require('@/services/localModel');
+    await setSelectedModelId('gemma4-2b');
+    expect(AsyncStorageMock.setItem).toHaveBeenCalledWith('local_model_selected', 'gemma4-2b');
+  });
+});
+
+describe('isLocalOcrEnabled / setLocalOcrEnabled', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('returnează false când nu e setat', async () => {
+    AsyncStorageMock.getItem.mockResolvedValue(null);
+    const { isLocalOcrEnabled } = require('@/services/localModel');
+    expect(await isLocalOcrEnabled()).toBe(false);
+  });
+
+  it('returnează true când e setat', async () => {
+    AsyncStorageMock.getItem.mockResolvedValue('true');
+    const { isLocalOcrEnabled } = require('@/services/localModel');
+    expect(await isLocalOcrEnabled()).toBe(true);
+  });
+
+  it('salvează flag-ul OCR', async () => {
+    const { setLocalOcrEnabled } = require('@/services/localModel');
+    await setLocalOcrEnabled(true);
+    expect(AsyncStorageMock.setItem).toHaveBeenCalledWith('local_model_ocr_enabled', 'true');
+  });
+});

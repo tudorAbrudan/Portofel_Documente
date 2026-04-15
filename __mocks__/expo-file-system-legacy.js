@@ -12,4 +12,8 @@ module.exports = {
   getInfoAsync: jest.fn().mockResolvedValue({ exists: false, isDirectory: false }),
   readDirectoryAsync: jest.fn().mockResolvedValue([]),
   cacheDirectory: 'file:///test/Cache/',
+  createDownloadResumable: jest.fn(() => ({
+    downloadAsync: jest.fn().mockResolvedValue({ uri: 'file:///test/Documents/models/test.gguf' }),
+    pauseAsync: jest.fn().mockResolvedValue(undefined),
+  })),
 };
