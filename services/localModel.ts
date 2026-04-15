@@ -13,6 +13,8 @@
 import * as Device from 'expo-device';
 import * as FileSystem from 'expo-file-system/legacy';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { initLlama, LlamaContext } from 'llama.rn';
+import type { AiMessage } from './aiProvider';
 
 // ─── Tipuri ───────────────────────────────────────────────────────────────────
 
@@ -227,5 +229,72 @@ export async function deleteModel(modelId: string): Promise<void> {
   const selected = await getSelectedModelId();
   if (selected === modelId) {
     await clearSelectedModelId();
+  }
+}
+
+// ─── Inferență ───────────────────────────────────────────────────────────────
+
+let _llamaContext: LlamaContext | null = null;
+let _loadedModelId: string | null = null;
+
+/**
+ * Inițializează contextul llama.rn pentru modelul dat.
+ * Dacă modelul este deja încărcat, nu face nimic.
+ * Dacă un alt model este încărcat, eliberează contextul anterior.
+ */
+export async function initLocalModel(modelId: string): Promise<void> {
+  if (_loadedModelId === modelId && _llamaContext !== null) return;
+
+  if (_llamaContext !== null) {
+    await _llamaContext.release();
+    _llamaContext = null;
+    _loadedModelId = null;
+  }
+
+  const path = getModelPath(modelId);
+  const info = await FileSystem.getInfoAsync(path);
+  if (!info.exists) {
+    throw new Error(`Modelul "${modelId}" nu este descărcat. Descarcă-l din Setări → Asistent AI.`);
+  }
+
+  _llamaContext = await initLlama({
+    model: path,
+    use_mlock: true,
+    n_ctx: 2048,
+    n_gpu_layers: 99,
+  });
+  _loadedModelId = modelId;
+}
+
+/**
+ * Rulează inferența cu modelul local activ.
+ * Dacă modelul nu e inițializat, îl inițializează automat.
+ */
+export async function runLocalInference(
+  messages: AiMessage[],
+  maxTokens = 500
+): Promise<string> {
+  const selectedId = await getSelectedModelId();
+  if (!selectedId) {
+    throw new Error('Niciun model local selectat. Alege un model din Setări → Asistent AI.');
+  }
+
+  await initLocalModel(selectedId);
+
+  const result = await _llamaContext!.completion({
+    messages,
+    n_predict: maxTokens,
+    temperature: 0.3,
+    stop: ['</s>', '<|end|>', '<|eot_id|>', '<end_of_turn>'],
+  });
+
+  return result.text.trim();
+}
+
+export async function disposeLocalModel(): Promise<void> {
+  if (_llamaContext) {
+    await _llamaContext.release();
+    _llamaContext = null;
+    _loadedModelId = null;
   }
 }
