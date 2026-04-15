@@ -9,6 +9,7 @@
  */
 
 import { sendAiRequest } from './aiProvider';
+import { isLocalOcrEnabled, runLocalInference } from './localModel';
 import type { DocumentType, EntityType } from '@/types';
 import { DOCUMENT_TYPE_LABELS } from '@/types';
 
@@ -156,13 +157,14 @@ Returnează EXCLUSIV JSON valid:
 
 Răspunde DOAR cu JSON, fără text suplimentar.`;
 
-  const rawResponse = await sendAiRequest(
-    [
-      { role: 'system', content: systemMessage },
-      { role: 'user', content: prompt },
-    ],
-    600
-  );
+  const messages = [
+    { role: 'system' as const, content: systemMessage },
+    { role: 'user' as const, content: prompt },
+  ];
+  const useLocalOcr = await isLocalOcrEnabled();
+  const rawResponse = useLocalOcr
+    ? await runLocalInference(messages, 600).catch(() => sendAiRequest(messages, 600))
+    : await sendAiRequest(messages, 600);
 
   return parseAiResponse(rawResponse, entities, indexToId);
 }

@@ -1,4 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
+import * as localModel from '@/services/localModel';
+import type { LocalModelEntry } from '@/services/localModel';
+import * as FileSystem from 'expo-file-system/legacy';
 import {
   StyleSheet,
   ScrollView,
@@ -258,6 +261,14 @@ export default function SetariScreen() {
   const [aiTestStatus, setAiTestStatus] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle');
   const [aiTestMessage, setAiTestMessage] = useState('');
   const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [compatibleModels, setCompatibleModels] = useState<LocalModelEntry[]>([]);
+  const [downloadedModelIds, setDownloadedModelIds] = useState<string[]>([]);
+  const [downloadingModelId, setDownloadingModelId] = useState<string | null>(null);
+  const [downloadProgress, setDownloadProgress] = useState(0);
+  const [downloadedMb, setDownloadedMb] = useState(0);
+  const [downloadTotalMb, setDownloadTotalMb] = useState(0);
+  const [localOcrEnabled, setLocalOcrEnabledState] = useState(false);
+  const downloadResumableRef = useRef<ReturnType<typeof localModel.createModelDownload> | null>(null);
   const [backupExporting, setBackupExporting] = useState(false);
   const [backupImporting, setBackupImporting] = useState(false);
 
@@ -274,6 +285,17 @@ export default function SetariScreen() {
       setAiProviderModel(cfg.model);
       setAiApiKey(cfg.apiKey);
     });
+    // Modele locale
+    void (async () => {
+      const models = localModel.getCompatibleModels();
+      setCompatibleModels(models);
+      const downloaded: string[] = [];
+      for (const m of models) {
+        if (await localModel.isModelDownloaded(m.id)) downloaded.push(m.id);
+      }
+      setDownloadedModelIds(downloaded);
+      localModel.isLocalOcrEnabled().then(setLocalOcrEnabledState);
+    })();
   }, []);
 
   // ── App lock ─────────────────────────────────────────────────────────────────
@@ -404,13 +426,115 @@ export default function SetariScreen() {
   };
 
   // ── AI Provider ─────────────────────────────────────────────────────────────
-  const handleAiProviderSelect = (type: AiProviderType) => {
+  const handleAiProviderSelect = async (type: AiProviderType) => {
+    // If switching away from local, release the model context
+    if (aiProviderType === 'local' && type !== 'local') {
+      await localModel.disposeLocalModel().catch(() => {});
+    }
     setAiProviderType(type);
     const defaults = aiProvider.PROVIDER_DEFAULTS[type];
     setAiProviderUrl(defaults.url);
     setAiProviderModel(defaults.model);
     setAiTestStatus('idle');
     setAiTestMessage('');
+  };
+
+  const handleDownloadModel = async (modelId: string) => {
+    const model = compatibleModels.find(m => m.id === modelId);
+    if (!model) return;
+
+    Alert.alert(
+      'Descarcă model',
+      `${model.name} ocupă ${model.sizeLabel}. Asigură-te că ai spațiu liber și o conexiune Wi-Fi. Continui?`,
+      [
+        { text: 'Anulează', style: 'cancel' },
+        {
+          text: 'Descarcă',
+          onPress: async () => {
+            setDownloadingModelId(modelId);
+            setDownloadProgress(0);
+            try {
+              await FileSystem.makeDirectoryAsync(
+                (FileSystem.documentDirectory ?? '') + 'models/',
+                { intermediates: true }
+              );
+              const resumable = localModel.createModelDownload(
+                modelId,
+                (progress, dlMb, totalMb) => {
+                  setDownloadProgress(progress);
+                  setDownloadedMb(dlMb);
+                  setDownloadTotalMb(totalMb);
+                }
+              );
+              downloadResumableRef.current = resumable;
+              await resumable.downloadAsync();
+              setDownloadedModelIds(prev => [...prev, modelId]);
+              await localModel.setSelectedModelId(modelId);
+              setAiProviderType('local');
+              await aiProvider.saveAiConfig({ type: 'local', url: '', model: modelId });
+            } catch (e) {
+              await localModel.deleteModel(modelId);
+              Alert.alert('Eroare', e instanceof Error ? e.message : 'Descărcarea a eșuat.');
+            } finally {
+              setDownloadingModelId(null);
+              downloadResumableRef.current = null;
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleCancelDownload = async () => {
+    if (downloadResumableRef.current) {
+      await downloadResumableRef.current.pauseAsync().catch(() => {});
+      downloadResumableRef.current = null;
+    }
+    if (downloadingModelId) {
+      await localModel.deleteModel(downloadingModelId);
+    }
+    setDownloadingModelId(null);
+    setDownloadProgress(0);
+  };
+
+  const handleDeleteModel = (modelId: string) => {
+    const model = compatibleModels.find(m => m.id === modelId);
+    Alert.alert(
+      'Șterge model',
+      `Ești sigur că vrei să ștergi ${model?.name ?? modelId}? Va trebui să îl descarci din nou.`,
+      [
+        { text: 'Anulează', style: 'cancel' },
+        {
+          text: 'Șterge',
+          style: 'destructive',
+          onPress: async () => {
+            await localModel.deleteModel(modelId);
+            setDownloadedModelIds(prev => prev.filter(id => id !== modelId));
+            const selected = await localModel.getSelectedModelId();
+            if (selected === modelId) {
+              await localModel.disposeLocalModel().catch(() => {});
+              setAiProviderType('builtin');
+              await aiProvider.saveAiConfig({
+                type: 'builtin',
+                url: aiProvider.PROVIDER_DEFAULTS.builtin.url,
+                model: aiProvider.PROVIDER_DEFAULTS.builtin.model,
+              });
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleLocalOcrToggle = async (value: boolean) => {
+    setLocalOcrEnabledState(value);
+    await localModel.setLocalOcrEnabled(value);
+  };
+
+  const handleSelectLocalModel = async (modelId: string) => {
+    await localModel.setSelectedModelId(modelId);
+    setAiProviderType('local');
+    await aiProvider.saveAiConfig({ type: 'local', url: '', model: modelId });
   };
 
   const handleSaveAiConfig = async () => {
@@ -1096,33 +1220,144 @@ export default function SetariScreen() {
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
           >
-            {/* Selector provider */}
+            {/* Selector AI unificat */}
             <RNView>
-              <RNText style={[styles.aiLabel, { color: C.textSecondary }]}>Provider</RNText>
-              <RNView style={styles.chipRow}>
-                {(Object.keys(aiProvider.PROVIDER_DEFAULTS) as AiProviderType[]).map(type => (
-                  <Pressable
-                    key={type}
-                    style={[
-                      styles.chip,
-                      aiProviderType === type
-                        ? [styles.chipActive, { borderColor: primary }]
-                        : { borderColor: C.border },
-                    ]}
-                    onPress={() => handleAiProviderSelect(type)}
-                  >
-                    <RNText
-                      style={[
-                        styles.chipText,
-                        { color: aiProviderType === type ? '#fff' : C.textSecondary },
-                      ]}
-                    >
-                      {aiProvider.PROVIDER_DEFAULTS[type].label}
-                    </RNText>
-                  </Pressable>
-                ))}
-              </RNView>
+              <RNText style={[styles.aiLabel, { color: C.textSecondary }]}>Configurare asistent AI</RNText>
+              {(['none', 'builtin', 'mistral', 'openai', 'custom'] as AiProviderType[]).map(type => (
+                <Pressable
+                  key={type}
+                  style={[
+                    styles.aiRadioRow,
+                    { borderColor: aiProviderType === type ? primary : C.border, backgroundColor: C.card },
+                  ]}
+                  onPress={() => handleAiProviderSelect(type)}
+                >
+                  <RNView style={[styles.aiRadioDot, { borderColor: aiProviderType === type ? primary : C.border }]}>
+                    {aiProviderType === type && (
+                      <RNView style={[styles.aiRadioDotInner, { backgroundColor: primary }]} />
+                    )}
+                  </RNView>
+                  <RNText style={[styles.chipText, { color: C.text, flex: 1 }]}>
+                    {aiProvider.PROVIDER_DEFAULTS[type].label}
+                  </RNText>
+                </Pressable>
+              ))}
+              {downloadedModelIds.length > 0 && (
+                <>
+                  <RNText style={[styles.aiLabel, { color: C.textSecondary, marginTop: 8 }]}>
+                    Modele locale instalate
+                  </RNText>
+                  {downloadedModelIds.map(modelId => {
+                    const model = compatibleModels.find(m => m.id === modelId);
+                    if (!model) return null;
+                    return (
+                      <Pressable
+                        key={modelId}
+                        style={[
+                          styles.aiRadioRow,
+                          { borderColor: aiProviderType === 'local' ? primary : C.border, backgroundColor: C.card },
+                        ]}
+                        onPress={() => handleSelectLocalModel(modelId)}
+                      >
+                        <RNView style={[styles.aiRadioDot, { borderColor: aiProviderType === 'local' ? primary : C.border }]}>
+                          {aiProviderType === 'local' && (
+                            <RNView style={[styles.aiRadioDotInner, { backgroundColor: primary }]} />
+                          )}
+                        </RNView>
+                        <RNView style={{ flex: 1 }}>
+                          <RNText style={[styles.chipText, { color: C.text }]}>{model.name}</RNText>
+                          <RNText style={[styles.aiLabel, { color: C.textSecondary }]}>
+                            {'★'.repeat(model.qualityStars)} · {model.sizeLabel}
+                          </RNText>
+                        </RNView>
+                      </Pressable>
+                    );
+                  })}
+                </>
+              )}
             </RNView>
+
+            {/* Catalog modele locale */}
+            {compatibleModels.length > 0 && (
+              <RNView>
+                <RNText style={[styles.aiLabel, { color: C.textSecondary }]}>
+                  Modele disponibile pentru telefonul tău
+                </RNText>
+                {compatibleModels.map(model => {
+                  const isDownloaded = downloadedModelIds.includes(model.id);
+                  const isDownloading = downloadingModelId === model.id;
+                  return (
+                    <RNView
+                      key={model.id}
+                      style={[styles.modelCard, { backgroundColor: C.card, borderColor: C.border }]}
+                    >
+                      <RNView style={styles.modelCardHeader}>
+                        <RNView style={{ flex: 1 }}>
+                          <RNText style={[styles.aiToggleLabel, { color: C.text }]}>{model.name}</RNText>
+                          <RNText style={[styles.aiLabel, { color: C.textSecondary, marginTop: 2 }]}>
+                            {'★'.repeat(model.qualityStars)}{'☆'.repeat(5 - model.qualityStars)} · {model.sizeLabel}
+                          </RNText>
+                        </RNView>
+                        {isDownloaded && !isDownloading && (
+                          <Pressable onPress={() => handleDeleteModel(model.id)} hitSlop={8}>
+                            <RNText style={[styles.aiLabel, { color: '#e74c3c' }]}>Șterge</RNText>
+                          </Pressable>
+                        )}
+                        {!isDownloaded && !isDownloading && (
+                          <Pressable
+                            onPress={() => handleDownloadModel(model.id)}
+                            style={[styles.downloadBtn, { backgroundColor: primary }]}
+                          >
+                            <RNText style={styles.downloadBtnText}>Descarcă</RNText>
+                          </Pressable>
+                        )}
+                      </RNView>
+                      <RNText style={[styles.aiToggleSub, { color: C.textSecondary }]}>
+                        {model.description}
+                      </RNText>
+                      {isDownloading && (
+                        <RNView style={{ marginTop: 8 }}>
+                          <RNView style={[styles.progressBar, { backgroundColor: C.border }]}>
+                            <RNView
+                              style={[
+                                styles.progressFill,
+                                { backgroundColor: primary, width: `${Math.round(downloadProgress * 100)}%` as `${number}%` },
+                              ]}
+                            />
+                          </RNView>
+                          <RNText style={[styles.aiLabel, { color: C.textSecondary, marginTop: 4 }]}>
+                            {Math.round(downloadedMb)}MB / {Math.round(downloadTotalMb)}MB ({Math.round(downloadProgress * 100)}%)
+                          </RNText>
+                          <Pressable onPress={handleCancelDownload} style={{ marginTop: 4 }}>
+                            <RNText style={[styles.aiLabel, { color: '#e74c3c' }]}>Anulează</RNText>
+                          </Pressable>
+                        </RNView>
+                      )}
+                      {isDownloaded && !isDownloading && (
+                        <RNText style={[styles.aiLabel, { color: '#27ae60', marginTop: 4 }]}>✓ Instalat</RNText>
+                      )}
+                    </RNView>
+                  );
+                })}
+                {downloadedModelIds.length > 0 && (
+                  <RNView style={[styles.aiToggleCard, { backgroundColor: C.card, borderColor: C.border, marginTop: 8 }]}>
+                    <RNView style={styles.aiToggleText}>
+                      <RNText style={[styles.aiToggleLabel, { color: C.text }]}>
+                        Folosește și pentru OCR documente
+                      </RNText>
+                      <RNText style={[styles.aiToggleSub, { color: C.textSecondary }]}>
+                        Extragerea datelor la scanare se face local, fără cloud
+                      </RNText>
+                    </RNView>
+                    <Switch
+                      value={localOcrEnabled}
+                      onValueChange={handleLocalOcrToggle}
+                      trackColor={{ false: '#ccc', true: primary }}
+                    />
+                  </RNView>
+                )}
+              </RNView>
+            )}
 
             {/* Descriere builtin */}
             {aiProviderType === 'builtin' && (
@@ -1523,5 +1758,78 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 18,
     marginTop: 4,
+  },
+  aiRadioRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: 8,
+    gap: 12,
+  },
+  aiRadioDot: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  aiRadioDotInner: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  modelCard: {
+    borderRadius: 10,
+    borderWidth: 1,
+    padding: 12,
+    marginBottom: 10,
+  },
+  modelCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  downloadBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  downloadBtnText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  progressBar: {
+    height: 4,
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: 4,
+    borderRadius: 2,
+  },
+  aiToggleCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 10,
+    borderWidth: 1,
+    padding: 12,
+    gap: 12,
+  },
+  aiToggleText: {
+    flex: 1,
+  },
+  aiToggleLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  aiToggleSub: {
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 2,
   },
 });

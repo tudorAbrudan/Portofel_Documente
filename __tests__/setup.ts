@@ -12,9 +12,14 @@ jest.mock('expo-file-system/legacy', () => ({
   makeDirectoryAsync: jest.fn().mockResolvedValue(undefined),
   getInfoAsync: jest.fn().mockResolvedValue({ exists: false, isDirectory: false }),
   readDirectoryAsync: jest.fn().mockResolvedValue([]),
+  createDownloadResumable: jest.fn(() => ({
+    downloadAsync: jest.fn().mockResolvedValue({ uri: 'file:///test/Documents/models/test.gguf' }),
+    pauseAsync: jest.fn().mockResolvedValue(undefined),
+  })),
 }));
 
 jest.mock('@react-native-async-storage/async-storage', () => ({
+  __esModule: true,
   default: {
     getItem: jest.fn().mockResolvedValue(null),
     setItem: jest.fn().mockResolvedValue(undefined),
@@ -84,4 +89,16 @@ jest.mock('expo-local-authentication', () => ({
   authenticateAsync: jest.fn().mockResolvedValue({ success: false }),
   hasHardwareAsync: jest.fn().mockResolvedValue(false),
   isEnrolledAsync: jest.fn().mockResolvedValue(false),
+}));
+
+jest.mock('expo-device', () => ({
+  totalMemory: 6 * 1024 * 1024 * 1024, // 6GB — iPhone 14 Pro
+  modelName: 'iPhone 14 Pro',
+}));
+
+jest.mock('llama.rn', () => ({
+  initLlama: jest.fn().mockResolvedValue({
+    completion: jest.fn().mockResolvedValue({ text: 'răspuns mock' }),
+    release: jest.fn().mockResolvedValue(undefined),
+  }),
 }));

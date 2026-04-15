@@ -30,7 +30,7 @@ export async function isAiLimitReached(): Promise<boolean> {
 
 // ─── Tipuri ────────────────────────────────────────────────────────────────────
 
-export type AiProviderType = 'builtin' | 'mistral' | 'openai' | 'custom';
+export type AiProviderType = 'none' | 'builtin' | 'mistral' | 'openai' | 'custom' | 'local';
 
 export interface AiProviderConfig {
   type: AiProviderType;
@@ -70,6 +70,16 @@ export const PROVIDER_DEFAULTS: Record<
     url: '',
     model: '',
     label: 'Custom',
+  },
+  none: {
+    url: '',
+    model: '',
+    label: 'Fără AI',
+  },
+  local: {
+    url: '',
+    model: '',
+    label: 'Model local',
   },
 };
 
@@ -139,6 +149,19 @@ interface OpenAiResponse {
 
 export async function sendAiRequest(messages: AiMessage[], maxTokens = 500): Promise<string> {
   const config = await getAiConfig();
+
+  // Fără AI
+  if (config.type === 'none') {
+    throw new Error(
+      'Asistentul AI este dezactivat. Activează-l din Setări → Asistent AI.'
+    );
+  }
+
+  // Model local
+  if (config.type === 'local') {
+    const { runLocalInference } = await import('./localModel');
+    return runLocalInference(messages, maxTokens);
+  }
 
   const apiKey = config.type === 'builtin' ? BUILTIN_API_KEY : config.apiKey;
 
