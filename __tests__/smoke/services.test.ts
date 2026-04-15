@@ -56,4 +56,8 @@ describe('Smoke tests — importuri servicii', () => {
   it('ocrExtractors se importă fără erori', () => {
     expect(() => require('@/services/ocrExtractors')).not.toThrow();
   });
+
+  it('localModel se importă fără erori', () => {
+    expect(() => require('@/services/localModel')).not.toThrow();
+  });
 });
