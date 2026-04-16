@@ -80,7 +80,7 @@ Prin utilizarea aplicației ${APP_NAME}, acceptați acești termeni în totalita
 2. DESCRIEREA SERVICIULUI
 ${APP_NAME} este o aplicație mobilă pentru gestionarea documentelor personale (acte de identitate, documente auto, proprietăți, carduri bancare, facturi etc.). Aplicația funcționează local-first – datele sunt stocate exclusiv pe dispozitivul dumneavoastră, fără cont online.
 
-ASISTENT AI OPȚIONAL: Aplicația include un asistent bazat pe inteligență artificială (Mistral AI – mistral.ai). Dacă alegeți să utilizați această funcție și vă dați acordul explicit în prealabil, anumite date (denumiri entități, tipuri documente, date de expirare și emitere, note, date de identificare ale documentelor) sunt transmise către Mistral AI pentru procesare. Utilizarea asistentului AI este complet opțională; restul aplicației funcționează 100% offline.
+ASISTENT AI OPȚIONAL: Aplicația include un asistent bazat pe inteligență artificială. Dacă alegeți să utilizați această funcție și vă dați acordul explicit în prealabil, anumite date (denumiri entități, tipuri documente, date de expirare și emitere, note, date de identificare ale documentelor) sunt transmise către serviciul AI configurat pentru procesare. Utilizarea asistentului AI este complet opțională; restul aplicației funcționează 100% offline.
 
 3. UTILIZARE PERMISĂ
 Aplicația este destinată exclusiv uzului personal și familial. Nu este permisă utilizarea comercială fără acordul scris al dezvoltatorului.
@@ -116,19 +116,18 @@ ${APP_NAME} stochează local, pe dispozitivul dumneavoastră:
 Nu există server propriu, nu există cont de utilizator, nu există analiză de trafic, nu există reclame, nu există trackere.
 
 3. ASISTENT AI OPȚIONAL – SERVICIU TERȚ
-Dacă alegeți să utilizați funcția de asistent AI (chat sau scanare OCR), după acordul dumneavoastră explicit, anumite date sunt transmise către Mistral AI (mistral.ai), un serviciu terț de inteligență artificială:
+Dacă alegeți să utilizați funcția de asistent AI (chat sau scanare OCR), după acordul dumneavoastră explicit, anumite date sunt transmise către serviciul AI configurat (cloud extern):
 • Ce se trimite: textul extras din documente (OCR), denumiri entități (persoane, vehicule, proprietăți, carduri, animale), tipuri documente, date de expirare și emitere, note, date de identificare (serie acte, CNP, nr. înmatriculare, nr. înregistrare și alte câmpuri completate)
 • Ce NU se trimite: fotografii ale documentelor, numărul CVV, PIN-ul aplicației, datele sensibile
-• Cu propria cheie API (gratuită de pe mistral.ai), puteți controla exact ce provider procesează datele
+• Puteți configura propriul provider AI (URL + cheie API) din Setări → Asistent AI
 • Transmiterea are loc EXCLUSIV cu consimțământul explicit acordat anterior
-• Consimțământul poate fi revocat oricând din Setări → Date și confidențialitate
-• Politica de confidențialitate Mistral AI: https://mistral.ai/terms
+• Consultați politica de confidențialitate a providerului AI ales
 
 4. TEMEIUL JURIDIC
-Procesăm datele în baza consimțământului dumneavoastră explicit (art. 6 alin. 1 lit. a GDPR), dat prin instalarea și utilizarea aplicației. Pentru asistentul AI, consimțământul este solicitat separat și explicit.
+Procesăm datele în baza consimțământului dumneavoastră explicit (art. 6 alin. 1 lit. a GDPR). Pentru asistentul AI, consimțământul este solicitat explicit la configurare.
 
 5. CÂT TIMP PĂSTRĂM DATELE
-Datele rămân pe dispozitivul dumneavoastră atâta timp cât utilizați aplicația. La dezinstalare, toate datele sunt șterse automat de sistemul de operare. Datele transmise asistentului AI sunt procesate de Mistral AI conform propriei lor politici de retenție.
+Datele rămân pe dispozitivul dumneavoastră atâta timp cât utilizați aplicația. La dezinstalare, toate datele sunt șterse automat de sistemul de operare. Datele transmise asistentului AI sunt procesate de providerul AI ales conform propriei politici de retenție.
 
 6. DREPTURILE DUMNEAVOASTRĂ (GDPR)
 Aveți dreptul la:
@@ -136,7 +135,7 @@ Aveți dreptul la:
 • Rectificare – puteți edita orice dată oricând
 • Ștergere – folosiți funcția „Șterge toate datele" din Setări
 • Portabilitate – exportați datele ca fișier ZIP din funcția Backup
-• Retragerea consimțământului AI – Setări → Date și confidențialitate → Revocare consimțământ AI
+• Reconfigurare / dezactivare asistent AI – Setări → Asistent AI
 • Opoziție – dezinstalați aplicația
 
 7. BACKUP ÎN CLOUD
