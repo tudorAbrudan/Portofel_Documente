@@ -73,6 +73,8 @@ export const PROVIDER_DEFAULTS: Record<
   },
 };
 
+const VALID_PROVIDER_TYPES = new Set<string>(Object.keys(PROVIDER_DEFAULTS));
+
 // ─── Chei stocare ─────────────────────────────────────────────────────────────
 
 const KEY_PROVIDER_TYPE = 'ai_provider_type';
@@ -98,10 +100,13 @@ export async function getAiConfig(): Promise<AiProviderConfig> {
   };
   const rawType = typeRaw ?? 'builtin';
   const type: AiProviderType =
-    (legacyMap[rawType] as AiProviderType | undefined) ??
-    (['none', 'builtin', 'external', 'local'].includes(rawType)
-      ? (rawType as AiProviderType)
-      : 'builtin');
+    legacyMap[rawType] ??
+    (VALID_PROVIDER_TYPES.has(rawType) ? (rawType as AiProviderType) : 'builtin');
+
+  // Persistă migrarea — scrie valoarea nouă în storage dacă era o valoare veche
+  if (legacyMap[rawType]) {
+    void AsyncStorage.setItem(KEY_PROVIDER_TYPE, type);
+  }
 
   const defaults = PROVIDER_DEFAULTS[type];
 
