@@ -72,7 +72,7 @@ const APP_NAME = Constants.expoConfig?.name ?? 'Documente';
 
 // ─── Texte legale ─────────────────────────────────────────────────────────────
 const TERMS_TEXT = `TERMENI ȘI CONDIȚII DE UTILIZARE
-Versiunea 1.0 – Martie 2025
+Versiunea 1.1 – Aprilie 2026
 
 1. ACCEPTAREA TERMENILOR
 Prin utilizarea aplicației ${APP_NAME}, acceptați acești termeni în totalitate. Dacă nu sunteți de acord, vă rugăm să nu utilizați aplicația.
@@ -101,7 +101,7 @@ Acești termeni pot fi actualizați. Versiunea curentă este disponibilă în ap
 Pentru orice întrebare: ${CONTACT_EMAIL}`;
 
 const PRIVACY_TEXT = `POLITICĂ DE CONFIDENȚIALITATE (GDPR)
-Versiunea 1.0 – Martie 2025
+Versiunea 1.1 – Aprilie 2026
 
 1. IDENTITATEA OPERATORULUI
 ${APP_NAME} este dezvoltată și operată de [Numele tău / Firma ta], cu sediul în România.

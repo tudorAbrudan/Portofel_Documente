@@ -336,7 +336,7 @@ function ConsentModal({ visible, colors, onAccept, onDecline }: ConsentModalProp
             </Text>
             <Text style={[styles.consentNote, { color: colors.textSecondary }]}>
               Datele sunt procesate de providerul AI ales conform propriei politici de confidențialitate.
-              Consimțământul poate fi revocat oricând reconfigurând providerul din Setări → Asistent AI.
+              Consimțământul poate fi revocat oricând dezactivând providerul din Setări → Asistent AI.
               Dacă nu dorești să partajezi aceste date, apasă „Nu accept".
             </Text>
           </ScrollView>
