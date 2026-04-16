@@ -9,6 +9,7 @@ import {
   Switch,
   Linking,
   Alert,
+  TextInput,
 } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -49,7 +50,6 @@ const AI_STEP = 7;
 const SUMMARY = 8;
 
 const AI_CONSENT_KEY = 'ai_assistant_consent_accepted';
-const MISTRAL_CONSOLE_URL = 'https://console.mistral.ai/api-keys';
 
 const NOTIF_DAY_OPTIONS = [7, 14, 30] as const;
 
@@ -154,6 +154,10 @@ export default function OnboardingWizard({ onComplete }: Props) {
   const [lockEnabled, setLockEnabled] = useState(false);
   const [pinModalVisible, setPinModalVisible] = useState(false);
   const [aiProviderChoice, setAiProviderChoice] = useState<AiProviderType>('builtin');
+  const [aiExternalUrl, setAiExternalUrl] = useState('');
+  const [aiExternalApiKey, setAiExternalApiKey] = useState('');
+  const [aiExternalModel, setAiExternalModel] = useState('');
+  const [aiConsentChecked, setAiConsentChecked] = useState(false);
 
   useEffect(() => {
     settings.getPushEnabled().then(setPushEnabled);
@@ -240,16 +244,27 @@ export default function OnboardingWizard({ onComplete }: Props) {
     await settings.setPushEnabled(pushEnabled);
     await settings.setNotificationDays(notifDays);
     await scheduleExpirationReminders();
-    const aiActive = aiProviderChoice !== 'none';
-    await AsyncStorage.setItem(AI_CONSENT_KEY, aiActive ? 'true' : 'false');
+    const isRemote = aiProviderChoice === 'builtin' || aiProviderChoice === 'external';
+    await AsyncStorage.setItem(AI_CONSENT_KEY, isRemote && aiConsentChecked ? 'true' : 'false');
     await aiProvider.saveAiConfig({
       type: aiProviderChoice,
-      url: aiProvider.PROVIDER_DEFAULTS[aiProviderChoice]?.url ?? '',
-      model: aiProvider.PROVIDER_DEFAULTS[aiProviderChoice]?.model ?? '',
+      url: aiProviderChoice === 'external' ? aiExternalUrl : aiProvider.PROVIDER_DEFAULTS[aiProviderChoice]?.url ?? '',
+      model: aiProviderChoice === 'external' ? aiExternalModel : aiProvider.PROVIDER_DEFAULTS[aiProviderChoice]?.model ?? '',
     });
+    if (aiProviderChoice === 'external') {
+      await aiProvider.saveAiApiKey(aiExternalApiKey);
+    }
     await settings.setOnboardingDone();
     onComplete();
   }
+
+  const canProceedFromAiStep = (): boolean => {
+    if (step !== AI_STEP) return true;
+    const isRemote = aiProviderChoice === 'builtin' || aiProviderChoice === 'external';
+    if (isRemote && !aiConsentChecked) return false;
+    if (aiProviderChoice === 'external' && (!aiExternalUrl.trim() || !aiExternalApiKey.trim() || !aiExternalModel.trim())) return false;
+    return true;
+  };
 
   function handleFooterPrimary() {
     if (step === SUMMARY) {
@@ -602,27 +617,23 @@ export default function OnboardingWizard({ onComplete }: Props) {
                   type: 'builtin' as AiProviderType,
                   title: 'Dosar AI (recomandat)',
                   desc: 'Cloud · 20 interogări/zi gratuit · Pornești imediat, fără configurare',
-                  extra: null,
                 },
                 {
-                  type: 'mistral' as AiProviderType,
+                  type: 'external' as AiProviderType,
                   title: 'Cheie API proprie',
-                  desc: 'Cloud · Nelimitat · Mistral sau OpenAI · Necesită cont gratuit',
-                  extra: 'mistral',
+                  desc: 'Cloud · Nelimitat · Orice provider compatibil OpenAI (Mistral, OpenAI etc.)',
                 },
                 {
                   type: 'local' as AiProviderType,
                   title: 'Model local',
                   desc: 'Pe device · Privat · Nelimitat · Offline · Download 800MB–4GB din Setări',
-                  extra: null,
                 },
                 {
                   type: 'none' as AiProviderType,
                   title: 'Fără AI',
                   desc: 'Aplicația funcționează complet offline, fără asistent',
-                  extra: null,
                 },
-              ] as Array<{ type: AiProviderType; title: string; desc: string; extra: string | null }>
+              ] as Array<{ type: AiProviderType; title: string; desc: string }>
             ).map(option => (
               <Pressable
                 key={option.type}
@@ -633,21 +644,14 @@ export default function OnboardingWizard({ onComplete }: Props) {
                     borderColor: aiProviderChoice === option.type ? C.primary : C.border,
                   },
                 ]}
-                onPress={() => setAiProviderChoice(option.type)}
+                onPress={() => {
+                  setAiProviderChoice(option.type);
+                  setAiConsentChecked(false);
+                }}
               >
                 <View style={styles.aiToggleText}>
                   <Text style={[styles.aiToggleLabel, { color: C.text }]}>{option.title}</Text>
                   <Text style={[styles.aiToggleSub, { color: C.textSecondary }]}>{option.desc}</Text>
-                  {option.extra === 'mistral' && aiProviderChoice === 'mistral' && (
-                    <Pressable
-                      onPress={() => Linking.openURL(MISTRAL_CONSOLE_URL)}
-                      style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1, marginTop: 6 }]}
-                    >
-                      <Text style={[styles.link, { color: C.primary }]}>
-                        Creează cheie gratuită → mistral.ai
-                      </Text>
-                    </Pressable>
-                  )}
                 </View>
                 <View
                   style={[
@@ -662,9 +666,90 @@ export default function OnboardingWizard({ onComplete }: Props) {
               </Pressable>
             ))}
 
+            {/* Câmpuri pentru external */}
+            {aiProviderChoice === 'external' && (
+              <View style={{ gap: 8, marginTop: 4 }}>
+                <TextInput
+                  style={[styles.aiInput, { color: C.text, borderColor: C.border, backgroundColor: C.card }]}
+                  value={aiExternalUrl}
+                  onChangeText={setAiExternalUrl}
+                  placeholder="URL API (ex: https://api.mistral.ai/v1)"
+                  placeholderTextColor={C.textSecondary}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="url"
+                />
+                <TextInput
+                  style={[styles.aiInput, { color: C.text, borderColor: C.border, backgroundColor: C.card }]}
+                  value={aiExternalApiKey}
+                  onChangeText={setAiExternalApiKey}
+                  placeholder="Cheie API"
+                  placeholderTextColor={C.textSecondary}
+                  secureTextEntry
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                <TextInput
+                  style={[styles.aiInput, { color: C.text, borderColor: C.border, backgroundColor: C.card }]}
+                  value={aiExternalModel}
+                  onChangeText={setAiExternalModel}
+                  placeholder="Model (ex: mistral-small-latest)"
+                  placeholderTextColor={C.textSecondary}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </View>
+            )}
+
+            {/* Acord AI */}
+            {(aiProviderChoice === 'builtin' || aiProviderChoice === 'external') && (
+              <Pressable
+                style={[
+                  styles.aiToggleCard,
+                  {
+                    backgroundColor: C.card,
+                    borderColor: aiConsentChecked ? C.primary : C.border,
+                    flexDirection: 'row',
+                    alignItems: 'flex-start',
+                    gap: 12,
+                  },
+                ]}
+                onPress={() => setAiConsentChecked(v => !v)}
+              >
+                <View
+                  style={{
+                    width: 22,
+                    height: 22,
+                    borderRadius: 4,
+                    borderWidth: 2,
+                    borderColor: aiConsentChecked ? C.primary : C.border,
+                    backgroundColor: aiConsentChecked ? C.primary : 'transparent',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginTop: 1,
+                    flexShrink: 0,
+                  }}
+                >
+                  {aiConsentChecked && (
+                    <Text style={{ color: '#fff', fontSize: 14, fontWeight: '700' }}>✓</Text>
+                  )}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.aiToggleLabel, { color: C.text, fontSize: 14 }]}>
+                    {aiProviderChoice === 'builtin'
+                      ? 'Sunt de acord cu trimiterea datelor la serviciul Dosar AI'
+                      : 'Sunt de acord cu trimiterea datelor la serviciul AI configurat'}
+                  </Text>
+                  <Text style={[styles.aiToggleSub, { color: C.textSecondary }]}>
+                    Textul extras, numele entităților și detaliile documentelor sunt trimise pentru procesare. Fotografiile și PIN-ul NU sunt trimise.
+                  </Text>
+                </View>
+              </Pressable>
+            )}
+
             <Pressable
               onPress={() => Linking.openURL('https://dosarapp.ro/#asistent-ai')}
-              style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1, marginTop: 8 }]}
+              style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1, marginTop: 4 }]}
             >
               <Text style={[styles.link, { color: C.primary }]}>
                 Află mai multe despre opțiunile AI →
@@ -737,16 +822,22 @@ export default function OnboardingWizard({ onComplete }: Props) {
               <Text style={[styles.btnBackText, { color: C.primary }]}>Înapoi</Text>
             </Pressable>
           )}
-          <Pressable
-            style={({ pressed }) => [
-              styles.btnNext,
-              step === WELCOME && styles.btnNextSingle,
-              { backgroundColor: C.primary, opacity: pressed ? 0.85 : 1 },
-            ]}
-            onPress={handleFooterPrimary}
-          >
-            <Text style={styles.btnNextText}>{step === SUMMARY ? 'Finalizează' : 'Continuă'}</Text>
-          </Pressable>
+          {(() => {
+            const isNextDisabled = !canProceedFromAiStep();
+            return (
+              <Pressable
+                style={({ pressed }) => [
+                  styles.btnNext,
+                  step === WELCOME && styles.btnNextSingle,
+                  { backgroundColor: C.primary, opacity: isNextDisabled ? 0.4 : pressed ? 0.85 : 1 },
+                ]}
+                onPress={handleFooterPrimary}
+                disabled={isNextDisabled}
+              >
+                <Text style={styles.btnNextText}>{step === SUMMARY ? 'Finalizează' : 'Continuă'}</Text>
+              </Pressable>
+            );
+          })()}
         </View>
         {step < SUMMARY && (
           <Pressable
@@ -959,6 +1050,14 @@ const styles = StyleSheet.create({
     width: 10,
     height: 10,
     borderRadius: 5,
+  },
+  aiInput: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 15,
+    height: 46,
   },
 
   footer: {
