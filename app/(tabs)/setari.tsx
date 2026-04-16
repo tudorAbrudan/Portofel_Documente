@@ -436,6 +436,7 @@ export default function SetariScreen() {
     setAiProviderUrl(defaults.url);
     setAiProviderModel(defaults.model);
     setAiTestStatus('idle');
+    setAiTestMessage('');
     if (type === 'local' || type === 'none') {
       setAiModalConsentChecked(false);
     }
@@ -556,8 +557,12 @@ export default function SetariScreen() {
         await AsyncStorage.setItem('ai_assistant_consent_accepted', 'true');
         setAiConsentGiven(true);
       } else if (!isRemote) {
+        const hadConsent = aiConsentGiven;
         await AsyncStorage.removeItem('ai_assistant_consent_accepted');
         setAiConsentGiven(false);
+        if (hadConsent) {
+          Alert.alert('Acord revocat', 'Consimțământul pentru asistentul AI a fost revocat automat deoarece ai ales o opțiune fără conexiune externă.');
+        }
       }
       setAiModalVisible(false);
     } catch (e) {
@@ -1391,7 +1396,7 @@ export default function SetariScreen() {
                 style={[
                   styles.aiToggleCard,
                   {
-                    backgroundColor: aiModalConsentChecked ? '#F1F8E9' : C.card,
+                    backgroundColor: C.card,
                     borderColor: aiModalConsentChecked ? primary : C.border,
                     flexDirection: 'row',
                     alignItems: 'flex-start',
@@ -1420,7 +1425,9 @@ export default function SetariScreen() {
                 </RNView>
                 <RNView style={{ flex: 1 }}>
                   <RNText style={[styles.aiToggleLabel, { color: C.text, fontSize: 14 }]}>
-                    Sunt de acord cu trimiterea datelor la un serviciu AI extern
+                    {aiProviderType === 'builtin'
+                      ? 'Sunt de acord cu trimiterea datelor la serviciul Dosar AI'
+                      : 'Sunt de acord cu trimiterea datelor la serviciul AI configurat'}
                   </RNText>
                   <RNText style={[styles.aiToggleSub, { color: C.textSecondary }]}>
                     Textul extras, numele entităților și detaliile documentelor sunt trimise pentru procesare. Fotografiile și PIN-ul NU sunt trimise.
