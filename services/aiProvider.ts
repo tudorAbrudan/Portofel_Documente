@@ -30,7 +30,7 @@ export async function isAiLimitReached(): Promise<boolean> {
 
 // ─── Tipuri ────────────────────────────────────────────────────────────────────
 
-export type AiProviderType = 'none' | 'builtin' | 'mistral' | 'openai' | 'custom' | 'local';
+export type AiProviderType = 'none' | 'builtin' | 'external' | 'local';
 
 export interface AiProviderConfig {
   type: AiProviderType;
@@ -56,20 +56,10 @@ export const PROVIDER_DEFAULTS: Record<
     model: BUILTIN_MODEL,
     label: 'Dosar AI',
   },
-  mistral: {
-    url: 'https://api.mistral.ai/v1',
-    model: 'mistral-small-latest',
-    label: 'Mistral AI',
-  },
-  openai: {
-    url: 'https://api.openai.com/v1',
-    model: 'gpt-4o-mini',
-    label: 'OpenAI',
-  },
-  custom: {
+  external: {
     url: '',
     model: '',
-    label: 'Custom',
+    label: 'Cheie API proprie',
   },
   none: {
     url: '',
@@ -100,7 +90,19 @@ export async function getAiConfig(): Promise<AiProviderConfig> {
     getAiApiKey(),
   ]);
 
-  const type = (typeRaw as AiProviderType | null) ?? 'builtin';
+  // Migrare valori vechi → external
+  const legacyMap: Record<string, AiProviderType> = {
+    mistral: 'external',
+    openai: 'external',
+    custom: 'external',
+  };
+  const rawType = typeRaw ?? 'builtin';
+  const type: AiProviderType =
+    (legacyMap[rawType] as AiProviderType | undefined) ??
+    (['none', 'builtin', 'external', 'local'].includes(rawType)
+      ? (rawType as AiProviderType)
+      : 'builtin');
+
   const defaults = PROVIDER_DEFAULTS[type];
 
   return {
