@@ -348,6 +348,8 @@ export default function OnboardingWizard({ onComplete }: Props) {
     'Fișierele sunt izolate în sandbox-ul sistemului; alte aplicații nu le văd.',
   ];
 
+  const isNextDisabled = !canProceedFromAiStep();
+
   return (
     <View style={[styles.overlay, { backgroundColor: C.background }]}>
       <View style={[styles.header, { paddingTop: insets.top + 16, borderBottomColor: C.border }]}>
@@ -822,24 +824,19 @@ export default function OnboardingWizard({ onComplete }: Props) {
               <Text style={[styles.btnBackText, { color: C.primary }]}>Înapoi</Text>
             </Pressable>
           )}
-          {(() => {
-            const isNextDisabled = !canProceedFromAiStep();
-            return (
-              <Pressable
-                style={({ pressed }) => [
-                  styles.btnNext,
-                  step === WELCOME && styles.btnNextSingle,
-                  { backgroundColor: C.primary, opacity: isNextDisabled ? 0.4 : pressed ? 0.85 : 1 },
-                ]}
-                onPress={handleFooterPrimary}
-                disabled={isNextDisabled}
-              >
-                <Text style={styles.btnNextText}>{step === SUMMARY ? 'Finalizează' : 'Continuă'}</Text>
-              </Pressable>
-            );
-          })()}
+          <Pressable
+            style={({ pressed }) => [
+              styles.btnNext,
+              step === WELCOME && styles.btnNextSingle,
+              { backgroundColor: C.primary, opacity: isNextDisabled ? 0.4 : pressed ? 0.85 : 1 },
+            ]}
+            onPress={handleFooterPrimary}
+            disabled={isNextDisabled}
+          >
+            <Text style={styles.btnNextText}>{step === SUMMARY ? 'Finalizează' : 'Continuă'}</Text>
+          </Pressable>
         </View>
-        {step < SUMMARY && (
+        {step < SUMMARY && step !== AI_STEP && (
           <Pressable
             style={({ pressed }) => [styles.btnSkip, { opacity: pressed ? 0.6 : 1 }]}
             onPress={() => void handleComplete()}
