@@ -986,11 +986,10 @@ export default function ChatScreen() {
         )
       );
     } catch (e) {
-      const errMsg =
-        e instanceof Error ? e.message : 'A apărut o eroare. Verifică conexiunea la internet.';
-      const errContent = errMsg.includes('limita')
-        ? errMsg
-        : 'A apărut o eroare. Verifică conexiunea la internet și încearcă din nou.';
+      const errContent =
+        e instanceof Error && e.message
+          ? e.message
+          : 'A apărut o eroare. Verifică conexiunea la internet și încearcă din nou.';
       setMessages(prev => [...prev, { role: 'assistant', content: errContent }]);
     } finally {
       setSendLoading(false);

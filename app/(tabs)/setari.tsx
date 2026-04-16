@@ -556,12 +556,16 @@ export default function SetariScreen() {
       if (isRemote && aiModalConsentChecked) {
         await AsyncStorage.setItem(AI_CONSENT_KEY, 'true');
         setAiConsentGiven(true);
-      } else if (!isRemote) {
+      } else if (aiProviderType === 'local') {
+        // Model local: fără transmitere externă, acord implicit
+        await AsyncStorage.setItem(AI_CONSENT_KEY, 'true');
+        setAiConsentGiven(true);
+      } else if (aiProviderType === 'none') {
         const hadConsent = aiConsentGiven;
         await AsyncStorage.removeItem(AI_CONSENT_KEY);
         setAiConsentGiven(false);
         if (hadConsent) {
-          Alert.alert('Acord revocat', 'Consimțământul pentru asistentul AI a fost revocat automat deoarece ai ales o opțiune fără conexiune externă.');
+          Alert.alert('Acord revocat', 'Consimțământul pentru asistentul AI a fost revocat automat deoarece ai dezactivat asistentul.');
         }
       }
       setAiModalVisible(false);

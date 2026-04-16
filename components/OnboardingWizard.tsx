@@ -245,7 +245,9 @@ export default function OnboardingWizard({ onComplete }: Props) {
     await settings.setNotificationDays(notifDays);
     await scheduleExpirationReminders();
     const isRemote = aiProviderChoice === 'builtin' || aiProviderChoice === 'external';
-    await AsyncStorage.setItem(AI_CONSENT_KEY, isRemote && aiConsentChecked ? 'true' : 'false');
+    // Local: fără transmitere externă, acord implicit; none: fără AI
+    const consentValue = (isRemote && aiConsentChecked) || aiProviderChoice === 'local' ? 'true' : 'false';
+    await AsyncStorage.setItem(AI_CONSENT_KEY, consentValue);
     await aiProvider.saveAiConfig({
       type: aiProviderChoice,
       url: aiProviderChoice === 'external' ? aiExternalUrl : aiProvider.PROVIDER_DEFAULTS[aiProviderChoice]?.url ?? '',
