@@ -8,6 +8,7 @@
 
 import { extractText } from '@/services/ocr';
 import * as FileSystem from 'expo-file-system/legacy';
+import { EncodingType } from 'expo-file-system/legacy';
 
 // Import lazy pentru a evita crash dacă modulul nativ nu e disponibil în build
 let _getPdfPageCount: ((filePath: string) => Promise<number>) | null = null;
@@ -74,4 +75,63 @@ export async function extractTextFromPdfViaOcr(fileUri: string): Promise<string>
   const combined = texts.join('\n');
   console.log(`[pdfOcr] total ${combined.length} chars din ${pagesToProcess} pagini`);
   return combined;
+}
+
+/**
+ * Randează toate paginile unui PDF ca JPEG și returnează array de base64 (pentru export PDF).
+ * Paginile care eșuează sunt sărite silențios.
+ */
+export async function renderAllPdfPagesAsBase64(fileUri: string): Promise<string[]> {
+  if (!_getPdfPageCount || !_renderPdfPage) return [];
+
+  const uri = fileUri.startsWith('file://') ? fileUri : `file://${fileUri}`;
+  let pageCount = 0;
+  try {
+    pageCount = await _getPdfPageCount(uri);
+  } catch {
+    return [];
+  }
+
+  const results: string[] = [];
+  for (let i = 0; i < pageCount; i++) {
+    let imageUri: string | null = null;
+    try {
+      imageUri = await _renderPdfPage(uri, i, 2.0);
+      const base64 = await FileSystem.readAsStringAsync(imageUri, { encoding: EncodingType.Base64 });
+      results.push(base64);
+    } catch {
+      // pagina nu poate fi randată — continuăm
+    } finally {
+      if (imageUri) {
+        const path = imageUri.startsWith('file://') ? imageUri.slice(7) : imageUri;
+        FileSystem.deleteAsync(path, { idempotent: true }).catch(() => {});
+      }
+    }
+  }
+  return results;
+}
+
+/**
+ * Randează prima pagină din PDF ca JPEG și returnează base64 (pentru vision AI).
+ * Returnează null dacă modulul nativ nu e disponibil sau dacă randarea eșuează.
+ */
+export async function renderPdfFirstPageForVision(fileUri: string): Promise<string | null> {
+  if (!_renderPdfPage) return null;
+
+  const uri = fileUri.startsWith('file://') ? fileUri : `file://${fileUri}`;
+  let imageUri: string | null = null;
+  try {
+    // scale 2.0 = ~200 DPI, mai clar pentru vision AI
+    imageUri = await _renderPdfPage(uri, 0, 2.0);
+    const base64 = await FileSystem.readAsStringAsync(imageUri, { encoding: EncodingType.Base64 });
+    return base64;
+  } catch (e) {
+    console.log('[pdfOcr] renderForVision eroare:', e instanceof Error ? e.message : String(e));
+    return null;
+  } finally {
+    if (imageUri) {
+      const path = imageUri.startsWith('file://') ? imageUri.slice(7) : imageUri;
+      FileSystem.deleteAsync(path, { idempotent: true }).catch(() => {});
+    }
+  }
 }

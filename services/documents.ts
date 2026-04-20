@@ -1,4 +1,6 @@
+import * as FileSystem from 'expo-file-system/legacy';
 import { db, generateId } from './db';
+import { computeFileHash } from './fileHash';
 import type { Document, DocumentPage, DocumentType, DocumentEntityLink, EntityType } from '@/types';
 
 export interface CreateDocumentInput {
@@ -39,6 +41,7 @@ type Row = {
   auto_delete: string | null;
   ocr_text: string | null;
   metadata: string | null;
+  file_hash: string | null;
   created_at: string;
 };
 
@@ -117,6 +120,7 @@ function mapRow(r: Row, pages?: DocumentPage[]): Document {
     company_id: r.company_id ?? undefined,
     auto_delete: r.auto_delete ?? undefined,
     ocr_text: r.ocr_text ?? undefined,
+    file_hash: r.file_hash ?? undefined,
     created_at: r.created_at,
   };
 }
@@ -208,9 +212,16 @@ export async function getDocumentsByEntity(
 export async function createDocument(input: CreateDocumentInput): Promise<Document> {
   const id = generateId();
   const created_at = new Date().toISOString();
+
+  let file_hash: string | null = null;
+  if (input.file_path) {
+    const abs = `${FileSystem.documentDirectory}${input.file_path}`;
+    file_hash = await computeFileHash(abs);
+  }
+
   await db.runAsync(
-    `INSERT INTO documents (id, type, custom_type_id, issue_date, expiry_date, note, file_path, person_id, property_id, vehicle_id, card_id, animal_id, company_id, metadata, auto_delete, ocr_text, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO documents (id, type, custom_type_id, issue_date, expiry_date, note, file_path, person_id, property_id, vehicle_id, card_id, animal_id, company_id, metadata, auto_delete, ocr_text, file_hash, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       input.type,
@@ -228,6 +239,7 @@ export async function createDocument(input: CreateDocumentInput): Promise<Docume
       input.metadata ? JSON.stringify(input.metadata) : null,
       input.auto_delete ?? null,
       input.ocr_text != null ? input.ocr_text.trim() : null,
+      file_hash,
       created_at,
     ]
   );
@@ -255,6 +267,7 @@ export async function createDocument(input: CreateDocumentInput): Promise<Docume
     company_id: input.company_id,
     auto_delete: input.auto_delete,
     ocr_text: input.ocr_text,
+    file_hash: file_hash ?? undefined,
     entity_links: entityLinks,
     created_at,
   };
@@ -278,13 +291,14 @@ export interface UpdateDocumentInput {
   animal_id?: string;
   auto_delete?: string;
   metadata?: Record<string, string>;
+  ocr_text?: string;
   // Pentru update multi-entity: dacă prezent, rescrie junction table
   entity_links?: DocumentEntityLink[];
 }
 
 export async function updateDocument(id: string, input: UpdateDocumentInput): Promise<void> {
   await db.runAsync(
-    'UPDATE documents SET type=?, custom_type_id=?, issue_date=?, expiry_date=?, note=?, file_path=?, animal_id=?, metadata=?, auto_delete=? WHERE id=?',
+    'UPDATE documents SET type=?, custom_type_id=?, issue_date=?, expiry_date=?, note=?, file_path=?, animal_id=?, metadata=?, auto_delete=?, ocr_text=? WHERE id=?',
     [
       input.type,
       input.custom_type_id ?? null,
@@ -295,6 +309,7 @@ export async function updateDocument(id: string, input: UpdateDocumentInput): Pr
       input.animal_id ?? null,
       input.metadata ? JSON.stringify(input.metadata) : null,
       input.auto_delete ?? null,
+      input.ocr_text ?? null,
       id,
     ]
   );
@@ -484,6 +499,37 @@ export async function findDuplicateDocument(
     if (row) return mapRow(row);
   }
   return null;
+}
+
+export async function findFileDuplicates(): Promise<Document[][]> {
+  const hashes = await db.getAllAsync<{ file_hash: string }>(
+    `SELECT file_hash FROM documents
+     WHERE file_hash IS NOT NULL
+     GROUP BY file_hash
+     HAVING COUNT(*) > 1`
+  );
+  const groups: Document[][] = [];
+  for (const { file_hash } of hashes) {
+    const rows = await db.getAllAsync<Row>(
+      'SELECT * FROM documents WHERE file_hash = ? ORDER BY created_at ASC',
+      [file_hash]
+    );
+    if (rows.length > 1) groups.push(rows.map(r => mapRow(r)));
+  }
+  return groups;
+}
+
+export async function backfillFileHashes(): Promise<void> {
+  const rows = await db.getAllAsync<{ id: string; file_path: string }>(
+    'SELECT id, file_path FROM documents WHERE file_hash IS NULL AND file_path IS NOT NULL'
+  );
+  for (const row of rows) {
+    const abs = `${FileSystem.documentDirectory}${row.file_path}`;
+    const hash = await computeFileHash(abs);
+    if (hash) {
+      await db.runAsync('UPDATE documents SET file_hash = ? WHERE id = ?', [hash, row.id]);
+    }
+  }
 }
 
 export async function getAllDocumentPages(): Promise<DocumentPage[]> {

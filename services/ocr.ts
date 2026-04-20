@@ -294,11 +294,36 @@ export function extractTalonInfo(text: string): TalonInfo {
 
 export interface DocumentInfo {
   cnp?: string; // 13 cifre
+  birth_date?: string; // format AAAA-LL-ZZ (derivat din CNP)
   expiry_date?: string; // format AAAA-LL-ZZ
   issue_date?: string; // format AAAA-LL-ZZ
   series?: string; // seria documentului (ex. "RR 123456", "RT123456")
   name?: string; // NUME + PRENUME concatenate
+  address?: string; // adresa de domiciliu (dacă apare în document)
   rawText?: string; // textul brut pentru debugging
+}
+
+/**
+ * Derivă data nașterii dintr-un CNP românesc.
+ * CNP format: S AA LL ZZ JJ NNN C
+ *   S: 1/2 → 1900-1999, 3/4 → 1800-1899, 5/6 → 2000-2099, 7/8 → 1900-1999 (rezidenți)
+ */
+export function extractDobFromCnp(cnp: string): string | undefined {
+  if (!/^\d{13}$/.test(cnp)) return undefined;
+  const s = parseInt(cnp[0], 10);
+  const aa = parseInt(cnp.slice(1, 3), 10);
+  const ll = cnp.slice(3, 5);
+  const zz = cnp.slice(5, 7);
+  let year: number;
+  if (s === 1 || s === 2) year = 1900 + aa;
+  else if (s === 3 || s === 4) year = 1800 + aa;
+  else if (s === 5 || s === 6) year = 2000 + aa;
+  else if (s === 7 || s === 8) year = 1900 + aa;
+  else return undefined;
+  const month = parseInt(ll, 10);
+  const day = parseInt(zz, 10);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return undefined;
+  return `${year}-${ll}-${zz}`;
 }
 
 interface MrzData {
@@ -374,7 +399,26 @@ export function extractDocumentInfo(text: string): DocumentInfo {
 
   // CNP: exact 13 cifre consecutive
   const cnpMatch = text.match(/\b([1-9]\d{12})\b/);
-  if (cnpMatch) result.cnp = cnpMatch[1];
+  if (cnpMatch) {
+    result.cnp = cnpMatch[1];
+    result.birth_date = extractDobFromCnp(cnpMatch[1]);
+  }
+
+  // Adresă domiciliu (prezentă pe unele CI-uri): caută după keyword "Domiciliu" sau "Adresă"
+  // sau linii care conțin "Str.", "B-dul", "Calea", "Bd.", "Aleea" + număr
+  const addrByKeyword = text.match(
+    /(?:domiciliu|adres[aă])\s*:?\s*\n?\s*(.{10,120})/i
+  );
+  if (addrByKeyword) {
+    result.address = addrByKeyword[1].trim().replace(/\s+/g, ' ');
+  } else {
+    const addrInline = text.match(
+      /\b(?:str\.|strada|b-dul|bulevardul?|calea|aleea|bd\.)\s+[A-ZĂÂÎȘȚ][^\n]{5,80}/i
+    );
+    if (addrInline) {
+      result.address = addrInline[0].trim().replace(/\s+/g, ' ');
+    }
+  }
 
   // Date format: DD.MM.YYYY sau DD/MM/YYYY → conversie la AAAA-LL-ZZ
   function parseDate(s: string): string | undefined {
@@ -491,12 +535,12 @@ export function extractDocumentInfo(text: string): DocumentInfo {
 export function detectDocumentType(text: string): DocumentType | null {
   const t = text.toLowerCase();
 
-  if (/carte de identitate|buletin de identitate|c\.i\.|identity card/.test(t)) return 'buletin';
-  if (/pa[sş]aport|passport/.test(t)) return 'pasaport';
-  if (/permis de conducere|driving licen[sc]e/.test(t)) return 'permis_auto';
   if (/asigurare.*obligatorie|r\.c\.a\.|asigurare rca|\brca\b/.test(t)) return 'rca';
   if (/\bcasco\b/.test(t)) return 'casco';
   if (/inspec[tț]ie tehnic[aă]|inspec[tț]ie periodic[aă]|\bitp\b/.test(t)) return 'itp';
+  if (/carte de identitate|buletin de identitate|c\.i\.|identity card/.test(t)) return 'buletin';
+  if (/pa[sş]aport|passport/.test(t)) return 'pasaport';
+  if (/permis de conducere|driving licen[sc]e/.test(t)) return 'permis_auto';
   if (/vignet[aă]|rovinieta/.test(t)) return 'vigneta';
   if (/carte de identitate a vehiculului|\bciv\b/.test(t)) return 'carte_auto';
   if (/\btalon\b|certificat de [îi]nmatriculare/.test(t)) return 'talon';
@@ -528,9 +572,14 @@ export function formatOcrSummary(text: string, info: DocumentInfo): string {
   const parts: string[] = [];
   if (info.name) parts.push(`Nume: ${info.name}`);
   if (info.cnp) parts.push(`CNP: ${info.cnp}`);
+  if (info.birth_date) {
+    const [y, m, d] = info.birth_date.split('-');
+    parts.push(`Data nașterii: ${d}.${m}.${y}`);
+  }
   if (info.series) parts.push(`Seria: ${info.series}`);
   if (info.issue_date) parts.push(`Emis: ${info.issue_date}`);
   if (info.expiry_date) parts.push(`Expiră: ${info.expiry_date}`);
+  if (info.address) parts.push(`Adresă: ${info.address}`);
   // Fallback: dacă nu avem date structurate, pune text brut filtrat (fără linii MRZ)
   if (parts.length === 0 && text.trim()) {
     const clean = text
@@ -539,8 +588,8 @@ export function formatOcrSummary(text: string, info: DocumentInfo): string {
       .filter(l => l.length > 2 && !/^[A-Z0-9<]{10,}$/.test(l.replace(/\s/g, '')))
       .join(' ')
       .trim()
-      .slice(0, 200);
+      .slice(0, 300);
     if (clean) parts.push(clean);
   }
-  return parts.join(' | ');
+  return parts.join('\n');
 }

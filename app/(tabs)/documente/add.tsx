@@ -1,23 +1,27 @@
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useCallback } from 'react';
 import {
   StyleSheet,
   Pressable,
   ScrollView,
   Alert,
   Image,
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Modal,
   StatusBar,
   useWindowDimensions,
+  InteractionManager,
 } from 'react-native';
-import { router, useLocalSearchParams, Stack } from 'expo-router';
+import { router, useLocalSearchParams, Stack, useFocusEffect } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImageManipulator from 'expo-image-manipulator';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { extractTextFromPdf, isPdfFile } from '@/services/pdfExtractor';
+import { renderPdfFirstPageForVision } from '@/services/pdfOcr';
 import { Text, View, ThemedTextInput } from '@/components/Themed';
 import { BottomActionBar } from '@/components/ui/BottomActionBar';
 import { useColorScheme } from '@/components/useColorScheme';
@@ -40,7 +44,7 @@ import {
 import { extractFieldsForType, isKnownUtilitySupplier } from '@/services/ocrExtractors';
 import { reconstructLayout } from '@/services/ocrLayout';
 import { toRelativePath } from '@/services/fileUtils';
-import { getDocumentsByEntity, findDuplicateDocument } from '@/services/documents';
+import { getDocumentsByEntity, findDuplicateDocument, updateDocument } from '@/services/documents';
 import { DOCUMENT_TYPE_LABELS } from '@/types';
 import type { Document } from '@/types';
 import type { DocumentType, EntityType, DocumentEntityLink } from '@/types';
@@ -56,7 +60,7 @@ import type { AvailableEntities } from '@/services/aiOcrMapper';
 import { AI_CONSENT_KEY } from '@/services/aiProvider';
 import * as ocrConsent from '@/services/ocrConsent';
 import { extractFieldsWithLlm } from '@/services/ocrLlmExtractor';
-import { Ionicons } from '@expo/vector-icons';
+
 
 const DELETE_OPTIONS: { label: string; value: string | null }[] = [
   { label: 'Niciodată', value: null },
@@ -125,7 +129,7 @@ export default function AddDocumentScreen() {
   const { customTypes } = useCustomTypes();
   const { visibleEntityTypes, visibleDocTypes } = useVisibilitySettings();
 
-  const [type, setType] = useState<DocumentType>((params.type as DocumentType) || 'buletin');
+  const [type, setType] = useState<DocumentType>((params.type as DocumentType) || 'altul');
   const [customTypeId, setCustomTypeId] = useState<string | null>(null);
   const [metadata, setMetadata] = useState<Record<string, string>>({});
   const [issueDate, setIssueDate] = useState('');
@@ -142,23 +146,23 @@ export default function AddDocumentScreen() {
   const [ocrLoading, setOcrLoading] = useState(false);
   const [aiOcrLoading, setAiOcrLoading] = useState(false);
   const [aiOcrApplied, setAiOcrApplied] = useState(false);
-  const [llmOcrEnabled, setLlmOcrEnabled] = useState(false);
-  const llmOcrEnabledRef = useRef(false);
   const [llmFieldLoading, setLlmFieldLoading] = useState(false);
   const lastAiTextLengthRef = useRef(0);
-  const [aiConsentAvailable, setAiConsentAvailable] = useState(false);
+  const [textAiConsentAvailable, setTextAiConsentAvailable] = useState(false);
   const [duplicateDoc, setDuplicateDoc] = useState<Document | null>(null);
+  const [suggestedInactiveType, setSuggestedInactiveType] = useState<DocumentType | null>(null);
+  const [photoRefreshKey, setPhotoRefreshKey] = useState(0);
+  const hasMountedRef = useRef(false);
 
   useEffect(() => {
-    AsyncStorage.getItem(AI_CONSENT_KEY).then(v => setAiConsentAvailable(v === 'true'));
+    AsyncStorage.getItem(AI_CONSENT_KEY).then(v => setTextAiConsentAvailable(v === 'true'));
   }, []);
 
-  useEffect(() => {
-    ocrConsent.resolveLlmOcrEnabled(type).then(enabled => {
-      setLlmOcrEnabled(enabled);
-      llmOcrEnabledRef.current = enabled;
-    });
-  }, [type]);
+  useFocusEffect(useCallback(() => {
+    if (!hasMountedRef.current) { hasMountedRef.current = true; return; }
+    setPhotoRefreshKey(k => k + 1);
+  }, []));
+
 
   const [fullscreenUri, setFullscreenUri] = useState<string | null>(null);
   const [typePickerVisible, setTypePickerVisible] = useState(false);
@@ -379,7 +383,7 @@ export default function AddDocumentScreen() {
 
       const summary = formatOcrSummary(text, info);
       if (summary) {
-        setNote(summary);
+        setNote(prev => prev || summary);
       }
 
       // Preset auto-ștergere 5 ani pentru facturi furnizori utilități (OCR local)
@@ -392,22 +396,13 @@ export default function AddDocumentScreen() {
         setAutoDelete(prev => (prev === null ? '1825d' : prev));
       }
 
-      // Re-declanșează AI ori de câte ori textul combinat crește cu cel puțin 80 de caractere.
-      // Astfel, documentele multi-pagină (ex: talon + ANEXA) primesc o analiză completă
-      // și nu se blochează la textul parțial al primei pagini.
+      // Re-declanșează AI (text) ori de câte ori textul combinat crește cu cel puțin 80 de caractere.
       const trimmedLen = combinedText.trim().length;
       if (trimmedLen > 20 && trimmedLen > lastAiTextLengthRef.current + 80) {
         lastAiTextLengthRef.current = trimmedLen;
         void runAiOcrMapper(structuredCombined);
-        if (llmOcrEnabledRef.current) {
-          void runLlmExtraction(structuredCombined || combinedText);
-        }
       } else {
-        // AI nu va rula — fallback local pentru entitate
         tryLocalEntityMatch(combinedText);
-        if (llmOcrEnabledRef.current) {
-          void runLlmExtraction(structuredCombined || combinedText);
-        }
       }
 
       // Reminder-ul pentru dată expirare se oferă la Salvează (cu data finală după AI)
@@ -421,6 +416,9 @@ export default function AddDocumentScreen() {
   async function runAiOcrMapper(combinedOcrText: string) {
     const consent = await AsyncStorage.getItem(AI_CONSENT_KEY);
     if (consent !== 'true') return;
+    if (ocrConsent.getDocTypeSensitivity(type) === 'medical') return;
+    const globalOk = await ocrConsent.getGlobalLlmOcrEnabled();
+    if (!globalOk) return;
 
     setAiOcrLoading(true);
     try {
@@ -439,12 +437,16 @@ export default function AddDocumentScreen() {
       if (
         result.documentType &&
         result.documentType !== 'altul' &&
-        result.documentType !== 'custom' &&
-        visibleDocTypes.includes(result.documentType)
+        result.documentType !== 'custom'
       ) {
-        setType(result.documentType);
-        setCustomTypeId(null);
-        setMetadata({});
+        if (visibleDocTypes.includes(result.documentType)) {
+          setType(result.documentType);
+          setCustomTypeId(null);
+          setMetadata({});
+          setSuggestedInactiveType(null);
+        } else {
+          setSuggestedInactiveType(result.documentType);
+        }
       }
 
       // Aplică câmpurile — AI-ul suprascrie câmpurile locale
@@ -524,62 +526,67 @@ export default function AddDocumentScreen() {
     }
   }
 
-  async function runLlmExtraction(ocrText: string) {
-    if (!ocrText.trim()) return;
+  async function handleAiImageAnalysis() {
+    if (pages.length === 0) {
+      Alert.alert('Fără imagini', 'Nu există imagini sau documente atașate.');
+      return;
+    }
+
+    if (ocrConsent.getDocTypeSensitivity(type) === 'medical') {
+      const confirmed = await new Promise<boolean>(resolve => {
+        Alert.alert(
+          'Date medicale (GDPR Art. 9)',
+          `Imaginea documentului „${DOCUMENT_TYPE_LABELS[type]}" va fi trimisă la AI.\n\nPreferința nu se salvează.\n\nEști de acord?`,
+          [
+            { text: 'Anulează', style: 'cancel', onPress: () => resolve(false) },
+            { text: 'De acord', onPress: () => resolve(true) },
+          ]
+        );
+      });
+      if (!confirmed) return;
+    }
+
     setLlmFieldLoading(true);
     try {
-      const extracted = await extractFieldsWithLlm(type, ocrText);
-      if (Object.keys(extracted.metadata).length > 0) {
-        setMetadata(prev => ({ ...extracted.metadata, ...prev }));
+      const fileNotes: string[] = [];
+      const pagesToProcess = pages.slice(0, 5); // max 5 fișiere per analiză AI
+      for (const page of pagesToProcess) {
+        const ocrText = ocrTextsRef.current.get(page.localPath) ?? '';
+        let imageBase64: string | undefined;
+        try {
+          if (isPdfFile(page.localPath)) {
+            imageBase64 = (await renderPdfFirstPageForVision(page.localPath)) ?? undefined;
+          } else {
+            imageBase64 = await FileSystem.readAsStringAsync(page.localPath, {
+              encoding: FileSystem.EncodingType.Base64,
+            });
+          }
+        } catch { }
+
+        const extracted = await extractFieldsWithLlm(type, ocrText, imageBase64);
+
+        if (Object.keys(extracted.metadata).length > 0) {
+          setMetadata(prev => ({ ...extracted.metadata, ...prev }));
+        }
+        if (extracted.expiry_date && !expiryDateRef.current) {
+          setExpiryDate(extracted.expiry_date);
+          expiryDateRef.current = extracted.expiry_date;
+        }
+        if (extracted.issue_date && !issueDateRef.current) {
+          setIssueDate(extracted.issue_date);
+          issueDateRef.current = extracted.issue_date;
+        }
+        if (extracted.note) {
+          fileNotes.push(extracted.note);
+        }
       }
-      if (extracted.expiry_date && !expiryDateRef.current) {
-        setExpiryDate(extracted.expiry_date);
-        expiryDateRef.current = extracted.expiry_date;
-      }
-      if (extracted.issue_date && !issueDateRef.current) {
-        setIssueDate(extracted.issue_date);
-        issueDateRef.current = extracted.issue_date;
-      }
+
+      const combined = fileNotes.join('\n___________\n');
+      if (combined) setNote(combined);
     } catch {
       // LLM field extraction e opțional
     } finally {
       setLlmFieldLoading(false);
-    }
-  }
-
-  async function handleLlmOcrToggle(value: boolean) {
-    const sensitivity = ocrConsent.getDocTypeSensitivity(type);
-
-    if (value && (sensitivity === 'sensitive' || sensitivity === 'medical')) {
-      Alert.alert(
-        'Date sensibile',
-        `Textul extras din „${DOCUMENT_TYPE_LABELS[type]}" va fi trimis la AI pentru extracție câmpuri.\n\nSe trimite doar textul OCR, nicio imagine.\n\nEști de acord?`,
-        [
-          { text: 'Anulează', style: 'cancel' },
-          {
-            text: 'De acord',
-            onPress: async () => {
-              if (sensitivity === 'sensitive') {
-                await ocrConsent.setPerTypeConsent(type, 'allow');
-              }
-              setLlmOcrEnabled(true);
-              llmOcrEnabledRef.current = true;
-              if (liveOcrText) {
-                void runLlmExtraction(liveOcrText);
-              }
-            },
-          },
-        ]
-      );
-    } else {
-      if (!value && sensitivity === 'sensitive') {
-        await ocrConsent.setPerTypeConsent(type, 'deny');
-      }
-      setLlmOcrEnabled(value);
-      llmOcrEnabledRef.current = value;
-      if (value && liveOcrText) {
-        void runLlmExtraction(liveOcrText);
-      }
     }
   }
 
@@ -606,12 +613,8 @@ export default function AddDocumentScreen() {
         '\n\n---\n\n'
       );
       setLiveOcrText(structuredCombined);
-      // Trimite la AI pentru cross-validare și completare câmpuri (dacă consent dat)
       if (combined.trim().length > 20) {
         void runAiOcrMapper(structuredCombined);
-        if (llmOcrEnabledRef.current) {
-          void runLlmExtraction(structuredCombined || combined);
-        }
       }
     } finally {
       setOcrLoading(false);
@@ -718,7 +721,10 @@ export default function AddDocumentScreen() {
             setIssueDate(info.issue_date);
             issueDateRef.current = info.issue_date;
           }
-          // Trimite la AI (PDF are text deja disponibil)
+          const summary = formatOcrSummary(pdfText, info);
+          if (summary) {
+            setNote(prev => prev || summary);
+          }
           const allStructured = Array.from(ocrStructuredTextsRef.current.values()).join(
             '\n\n---\n\n'
           );
@@ -840,24 +846,67 @@ export default function AddDocumentScreen() {
   async function handleSubmit() {
     if (duplicateDoc) {
       const typeName = DOCUMENT_TYPE_LABELS[duplicateDoc.type] ?? duplicateDoc.type;
-      const confirmed = await new Promise<boolean>(resolve => {
+      const action = await new Promise<'save' | 'update' | null>(resolve => {
         Alert.alert(
           'Document similar există',
           `Există deja un document de tip „${typeName}" pentru această entitate. Ce vrei să faci?`,
           [
-            { text: 'Anulare', style: 'cancel', onPress: () => resolve(false) },
+            { text: 'Anulare', style: 'cancel', onPress: () => resolve(null) },
             {
               text: 'Deschide existentul',
               onPress: () => {
-                router.push(`/(tabs)/documente/${duplicateDoc.id}`);
-                resolve(false);
+                resolve(null);
+                InteractionManager.runAfterInteractions(() => {
+                  router.push(`/(tabs)/documente/${duplicateDoc.id}`);
+                });
               },
             },
-            { text: 'Salvează oricum', onPress: () => resolve(true) },
+            {
+              text: 'Actualizează existent',
+              onPress: () => resolve('update'),
+            },
+            { text: 'Salvează document nou', onPress: () => resolve('save') },
           ]
         );
       });
-      if (!confirmed) return;
+      if (!action) return;
+
+      if (action === 'update') {
+        setLoading(true);
+        try {
+          const newOcrText = Array.from(ocrStructuredTextsRef.current.values())
+            .filter(Boolean).join('\n\n---\n\n') || undefined;
+          await updateDocument(duplicateDoc.id, {
+            type: duplicateDoc.type,
+            issue_date: issueDate.trim() || duplicateDoc.issue_date || undefined,
+            expiry_date: !HIDE_EXPIRY_TYPES.includes(duplicateDoc.type)
+              ? expiryDate.trim() || duplicateDoc.expiry_date || undefined
+              : undefined,
+            note: note.trim() || duplicateDoc.note || undefined,
+            file_path: pages.length > 0
+              ? toRelativePath(pages[0].localPath)
+              : (duplicateDoc.file_path ?? undefined),
+            metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
+            auto_delete: autoDelete ?? duplicateDoc.auto_delete ?? undefined,
+            ocr_text: newOcrText,
+          });
+          if (pages.length > 1) {
+            const { addDocumentPage } = await import('@/services/documents');
+            for (let i = 1; i < pages.length; i++) {
+              await addDocumentPage(duplicateDoc.id, toRelativePath(pages[i].localPath));
+            }
+          }
+          await refresh();
+          router.replace(`/(tabs)/documente/${duplicateDoc.id}`);
+        } catch (e) {
+          Alert.alert('Eroare', e instanceof Error ? e.message : 'Nu s-a putut actualiza');
+        } finally {
+          setLoading(false);
+        }
+        return;
+      }
+
+      if (action !== 'save') return;
     }
 
     setLoading(true);
@@ -1044,6 +1093,7 @@ export default function AddDocumentScreen() {
             pages={photoPages}
             ocrLoading={ocrLoading || aiOcrLoading}
             ocrText={liveOcrText || undefined}
+            refreshKey={photoRefreshKey}
             onAddPage={handleAddPage}
             onRotate={handleRotate}
             onDelete={handleDeletePage}
@@ -1057,29 +1107,54 @@ export default function AddDocumentScreen() {
               </Text>
             </View>
           )}
-          {aiOcrLoading && (
-            <Text style={[styles.aiLoadingText, { color: C.textSecondary }]}>
-              Analizez cu AI...
-            </Text>
-          )}
-          {aiConsentAvailable && liveOcrText.trim().length > 20 && !aiOcrLoading && (
-            <Pressable
-              style={({ pressed }) => [
-                styles.aiManualBtn,
-                { borderColor: primary, opacity: pressed ? 0.75 : 1 },
-              ]}
-              onPress={() => {
-                setAiOcrApplied(false);
-                const structured = Array.from(ocrStructuredTextsRef.current.values())
-                  .filter(Boolean)
-                  .join('\n\n---\n\n');
-                void runAiOcrMapper(structured || liveOcrText);
-              }}
-            >
-              <Text style={[styles.aiManualBtnText, { color: primary }]}>
-                {aiOcrApplied ? '↺ Re-analizează cu AI' : '✦ Analizează cu AI'}
+          {(aiOcrLoading || llmFieldLoading) && (
+            <View style={styles.aiLoadingRow}>
+              <ActivityIndicator size="small" color={primary} style={{ marginRight: 6 }} />
+              <Text style={[styles.aiLoadingText, { color: C.textSecondary }]}>
+                {llmFieldLoading ? 'Analizez documentul cu AI...' : 'Analizez cu AI...'}
               </Text>
-            </Pressable>
+            </View>
+          )}
+          {textAiConsentAvailable && pages.length > 0 && !llmFieldLoading && (
+            <View>
+              <View style={styles.aiActionsRow}>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.aiActionBtn,
+                    { borderColor: '#F57F17', opacity: pressed ? 0.75 : 1 },
+                  ]}
+                  onPress={handleAiImageAnalysis}
+                >
+                  <Text style={[styles.aiActionBtnText, { color: '#F57F17' }]}>
+                    Trimite documentul la AI
+                  </Text>
+                </Pressable>
+              </View>
+              <Text style={[styles.aiActionInfo, { color: C.textSecondary }]}>
+                Se trimite imaginea/PDF-ul documentului la AI pentru extragerea datelor. Acțiune manuală explicită.
+              </Text>
+            </View>
+          )}
+
+          {/* TIP INACTIV DETECTAT DE AI */}
+          {suggestedInactiveType && (
+            <View style={styles.inactiveBanner}>
+              <Ionicons name="information-circle-outline" size={18} color="#E65100" style={{ marginRight: 8, marginTop: 1 }} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.inactiveBannerTitle}>
+                  AI-ul a detectat tipul „{DOCUMENT_TYPE_LABELS[suggestedInactiveType] ?? suggestedInactiveType}"
+                </Text>
+                <Text style={styles.inactiveBannerBody}>
+                  Acest tip nu e activat. Activează-l din Setări → Tipuri de documente vizibile.
+                </Text>
+                <Pressable onPress={() => router.push('/(tabs)/setari')}>
+                  <Text style={styles.inactiveBannerLink}>Deschide Setările →</Text>
+                </Pressable>
+              </View>
+              <Pressable onPress={() => setSuggestedInactiveType(null)} hitSlop={8}>
+                <Ionicons name="close" size={16} color="#999" />
+              </Pressable>
+            </View>
           )}
 
           {/* DUPLICAT */}
@@ -1171,39 +1246,6 @@ export default function AddDocumentScreen() {
                 ))}
               </View>
             </>
-          )}
-
-          {/* LLM OCR consent */}
-          {aiConsentAvailable && (
-            <Pressable
-              style={[
-                styles.llmOcrRow,
-                {
-                  backgroundColor: C.card,
-                  borderColor: llmOcrEnabled ? primary : C.border,
-                },
-              ]}
-              onPress={() => handleLlmOcrToggle(!llmOcrEnabled)}
-            >
-              <Ionicons
-                name={llmOcrEnabled ? 'checkmark-circle' : 'ellipse-outline'}
-                size={22}
-                color={llmOcrEnabled ? primary : C.text}
-                style={{ marginRight: 8 }}
-              />
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.llmOcrLabel, { color: C.text }]}>
-                  Extracție AI câmpuri{llmFieldLoading ? ' ⏳' : ''}
-                </Text>
-                <Text style={[styles.llmOcrSubtitle, { color: C.text, opacity: 0.6 }]}>
-                  {ocrConsent.getDocTypeSensitivity(type) === 'medical'
-                    ? 'Date medicale — confirmare fără salvare preferință'
-                    : ocrConsent.getDocTypeSensitivity(type) === 'sensitive'
-                    ? 'Date sensibile — confirmare necesară'
-                    : 'Recomandat pentru acest tip de document'}
-                </Text>
-              </View>
-            </Pressable>
           )}
 
           {/* 3. CÂMPURI SPECIFICE TIPULUI */}
@@ -1312,6 +1354,7 @@ export default function AddDocumentScreen() {
             value={note}
             onChangeText={setNote}
             multiline
+            scrollEnabled
             editable={!loading}
           />
 
@@ -1450,16 +1493,17 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   aiBadgeText: { fontSize: 13, fontWeight: '600' },
-  aiLoadingText: { fontSize: 12, marginTop: 6, fontStyle: 'italic' },
-  aiManualBtn: {
-    alignSelf: 'flex-start',
-    marginTop: 8,
+  aiLoadingRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
+  aiLoadingText: { fontSize: 12, fontStyle: 'italic' },
+  aiActionsRow: { flexDirection: 'row', gap: 8, marginTop: 8, flexWrap: 'wrap' },
+  aiActionBtn: {
     paddingVertical: 7,
     paddingHorizontal: 14,
     borderRadius: 8,
     borderWidth: 1,
   },
-  aiManualBtnText: { fontSize: 13, fontWeight: '600' },
+  aiActionBtnText: { fontSize: 13, fontWeight: '600' },
+  aiActionInfo: { fontSize: 11, marginTop: 4, lineHeight: 15 },
   selectedBadge: { color: primary },
   typeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 },
   typeChip: {
@@ -1481,7 +1525,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginBottom: 20,
   },
-  inputMultiline: { minHeight: 80 },
+  inputMultiline: { minHeight: 80, maxHeight: 180 },
   // Entity picker
   categoryRow: { marginBottom: 12, marginTop: 8 },
   categoryRowContent: { flexDirection: 'row', gap: 8 },
@@ -1573,6 +1617,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   fsCloseBtnText: { color: '#fff', fontSize: 20, fontWeight: '600' },
+  inactiveBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#FFF3E0',
+    borderColor: '#FF9800',
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 16,
+  },
+  inactiveBannerTitle: { fontSize: 13, fontWeight: '700', color: '#E65100', marginBottom: 3 },
+  inactiveBannerBody: { fontSize: 12, color: '#BF360C', marginBottom: 4, lineHeight: 17 },
+  inactiveBannerLink: { fontSize: 12, fontWeight: '600', color: '#E65100' },
   duplicateBanner: {
     backgroundColor: '#fff8e1',
     borderColor: '#f59e0b',
@@ -1596,21 +1653,5 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: '#b45309',
-  },
-  llmOcrRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 8,
-    borderWidth: 1,
-    padding: 10,
-    marginBottom: 8,
-  },
-  llmOcrLabel: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  llmOcrSubtitle: {
-    fontSize: 12,
-    marginTop: 2,
   },
 });

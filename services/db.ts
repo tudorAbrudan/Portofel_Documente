@@ -264,3 +264,15 @@ try {
 } catch {
   // coloana există deja
 }
+
+// Migrare: adaugă file_hash la documents pentru detecție duplicate
+try {
+  db.execSync('ALTER TABLE documents ADD COLUMN file_hash TEXT');
+} catch {
+  // coloana există deja
+}
+try {
+  db.execSync('CREATE INDEX IF NOT EXISTS idx_docs_file_hash ON documents(file_hash)');
+} catch {
+  // indexul există deja
+}

@@ -54,6 +54,7 @@ import {
 import { extractFieldsForType } from '@/services/ocrExtractors';
 import { toFileUri } from '@/services/fileUtils';
 import { isPdfFile, extractTextFromPdf } from '@/services/pdfExtractor';
+import { renderAllPdfPagesAsBase64 } from '@/services/pdfOcr';
 import { getDocumentLabel } from '@/types';
 import type { Document as DocType } from '@/types';
 import { useCustomTypes } from '@/hooks/useCustomTypes';
@@ -97,7 +98,6 @@ export default function DocumentDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [ocrLoading, setOcrLoading] = useState(false);
-  const [ocrExpanded, setOcrExpanded] = useState(false);
 
   // Rotire imagini (per pagina, cheie = file_path)
   const [rotatedUris, setRotatedUris] = useState<Record<string, string>>({});
@@ -666,27 +666,32 @@ export default function DocumentDetailScreen() {
       const imgTags: string[] = [];
       for (const page of allPages) {
         const fileUri = toFileUri(page.file_path);
-        try {
-          // Comprimă imaginea la max 1400px și calitate 75% — reduce dimensiunea de ~10x
-          const compressed = await ImageManipulator.manipulateAsync(
-            fileUri,
-            [{ resize: { width: 1400 } }],
-            { compress: 0.75, format: ImageManipulator.SaveFormat.JPEG }
-          );
-          const base64 = await FileSystem.readAsStringAsync(compressed.uri, {
-            encoding: FileSystem.EncodingType.Base64,
-          });
-          imgTags.push(
-            `<div class="img-page"><img src="data:image/jpeg;base64,${base64}" /></div>`
-          );
-        } catch {
-          // imaginea nu a putut fi citită — continuăm cu restul paginilor
+        if (isPdfFile(page.file_path)) {
+          // Randează fiecare pagină PDF ca imagine
+          const pages = await renderAllPdfPagesAsBase64(fileUri);
+          for (const b64 of pages) {
+            imgTags.push(`<div class="img-page"><img src="data:image/jpeg;base64,${b64}" /></div>`);
+          }
+        } else {
+          try {
+            const compressed = await ImageManipulator.manipulateAsync(
+              fileUri,
+              [{ resize: { width: 1400 } }],
+              { compress: 0.75, format: ImageManipulator.SaveFormat.JPEG }
+            );
+            const base64 = await FileSystem.readAsStringAsync(compressed.uri, {
+              encoding: FileSystem.EncodingType.Base64,
+            });
+            imgTags.push(`<div class="img-page"><img src="data:image/jpeg;base64,${base64}" /></div>`);
+          } catch {
+            // imaginea nu a putut fi citită — continuăm
+          }
         }
       }
       if (imgTags.length === 0 && allPages.length > 0) {
         Alert.alert(
           'Atenție',
-          'Imaginile nu au putut fi incluse în PDF. Va conține doar textul documentului.'
+          'Paginile nu au putut fi incluse în PDF. Va conține doar datele documentului.'
         );
       }
 
@@ -789,19 +794,6 @@ export default function DocumentDetailScreen() {
   }
   .meta-footer-brand { color: #1a1a1a; font-weight: 700; }
 
-  /* Pagina OCR */
-  .ocr-page {
-    page-break-before: always;
-    padding: 12mm;
-  }
-  .ocr-title { font-size: 18px; font-weight: 700; margin-bottom: 5mm; color: #1e2318; }
-  .ocr-content {
-    font-size: 10.5px; line-height: 1.7; color: #333;
-    white-space: pre-wrap;
-    font-family: 'Courier New', Courier, monospace;
-    background: #f8faf4; border: 1px solid #e2ebd4;
-    border-radius: 6px; padding: 4mm;
-  }
 </style></head><body>
 
   ${imgTags.join('\n')}
@@ -821,24 +813,6 @@ export default function DocumentDetailScreen() {
     </div>
   </div>
 
-  ${
-    doc.ocr_text
-      ? `
-  <div class="ocr-page">
-    <div class="meta-header">
-      <div>
-        <div class="meta-brand">Dosar <span class="meta-brand-url">tudorabrudan.github.io/Dosar</span></div>
-      </div>
-    </div>
-    <div class="ocr-title">Text extras din document</div>
-    <div class="ocr-content">${escapeHtml(doc.ocr_text)}</div>
-    <div class="meta-footer" style="margin-top:6mm">
-      <span class="meta-footer-brand">Generat cu Dosar · tudorabrudan.github.io/Dosar · App Store: apps.apple.com/ro/app/dosar-documente-personale/id6760576986</span>
-      <span>Generat pe ${generatedDate}</span>
-    </div>
-  </div>`
-      : ''
-  }
 
 </body></html>`;
       const { uri } = await Print.printToFileAsync({ html, width: 595, height: 842 }); // A4 in points
@@ -982,6 +956,7 @@ export default function DocumentDetailScreen() {
                     allowFileAccess
                     allowFileAccessFromFileURLs
                     allowUniversalAccessFromFileURLs
+                    allowingReadAccessToURL={FileSystem.documentDirectory ?? undefined}
                     scrollEnabled
                   />
                 ) : (
@@ -1055,7 +1030,9 @@ export default function DocumentDetailScreen() {
           )}
           {doc.expiry_date && (
             <>
-              <Text style={styles.label}>Data expirare</Text>
+              <Text style={styles.label}>
+                {doc.type === 'factura' ? 'Scadență' : 'Data expirare'}
+              </Text>
               <Text style={styles.value}>{doc.expiry_date}</Text>
               <Pressable
                 style={[
@@ -1092,21 +1069,6 @@ export default function DocumentDetailScreen() {
               </View>
             );
           })}
-          {doc.ocr_text && (
-            <View style={{ marginTop: 12 }}>
-              <Pressable onPress={() => setOcrExpanded(v => !v)} style={styles.ocrToggleRow}>
-                <Text style={styles.label}>Text complet extras (OCR)</Text>
-                <Text style={[styles.label, { color: primary }]}>
-                  {ocrExpanded ? '▲ Ascunde' : '▼ Arată'}
-                </Text>
-              </Pressable>
-              {ocrExpanded && (
-                <Text style={styles.ocrText} selectable>
-                  {doc.ocr_text}
-                </Text>
-              )}
-            </View>
-          )}
           {doc.type === 'bilet' && doc.metadata?.event_date && (
             <Pressable
               style={[
@@ -1173,6 +1135,7 @@ export default function DocumentDetailScreen() {
               allowFileAccess
               allowFileAccessFromFileURLs
               allowUniversalAccessFromFileURLs
+              allowingReadAccessToURL={FileSystem.documentDirectory ?? undefined}
               scrollEnabled
             />
           )}
@@ -1356,7 +1319,6 @@ const styles = StyleSheet.create({
   },
   entityAddBtnText: { fontSize: 13, fontWeight: '600' },
   emptyValue: { opacity: 0.3 },
-  ocrToggleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   ocrText: { fontSize: 13, opacity: 0.7, lineHeight: 20, marginTop: 6 },
   entityEditHint: { fontSize: 13, color: primary, fontWeight: '500' },
   entityGroupLabel: {

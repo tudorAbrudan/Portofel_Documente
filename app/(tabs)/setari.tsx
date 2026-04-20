@@ -32,7 +32,6 @@ import * as settings from '@/services/settings';
 import * as aiProvider from '@/services/aiProvider';
 import type { AiProviderType } from '@/services/aiProvider';
 import * as ocrConsent from '@/services/ocrConsent';
-import type { OcrConsentChoice } from '@/services/ocrConsent';
 import { AI_CONSENT_KEY } from '@/services/aiProvider';
 import { scheduleExpirationReminders } from '@/services/notifications';
 import { exportBackup, importBackup } from '@/services/backup';
@@ -274,15 +273,16 @@ export default function SetariScreen() {
   const [downloadTotalMb, setDownloadTotalMb] = useState(0);
   const [selectedLocalModelId, setSelectedLocalModelId] = useState<string | null>(null);
   const downloadResumableRef = useRef<ReturnType<typeof localModel.createModelDownload> | null>(null);
+  const savedExternalRef = useRef({ url: '', model: '', apiKey: '' });
   const [backupExporting, setBackupExporting] = useState(false);
   const [backupImporting, setBackupImporting] = useState(false);
+  const [backupCollapsed, setBackupCollapsed] = useState(true);
+  const [entitiesCollapsed, setEntitiesCollapsed] = useState(true);
+  const [docTypesCollapsed, setDocTypesCollapsed] = useState(true);
+  const [aspectCollapsed, setAspectCollapsed] = useState(true);
 
   // ── OCR Privacy ──────────────────────────────────────────────────────────────
   const [ocrLlmGlobal, setOcrLlmGlobal] = useState(true);
-  const [ocrSensitiveExpanded, setOcrSensitiveExpanded] = useState(false);
-  const [sensitiveConsents, setSensitiveConsents] = useState<
-    Partial<Record<string, OcrConsentChoice>>
-  >({});
 
   useEffect(() => {
     settings.getNotificationDays().then(setNotifDays);
@@ -296,23 +296,12 @@ export default function SetariScreen() {
       setAiProviderUrl(cfg.url);
       setAiProviderModel(cfg.model);
       setAiApiKey(cfg.apiKey);
+      if (cfg.type === 'external') {
+        savedExternalRef.current = { url: cfg.url, model: cfg.model, apiKey: cfg.apiKey };
+      }
     });
     // OCR consent
     ocrConsent.getGlobalLlmOcrEnabled().then(setOcrLlmGlobal);
-    const sensitiveDocTypes = ocrConsent.getSensitiveDocTypes();
-    Promise.all(
-      sensitiveDocTypes.map(async t => {
-        const v = await ocrConsent.getPerTypeConsent(t);
-        return [t, v] as const;
-      })
-    ).then(entries => {
-      const obj: Partial<Record<string, OcrConsentChoice>> = {};
-      for (const [t, v] of entries) {
-        if (v) obj[t] = v;
-      }
-      setSensitiveConsents(obj);
-    });
-
     // Modele locale
     void (async () => {
       const models = localModel.getAllModels();
@@ -455,17 +444,28 @@ export default function SetariScreen() {
 
   // ── AI Provider ─────────────────────────────────────────────────────────────
   const handleAiProviderSelect = async (type: AiProviderType) => {
+    if (aiProviderType === 'external') {
+      savedExternalRef.current = { url: aiProviderUrl, model: aiProviderModel, apiKey: aiApiKey };
+    }
     if (aiProviderType === 'local' && type !== 'local') {
       await localModel.disposeLocalModel().catch(() => {});
     }
     setAiProviderType(type);
-    const defaults = aiProvider.PROVIDER_DEFAULTS[type];
-    setAiProviderUrl(defaults.url);
-    setAiProviderModel(defaults.model);
+    if (type === 'external') {
+      setAiProviderUrl(savedExternalRef.current.url);
+      setAiProviderModel(savedExternalRef.current.model);
+      setAiApiKey(savedExternalRef.current.apiKey);
+    } else {
+      const defaults = aiProvider.PROVIDER_DEFAULTS[type];
+      setAiProviderUrl(defaults.url);
+      setAiProviderModel(defaults.model);
+    }
     setAiTestStatus('idle');
     setAiTestMessage('');
     if (type === 'local' || type === 'none') {
       setAiModalConsentChecked(false);
+    } else {
+      setAiModalConsentChecked(aiConsentGiven);
     }
   };
 
@@ -604,21 +604,70 @@ export default function SetariScreen() {
     setAiTestStatus('loading');
     setAiTestMessage('');
     try {
-      if (aiProviderType !== 'external') {
-        setAiTestStatus('ok');
-        setAiTestMessage('Conexiunea funcționează corect.');
+      if (aiProviderType === 'none') {
+        setAiTestStatus('error');
+        setAiTestMessage('Selectează un provider AI pentru a testa conexiunea.');
         return;
       }
-      const baseUrl = aiProviderUrl.replace(/\/$/, '');
+      if (aiProviderType === 'local') {
+        if (!selectedLocalModelId) {
+          setAiTestStatus('error');
+          setAiTestMessage('Niciun model local selectat. Descarcă și selectează un model.');
+          return;
+        }
+        setAiTestStatus('ok');
+        setAiTestMessage(`Model local „${selectedLocalModelId}" selectat.`);
+        return;
+      }
+
+      // builtin sau external — facem test real la endpoint
+      const url = aiProviderType === 'builtin'
+        ? aiProvider.PROVIDER_DEFAULTS.builtin.url
+        : aiProviderUrl.trim();
+      const model = aiProviderType === 'builtin'
+        ? aiProvider.PROVIDER_DEFAULTS.builtin.model
+        : aiProviderModel.trim();
+      const key = aiProviderType === 'builtin'
+        ? (process.env.EXPO_PUBLIC_MISTRAL_API_KEY ?? '')
+        : aiApiKey.trim();
+
+      if (aiProviderType === 'external') {
+        if (!url) {
+          setAiTestStatus('error');
+          setAiTestMessage('Completează URL-ul API.');
+          return;
+        }
+        if (!/^https?:\/\//i.test(url)) {
+          setAiTestStatus('error');
+          setAiTestMessage('URL-ul trebuie să înceapă cu http:// sau https://.');
+          return;
+        }
+        if (!key) {
+          setAiTestStatus('error');
+          setAiTestMessage('Completează cheia API.');
+          return;
+        }
+        if (!model) {
+          setAiTestStatus('error');
+          setAiTestMessage('Completează numele modelului.');
+          return;
+        }
+      } else if (!key) {
+        setAiTestStatus('error');
+        setAiTestMessage('Cheia AI inclusă lipsește din build. Folosește „Cheie API proprie".');
+        return;
+      }
+
+      const baseUrl = url.replace(/\/$/, '');
       const endpoint = `${baseUrl}/chat/completions`;
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${aiApiKey}`,
+          Authorization: `Bearer ${key}`,
         },
         body: JSON.stringify({
-          model: aiProviderModel,
+          model,
           messages: [{ role: 'user', content: 'test' }],
           max_tokens: 10,
           temperature: 0.3,
@@ -779,7 +828,20 @@ export default function SetariScreen() {
         )}
 
         {/* ── Aspect ── */}
-        <RNText style={[styles.sectionLabel, { color: C.textSecondary }]}>ASPECT</RNText>
+        <Pressable
+          style={styles.sectionHeader}
+          onPress={() => setAspectCollapsed(v => !v)}
+        >
+          <RNText style={[styles.sectionLabel, styles.sectionLabelInline, { color: C.textSecondary }]}>
+            ASPECT
+          </RNText>
+          <Ionicons
+            name={aspectCollapsed ? 'chevron-down' : 'chevron-up'}
+            size={14}
+            color={C.textSecondary}
+          />
+        </Pressable>
+        {!aspectCollapsed && (
         <RNView style={[styles.card, { backgroundColor: C.card, shadowColor: C.cardShadow }]}>
           <RNText style={[styles.hint, { color: C.textSecondary }]}>
             Alege tema de culori a aplicației.
@@ -812,6 +874,7 @@ export default function SetariScreen() {
             })}
           </RNView>
         </RNView>
+        )}
 
         {/* ── Notificări ── */}
         <RNText style={[styles.sectionLabel, { color: C.textSecondary }]}>NOTIFICĂRI</RNText>
@@ -850,10 +913,164 @@ export default function SetariScreen() {
           </RNView>
         </RNView>
 
-        {/* ── Backup ── */}
-        <RNText style={[styles.sectionLabel, { color: C.textSecondary }]}>
-          BACKUP ȘI RESTAURARE
+        {/* ── Vizibilitate entități ── */}
+        <Pressable
+          style={styles.sectionHeader}
+          onPress={() => setEntitiesCollapsed(v => !v)}
+        >
+          <RNText style={[styles.sectionLabel, styles.sectionLabelInline, { color: C.textSecondary }]}>
+            ENTITĂȚI ACTIVE
+          </RNText>
+          <Ionicons
+            name={entitiesCollapsed ? 'chevron-down' : 'chevron-up'}
+            size={14}
+            color={C.textSecondary}
+          />
+        </Pressable>
+        {!entitiesCollapsed && (
+        <RNView style={[styles.card, { backgroundColor: C.card, shadowColor: C.cardShadow }]}>
+          <RNText style={[styles.hint, { color: C.textSecondary }]}>
+            Alege ce tipuri de entități să apară în aplicație. Entitățile dezactivate nu vor apărea
+            în formulare sau liste.
+          </RNText>
+          {ALL_ENTITY_TYPES.map((entityType, idx) => {
+            const isActive = visibleEntityTypes.includes(entityType);
+            const isLast = idx === ALL_ENTITY_TYPES.length - 1;
+            return (
+              <RNView
+                key={entityType}
+                style={[isLast ? styles.rowLast : styles.row, { borderBottomColor: C.border }]}
+              >
+                <RNView style={styles.rowLeft}>
+                  <RNView
+                    style={[styles.rowIcon, { backgroundColor: isActive ? '#E8F5E9' : '#F5F5F5' }]}
+                  >
+                    <RNText style={{ fontSize: 16 }}>{ENTITY_ICONS[entityType]}</RNText>
+                  </RNView>
+                  <RNText style={[styles.rowLabel, { color: C.text }]}>
+                    {ENTITY_LABELS[entityType]}
+                  </RNText>
+                </RNView>
+                <Switch
+                  value={isActive}
+                  onValueChange={() => handleToggleEntityType(entityType)}
+                  trackColor={{ false: '#ccc', true: primary }}
+                  thumbColor="#fff"
+                />
+              </RNView>
+            );
+          })}
+        </RNView>
+        )}
+
+        {/* ── Vizibilitate tipuri documente ── */}
+        <Pressable
+          style={styles.sectionHeader}
+          onPress={() => setDocTypesCollapsed(v => !v)}
+        >
+          <RNText style={[styles.sectionLabel, styles.sectionLabelInline, { color: C.textSecondary }]}>
+            TIPURI DOCUMENTE ACTIVE
+          </RNText>
+          <Ionicons
+            name={docTypesCollapsed ? 'chevron-down' : 'chevron-up'}
+            size={14}
+            color={C.textSecondary}
+          />
+        </Pressable>
+        {!docTypesCollapsed && (
+        <>
+        <RNView style={[styles.card, { backgroundColor: C.card, shadowColor: C.cardShadow }]}>
+          <RNText style={[styles.hint, { color: C.textSecondary }]}>
+            Alege ce tipuri de documente să apară în formulare. Tipurile dezactivate nu vor apărea
+            la adăugarea documentelor.
+          </RNText>
+          <RNView style={styles.chipRow}>
+            {STANDARD_DOC_TYPES.map(docType => {
+              const isActive = visibleDocTypes.includes(docType);
+              return (
+                <Pressable
+                  key={docType}
+                  style={[
+                    styles.chip,
+                    isActive
+                      ? [styles.chipActive, { borderColor: primary }]
+                      : { borderColor: C.border },
+                  ]}
+                  onPress={() => handleToggleDocType(docType)}
+                >
+                  <RNText style={[styles.chipText, { color: isActive ? '#fff' : C.textSecondary }]}>
+                    {DOCUMENT_TYPE_LABELS[docType]}
+                  </RNText>
+                </Pressable>
+              );
+            })}
+          </RNView>
+        </RNView>
+
+        {/* ── Tipuri personalizate de documente ── */}
+        <RNText style={[styles.sectionLabel, { color: C.textSecondary, marginTop: 16 }]}>
+          TIPURI PERSONALIZATE
         </RNText>
+        <RNView style={[styles.card, { backgroundColor: C.card, shadowColor: C.cardShadow }]}>
+          <RNText style={[styles.hint, { color: C.textSecondary }]}>
+            Adaugă tipuri proprii de documente (ex: „Asigurare viață", „Dosar medical"). Tipurile de
+            entități (Persoană, Vehicul, Proprietate etc.) sunt fixe și nu pot fi modificate.
+          </RNText>
+          {customTypes.map((ct, idx) => (
+            <RNView
+              key={ct.id}
+              style={[
+                styles.customTypeRow,
+                { borderBottomColor: C.border },
+                idx === customTypes.length - 1 && styles.customTypeRowLast,
+              ]}
+            >
+              <RNText style={[styles.customTypeName, { color: C.text }]}>{ct.name}</RNText>
+              <Pressable onPress={() => handleDeleteCustomType(ct.id, ct.name)} hitSlop={8}>
+                <Ionicons name="trash-outline" size={18} color="#E53935" />
+              </Pressable>
+            </RNView>
+          ))}
+          <RNView style={styles.addTypeRow}>
+            <TextInput
+              style={[
+                styles.addTypeInput,
+                { color: C.text, borderColor: C.border, backgroundColor: C.background },
+              ]}
+              placeholder="Nume tip nou (ex: Asigurare viață)"
+              placeholderTextColor={C.textSecondary}
+              value={newTypeName}
+              onChangeText={setNewTypeName}
+              returnKeyType="done"
+              onSubmitEditing={handleAddCustomType}
+            />
+            <Pressable
+              style={[styles.addTypeBtn, !newTypeName.trim() && styles.addTypeBtnDisabled]}
+              onPress={handleAddCustomType}
+              disabled={!newTypeName.trim()}
+            >
+              <RNText style={styles.addTypeBtnText}>Adaugă</RNText>
+            </Pressable>
+          </RNView>
+        </RNView>
+        </>
+        )}
+
+        {/* ── Backup ── */}
+        <Pressable
+          style={styles.sectionHeader}
+          onPress={() => setBackupCollapsed(v => !v)}
+        >
+          <RNText style={[styles.sectionLabel, styles.sectionLabelInline, { color: C.textSecondary }]}>
+            BACKUP ȘI RESTAURARE
+          </RNText>
+          <Ionicons
+            name={backupCollapsed ? 'chevron-down' : 'chevron-up'}
+            size={14}
+            color={C.textSecondary}
+          />
+        </Pressable>
+        {!backupCollapsed && (
         <RNView style={[styles.card, { backgroundColor: C.card, shadowColor: C.cardShadow }]}>
           <RNText style={[styles.hint, { color: C.textSecondary }]}>
             Exportă toate datele și pozele ca fișier ZIP și salvează-l în iCloud Drive sau Files. La
@@ -899,6 +1116,7 @@ export default function SetariScreen() {
             </RNText>
           </Pressable>
         </RNView>
+        )}
 
         {/* ── Asistent AI ── */}
         <RNText style={[styles.sectionLabel, { color: C.textSecondary }]}>ASISTENT AI</RNText>
@@ -918,23 +1136,23 @@ export default function SetariScreen() {
           />
         </RNView>
 
-        {/* ── Confidențialitate OCR ── */}
+        {/* ── Analiza AI a documentelor ── */}
         <RNText style={[styles.sectionLabel, { color: C.textSecondary }]}>
-          CONFIDENȚIALITATE OCR
+          ANALIZA AI A DOCUMENTELOR
         </RNText>
         <RNView style={[styles.card, { backgroundColor: C.card, shadowColor: C.cardShadow }]}>
-          {/* Rând 1: toggle global documente generale */}
-          <RNView style={[styles.row, { borderBottomColor: C.border }]}>
+          {/* Toggle: trimitere text OCR */}
+          <RNView style={styles.rowLast}>
             <RNView style={styles.rowLeft}>
               <RNView style={[styles.rowIcon, { backgroundColor: '#E8F5E9' }]}>
-                <Ionicons name="scan-outline" size={18} color={primary} />
+                <Ionicons name="text-outline" size={18} color={primary} />
               </RNView>
               <RNView style={styles.rowLabelWrap}>
                 <RNText style={[styles.rowLabel, { color: C.text }]}>
-                  Extracție AI — documente generale
+                  Trimitere text extras (OCR) la AI
                 </RNText>
                 <RNText style={[styles.rowSub, { color: C.textSecondary }]}>
-                  Facturi, contracte, garanții, bilete etc.
+                  Facturile, contractele, garanțiile și biletele
                 </RNText>
               </RNView>
             </RNView>
@@ -947,189 +1165,6 @@ export default function SetariScreen() {
               trackColor={{ false: '#ccc', true: primary }}
               thumbColor="#fff"
             />
-          </RNView>
-
-          {/* Rând 2: expand/collapse documente sensibile */}
-          <Pressable
-            style={({ pressed }) => [
-              ocrSensitiveExpanded ? styles.row : styles.rowLast,
-              { borderBottomColor: C.border, opacity: pressed ? 0.7 : 1 },
-            ]}
-            onPress={() => setOcrSensitiveExpanded(v => !v)}
-          >
-            <RNView style={styles.rowLeft}>
-              <RNView style={[styles.rowIcon, { backgroundColor: '#FFF3E0' }]}>
-                <Ionicons name="shield-outline" size={18} color="#E65100" />
-              </RNView>
-              <RNView style={styles.rowLabelWrap}>
-                <RNText style={[styles.rowLabel, { color: C.text }]}>
-                  Documente sensibile — preferințe per tip
-                </RNText>
-                <RNText style={[styles.rowSub, { color: C.textSecondary }]}>
-                  Buletin, permis, talon, card, proprietăți etc.
-                </RNText>
-              </RNView>
-            </RNView>
-            <Ionicons
-              name={ocrSensitiveExpanded ? 'chevron-up' : 'chevron-down'}
-              size={16}
-              color={C.textSecondary}
-            />
-          </Pressable>
-
-          {/* Lista expandată cu switch per tip sensibil */}
-          {ocrSensitiveExpanded && (
-            <>
-              {ocrConsent.getSensitiveDocTypes().map((docType, idx, arr) => {
-                const type = docType as DocumentType;
-                const label = DOCUMENT_TYPE_LABELS[type] ?? type;
-                const choice = sensitiveConsents[type];
-                const isAllowed = choice === 'allow';
-                const isLast = idx === arr.length - 1;
-                return (
-                  <RNView
-                    key={type}
-                    style={[
-                      isLast ? styles.rowLast : styles.row,
-                      { borderBottomColor: C.border, paddingLeft: 12 },
-                    ]}
-                  >
-                    <RNView style={styles.rowLeft}>
-                      <RNText style={[styles.rowLabel, { color: C.text }]}>{label}</RNText>
-                    </RNView>
-                    <Switch
-                      value={isAllowed}
-                      onValueChange={v => {
-                        const newChoice: OcrConsentChoice = v ? 'allow' : 'deny';
-                        setSensitiveConsents(prev => ({ ...prev, [type]: newChoice }));
-                        ocrConsent.setPerTypeConsent(type, newChoice).catch(() => {});
-                      }}
-                      trackColor={{ false: '#ccc', true: primary }}
-                      thumbColor="#fff"
-                    />
-                  </RNView>
-                );
-              })}
-              <RNText style={[styles.hint, { color: C.textSecondary, marginTop: 4 }]}>
-                Documentele medicale (rețete, analize) nu sunt niciodată procesate de AI,
-                indiferent de setările de mai sus (Art. 9 GDPR).
-              </RNText>
-            </>
-          )}
-        </RNView>
-
-        {/* ── Vizibilitate entități ── */}
-        <RNText style={[styles.sectionLabel, { color: C.textSecondary }]}>ENTITĂȚI ACTIVE</RNText>
-        <RNView style={[styles.card, { backgroundColor: C.card, shadowColor: C.cardShadow }]}>
-          <RNText style={[styles.hint, { color: C.textSecondary }]}>
-            Alege ce tipuri de entități să apară în aplicație. Entitățile dezactivate nu vor apărea
-            în formulare sau liste.
-          </RNText>
-          {ALL_ENTITY_TYPES.map((entityType, idx) => {
-            const isActive = visibleEntityTypes.includes(entityType);
-            const isLast = idx === ALL_ENTITY_TYPES.length - 1;
-            return (
-              <RNView
-                key={entityType}
-                style={[isLast ? styles.rowLast : styles.row, { borderBottomColor: C.border }]}
-              >
-                <RNView style={styles.rowLeft}>
-                  <RNView
-                    style={[styles.rowIcon, { backgroundColor: isActive ? '#E8F5E9' : '#F5F5F5' }]}
-                  >
-                    <RNText style={{ fontSize: 16 }}>{ENTITY_ICONS[entityType]}</RNText>
-                  </RNView>
-                  <RNText style={[styles.rowLabel, { color: C.text }]}>
-                    {ENTITY_LABELS[entityType]}
-                  </RNText>
-                </RNView>
-                <Switch
-                  value={isActive}
-                  onValueChange={() => handleToggleEntityType(entityType)}
-                  trackColor={{ false: '#ccc', true: primary }}
-                  thumbColor="#fff"
-                />
-              </RNView>
-            );
-          })}
-        </RNView>
-
-        {/* ── Vizibilitate tipuri documente ── */}
-        <RNText style={[styles.sectionLabel, { color: C.textSecondary }]}>
-          TIPURI DOCUMENTE ACTIVE
-        </RNText>
-        <RNView style={[styles.card, { backgroundColor: C.card, shadowColor: C.cardShadow }]}>
-          <RNText style={[styles.hint, { color: C.textSecondary }]}>
-            Alege ce tipuri de documente să apară în formulare. Tipurile dezactivate nu vor apărea
-            la adăugarea documentelor.
-          </RNText>
-          <RNView style={styles.chipRow}>
-            {STANDARD_DOC_TYPES.map(docType => {
-              const isActive = visibleDocTypes.includes(docType);
-              return (
-                <Pressable
-                  key={docType}
-                  style={[
-                    styles.chip,
-                    isActive
-                      ? [styles.chipActive, { borderColor: primary }]
-                      : { borderColor: C.border },
-                  ]}
-                  onPress={() => handleToggleDocType(docType)}
-                >
-                  <RNText style={[styles.chipText, { color: isActive ? '#fff' : C.textSecondary }]}>
-                    {DOCUMENT_TYPE_LABELS[docType]}
-                  </RNText>
-                </Pressable>
-              );
-            })}
-          </RNView>
-        </RNView>
-
-        {/* ── Tipuri personalizate de documente ── */}
-        <RNText style={[styles.sectionLabel, { color: C.textSecondary }]}>
-          TIPURI PERSONALIZATE DE DOCUMENTE
-        </RNText>
-        <RNView style={[styles.card, { backgroundColor: C.card, shadowColor: C.cardShadow }]}>
-          <RNText style={[styles.hint, { color: C.textSecondary }]}>
-            Adaugă tipuri proprii de documente (ex: „Asigurare viață", „Dosar medical"). Tipurile de
-            entități (Persoană, Vehicul, Proprietate etc.) sunt fixe și nu pot fi modificate.
-          </RNText>
-          {customTypes.map((ct, idx) => (
-            <RNView
-              key={ct.id}
-              style={[
-                styles.customTypeRow,
-                { borderBottomColor: C.border },
-                idx === customTypes.length - 1 && styles.customTypeRowLast,
-              ]}
-            >
-              <RNText style={[styles.customTypeName, { color: C.text }]}>{ct.name}</RNText>
-              <Pressable onPress={() => handleDeleteCustomType(ct.id, ct.name)} hitSlop={8}>
-                <Ionicons name="trash-outline" size={18} color="#E53935" />
-              </Pressable>
-            </RNView>
-          ))}
-          <RNView style={styles.addTypeRow}>
-            <TextInput
-              style={[
-                styles.addTypeInput,
-                { color: C.text, borderColor: C.border, backgroundColor: C.background },
-              ]}
-              placeholder="Nume tip nou (ex: Asigurare viață)"
-              placeholderTextColor={C.textSecondary}
-              value={newTypeName}
-              onChangeText={setNewTypeName}
-              returnKeyType="done"
-              onSubmitEditing={handleAddCustomType}
-            />
-            <Pressable
-              style={[styles.addTypeBtn, !newTypeName.trim() && styles.addTypeBtnDisabled]}
-              onPress={handleAddCustomType}
-              disabled={!newTypeName.trim()}
-            >
-              <RNText style={styles.addTypeBtnText}>Adaugă</RNText>
-            </Pressable>
           </RNView>
         </RNView>
 
@@ -1322,11 +1357,56 @@ export default function SetariScreen() {
             </Pressable>
           </RNView>
 
+          {/* Acord utilizare AI — fix sub action bar, vizibil fără scroll */}
+          {(aiProviderType === 'builtin' || aiProviderType === 'external') && (
+            <Pressable
+              style={[
+                styles.aiConsentBar,
+                {
+                  backgroundColor: C.card,
+                  borderBottomColor: C.border,
+                  borderTopColor: aiModalConsentChecked ? primary : C.border,
+                },
+              ]}
+              onPress={() => setAiModalConsentChecked(v => !v)}
+            >
+              <RNView
+                style={{
+                  width: 22,
+                  height: 22,
+                  borderRadius: 4,
+                  borderWidth: 2,
+                  borderColor: aiModalConsentChecked ? primary : C.border,
+                  backgroundColor: aiModalConsentChecked ? primary : 'transparent',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                {aiModalConsentChecked && (
+                  <Ionicons name="checkmark" size={14} color="#fff" />
+                )}
+              </RNView>
+              <RNView style={{ flex: 1 }}>
+                <RNText style={[styles.aiToggleLabel, { color: C.text, fontSize: 13 }]}>
+                  {aiProviderType === 'builtin'
+                    ? 'Sunt de acord cu trimiterea datelor la serviciul Dosar AI'
+                    : 'Sunt de acord cu trimiterea datelor la serviciul AI configurat'}
+                </RNText>
+                <RNText style={[styles.aiToggleSub, { color: C.textSecondary, fontSize: 11 }]}>
+                  Acoperă: text OCR, entități, detalii documente, chat. PIN-ul nu este niciodată trimis. Trimiterea fotografiilor se configurează separat în Setări → Analiza AI.
+                </RNText>
+              </RNView>
+            </Pressable>
+          )}
+
           <ScrollView
             style={styles.legalScroll}
             contentContainerStyle={[styles.legalContent, { gap: 20 }]}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            automaticallyAdjustKeyboardInsets
           >
             {/* Selector AI unificat */}
             <RNView>
@@ -1350,6 +1430,49 @@ export default function SetariScreen() {
                   </RNText>
                 </Pressable>
               ))}
+              {/* Câmpuri pentru external — inline sub selecție */}
+              {aiProviderType === 'external' && (
+                <RNView style={{ gap: 12, marginTop: 8 }}>
+                  <RNView>
+                    <RNText style={[styles.aiLabel, { color: C.textSecondary }]}>URL API</RNText>
+                    <TextInput
+                      style={[styles.aiInput, { color: C.text, borderColor: C.border, backgroundColor: C.card }]}
+                      value={aiProviderUrl}
+                      onChangeText={text => { setAiProviderUrl(text); setAiTestStatus('idle'); }}
+                      placeholder="ex: https://api.mistral.ai/v1"
+                      placeholderTextColor={C.textSecondary}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      keyboardType="url"
+                    />
+                  </RNView>
+                  <RNView>
+                    <RNText style={[styles.aiLabel, { color: C.textSecondary }]}>Cheie API</RNText>
+                    <TextInput
+                      style={[styles.aiInput, { color: C.text, borderColor: C.border, backgroundColor: C.card }]}
+                      value={aiApiKey}
+                      onChangeText={text => { setAiApiKey(text); setAiTestStatus('idle'); }}
+                      placeholder="••••••••••"
+                      placeholderTextColor={C.textSecondary}
+                      secureTextEntry
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                    />
+                  </RNView>
+                  <RNView>
+                    <RNText style={[styles.aiLabel, { color: C.textSecondary }]}>Model</RNText>
+                    <TextInput
+                      style={[styles.aiInput, { color: C.text, borderColor: C.border, backgroundColor: C.card }]}
+                      value={aiProviderModel}
+                      onChangeText={text => { setAiProviderModel(text); setAiTestStatus('idle'); }}
+                      placeholder="ex: mistral-small-latest"
+                      placeholderTextColor={C.textSecondary}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                    />
+                  </RNView>
+                </RNView>
+              )}
               {downloadedModelIds.length > 0 && (
                 <>
                   <RNText style={[styles.aiLabel, { color: C.textSecondary, marginTop: 8 }]}>
@@ -1504,96 +1627,6 @@ export default function SetariScreen() {
               </RNView>
             )}
 
-            {/* Câmpuri pentru external */}
-            {aiProviderType === 'external' && (
-              <RNView style={{ gap: 12 }}>
-                <RNView>
-                  <RNText style={[styles.aiLabel, { color: C.textSecondary }]}>URL API</RNText>
-                  <TextInput
-                    style={[styles.aiInput, { color: C.text, borderColor: C.border, backgroundColor: C.card }]}
-                    value={aiProviderUrl}
-                    onChangeText={text => { setAiProviderUrl(text); setAiTestStatus('idle'); }}
-                    placeholder="ex: https://api.mistral.ai/v1"
-                    placeholderTextColor={C.textSecondary}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    keyboardType="url"
-                  />
-                </RNView>
-                <RNView>
-                  <RNText style={[styles.aiLabel, { color: C.textSecondary }]}>Cheie API</RNText>
-                  <TextInput
-                    style={[styles.aiInput, { color: C.text, borderColor: C.border, backgroundColor: C.card }]}
-                    value={aiApiKey}
-                    onChangeText={text => { setAiApiKey(text); setAiTestStatus('idle'); }}
-                    placeholder="••••••••••"
-                    placeholderTextColor={C.textSecondary}
-                    secureTextEntry
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                  />
-                </RNView>
-                <RNView>
-                  <RNText style={[styles.aiLabel, { color: C.textSecondary }]}>Model</RNText>
-                  <TextInput
-                    style={[styles.aiInput, { color: C.text, borderColor: C.border, backgroundColor: C.card }]}
-                    value={aiProviderModel}
-                    onChangeText={text => { setAiProviderModel(text); setAiTestStatus('idle'); }}
-                    placeholder="ex: mistral-small-latest"
-                    placeholderTextColor={C.textSecondary}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                  />
-                </RNView>
-              </RNView>
-            )}
-
-            {/* Acord utilizare AI — vizibil doar pentru remote */}
-            {(aiProviderType === 'builtin' || aiProviderType === 'external') && (
-              <Pressable
-                style={[
-                  styles.aiToggleCard,
-                  {
-                    backgroundColor: C.card,
-                    borderColor: aiModalConsentChecked ? primary : C.border,
-                    flexDirection: 'row',
-                    alignItems: 'flex-start',
-                    gap: 12,
-                  },
-                ]}
-                onPress={() => setAiModalConsentChecked(v => !v)}
-              >
-                <RNView
-                  style={{
-                    width: 22,
-                    height: 22,
-                    borderRadius: 4,
-                    borderWidth: 2,
-                    borderColor: aiModalConsentChecked ? primary : C.border,
-                    backgroundColor: aiModalConsentChecked ? primary : 'transparent',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    marginTop: 1,
-                    flexShrink: 0,
-                  }}
-                >
-                  {aiModalConsentChecked && (
-                    <Ionicons name="checkmark" size={14} color="#fff" />
-                  )}
-                </RNView>
-                <RNView style={{ flex: 1 }}>
-                  <RNText style={[styles.aiToggleLabel, { color: C.text, fontSize: 14 }]}>
-                    {aiProviderType === 'builtin'
-                      ? 'Sunt de acord cu trimiterea datelor la serviciul Dosar AI'
-                      : 'Sunt de acord cu trimiterea datelor la serviciul AI configurat'}
-                  </RNText>
-                  <RNText style={[styles.aiToggleSub, { color: C.textSecondary }]}>
-                    Textul extras, numele entităților și detaliile documentelor sunt trimise pentru procesare. Fotografiile și PIN-ul NU sunt trimise.
-                  </RNText>
-                </RNView>
-              </Pressable>
-            )}
-
             {aiTestMessage ? (
               <RNText
                 style={[styles.aiHint, { color: aiTestStatus === 'error' ? '#C62828' : '#2E7D32' }]}
@@ -1642,6 +1675,20 @@ const styles = StyleSheet.create({
     marginTop: 20,
     marginLeft: 4,
     textTransform: 'uppercase',
+  },
+  sectionLabelInline: {
+    marginBottom: 0,
+    marginTop: 0,
+    marginLeft: 0,
+    flex: 1,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 20,
+    marginBottom: 8,
+    marginLeft: 4,
+    marginRight: 4,
   },
 
   card: {
@@ -1886,6 +1933,15 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingHorizontal: 16,
     paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  aiConsentBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderTopWidth: 2,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   downloadBtn: {

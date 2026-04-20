@@ -80,12 +80,14 @@ export async function mapOcrWithAi(
 
   const prompt = `Analizează textul OCR și returnează un JSON structurat.
 
-TEXT OCR (poate conține mai multe pagini separate prin "---"):
+TEXT OCR (poate conține mai multe fișiere separate prin "---"):
 """
 ${sanitizedOcr}
 """
 
-IMPORTANT: Dacă există mai multe pagini, analizează TOATE și identifică documentul principal (ex: polița RCA, nu scrisoarea de informare sau coperta). Ignoră paginile de tip "scrisoare de însoțire", "informații produs", "adresă de înaintare".
+IMPORTANT: Dacă există mai multe fișiere/pagini:
+- Pentru "documentType" și "fields": identifică documentul PRINCIPAL (ex: polița RCA, nu scrisoarea de informare). Ignoră paginile de tip "scrisoare de însoțire", "informații produs", "adresă de înaintare".
+- Pentru "structuredNote": include conținut din TOATE fișierele, nu doar cel principal.
 
 ENTITĂȚI EXISTENTE ÎN APLICAȚIE (folosește indexul e0, e1, ... în entityId):
 ${entityContext}
@@ -109,7 +111,10 @@ IDENTITATE:
 - "permis_auto" = permis de conducere, conține categorii (A, B, C...), nr. permis.
 
 MEDICAL:
-- "analize_medicale" = buletin analize laborator: hemogramă, biochimie etc. NU are dată de expirare.
+- "analize_medicale" = buletin analize laborator: hemogramă, biochimie, urină etc. NU are dată de expirare.
+  - lab: numele laboratorului (Synevo, MedLife, Regina Maria, Medicover, Bioclinica etc.)
+  - doctor: medicul solicitant/prescriptor (poate apărea ca "Medic prescriptor", "Dr.", "Solicitat de")
+  - pacient: numele pacientului (poate apărea ca "Pacient", "Numele pacientului", "Nume:")
 - "reteta_medicala" = rețetă medicală cu medicamente prescrise. Are dată expirare (valabilitate rețetă).
 
 FACTURI (utilități și servicii):
@@ -128,10 +133,10 @@ itp: plate="B 123 ABC"
 rca: policy_number="RO32V32LM1100745021", insurer="Groupama", plate="B 123 ABC", prima="850.00", valid_from="01.04.2024", marca_model="Dacia Logan"
 casco: policy_number="...", insurer="...", plate="B 123 ABC"
 vigneta: plate="B 123 ABC"
-buletin: series="RX 123456", cnp="1234567890123"
+buletin: series="RX 123456", cnp="1234567890123", birth_date="28.09.1985" (derivă din CNP: cifra 1=sex/secol, pozițiile 2-3=an, 4-5=lună, 6-7=zi; S∈{1,2}→1900+AA, S∈{5,6}→2000+AA), address="Str. Exemplu nr. 1, Cluj-Napoca" (doar dacă apare în text)
 pasaport: series="05123456"
 permis_auto: series="12345678", categories="B"
-analize_medicale: lab="Synevo"
+analize_medicale: lab="Synevo", doctor="Dr. Ionescu Maria", pacient="Popescu Ion"
 reteta_medicala: doctor="Dr. Ionescu", medication_1="Amoxicilina 500mg"
 factura: invoice_number="FAC-001", supplier="E.ON Energie România", amount="225.06", due_date="15.04.2024", period="01.03.2024 - 31.03.2024"
 garantie: product_name="iPhone 15", serie_produs="SN123"
@@ -147,7 +152,7 @@ bilet: categorie="Avion", venue="OTP→LHR", eveniment_artist="RO123"
 
 ━━━ REGULI DATE ━━━
 
-- issueDate: data emiterii/eliberării documentului (YYYY-MM-DD). null dacă nu există.
+- issueDate: data emiterii/eliberării documentului (YYYY-MM-DD). null dacă nu există. NU folosi date de încetare contract, date de valabilitate perpetuă (ex: 31.12.2999) sau alte date administrative — doar data efectivă a documentului.
 - expiryDate: data expirării documentului (YYYY-MM-DD). EXCEPȚII — pune null pentru: carte_auto, analize_medicale, buletin (expiryDate e separat), cadastru, act_proprietate.
 - Pentru "talon": expiryDate = data ITP din ștampila RAR sau din "Data urmatoarei inspectii tehnice" (YYYY-MM-DD). Pune și în fields.itp_expiry_date (ZZ.LL.AAAA). NU pune data emiterii talonului în expiryDate.
 - Pentru "factura": expiryDate = data scadenței/limita de plată (YYYY-MM-DD). Pune și în fields.due_date (ZZ.LL.AAAA). NU pune data emiterii facturii în expiryDate.
@@ -166,7 +171,7 @@ Returnează EXCLUSIV JSON valid:
   "entitySuggestions": [
     { "entityType": "person|vehicle|property|card|animal|company", "entityId": "<id exact>", "entityName": "<nume>", "confidence": "high|medium|low" }
   ],
-  "structuredNote": "<listă completă cu toate informațiile cheie extrase din document, inclusiv cele mapate în alte câmpuri. Datele vor fi citite de un chatbot, nu de utilizator direct — prioritizează date brute utile: numere, date, sume, coduri. Format:\nCâmp: Valoare\nCâmp: Valoare\n...\nMaxim 15 rânduri, concis. null dacă OCR-ul nu conține nimic util.>"
+  "structuredNote": "<rezumat structurat al TUTUROR fișierelor din textul OCR (separate prin '---'):\n- Dacă există mai multe fișiere diferite: secțiune separată pentru FIECARE cu header clar (ex: 'RCA:', 'Factură:')\n- analize_medicale: toate analizele format 'Nume: Valoare Unitate (ref: Min-Max)'; Pacient, Laborator, Medic, Data recoltare\n- reteta_medicala: medicamente cu doze și durată; Medic, Data, Diagnostic\n- factura: Furnizor, Nr. factură, Sumă, Scadență, Perioadă\n- alte tipuri: câmpurile cheie — identificatori, date, sume, părți implicate — format 'Câmp: Valoare'. Omite texte administrative și informații redundante.\nMax 40 rânduri pentru analize, 15 pentru restul. null dacă OCR-ul nu conține nimic util.>"
 }
 
 Răspunde DOAR cu JSON, fără text suplimentar.`;
@@ -175,7 +180,7 @@ Răspunde DOAR cu JSON, fără text suplimentar.`;
     { role: 'system' as const, content: systemMessage },
     { role: 'user' as const, content: prompt },
   ];
-  const rawResponse = await sendAiRequest(messages, 600);
+  const rawResponse = await sendAiRequest(messages, 1200);
 
   return parseAiResponse(rawResponse, entities, indexToId);
 }
@@ -250,7 +255,7 @@ interface RawAiJson {
   structuredNote?: string;
 }
 
-const AI_NOTES_MAX_LENGTH = 1000;
+const AI_NOTES_MAX_LENGTH = 3000;
 
 function parseAiResponse(
   raw: string,
@@ -300,7 +305,7 @@ function parseAiResponse(
   let structuredNote: string | undefined;
   if (typeof parsed.structuredNote === 'string' && parsed.structuredNote.trim()) {
     structuredNote = parsed.structuredNote
-      .replace(/[\x00-\x1F\x7F]/g, ' ')
+      .replace(/[\x00-\x08\x0B-\x1F\x7F]/g, ' ') // păstrează \x09=tab, \x0A=newline
       .trim()
       .slice(0, AI_NOTES_MAX_LENGTH);
     if (!structuredNote) structuredNote = undefined;
@@ -324,11 +329,17 @@ function validateDocumentType(raw: unknown): DocumentType | undefined {
 
 function validateDate(raw: unknown): string | undefined {
   if (typeof raw !== 'string') return undefined;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
-  // Încearcă și formatul ZZ.LL.AAAA
-  const m = raw.match(/^(\d{2})[.\/-](\d{2})[.\/-](\d{4})$/);
-  if (m) return `${m[3]}-${m[2]}-${m[1]}`;
-  return undefined;
+  let result: string | undefined;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) result = raw;
+  else {
+    const m = raw.match(/^(\d{2})[.\/-](\d{2})[.\/-](\d{4})$/);
+    if (m) result = `${m[3]}-${m[2]}-${m[1]}`;
+  }
+  if (!result) return undefined;
+  // Respinge ani absurzi (ex: 2999 din dată de încetare contract)
+  const year = parseInt(result.slice(0, 4), 10);
+  if (year < 1900 || year > 2099) return undefined;
+  return result;
 }
 
 const VALID_ENTITY_TYPES = new Set<string>([

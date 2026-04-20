@@ -121,6 +121,7 @@ export interface Document {
   company_id?: string;
   auto_delete?: string;
   ocr_text?: string;
+  file_hash?: string;
   created_at: string;
   // Multi-entity links (din document_entities junction table)
   entity_links?: DocumentEntityLink[];
