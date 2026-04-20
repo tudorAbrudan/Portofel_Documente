@@ -8,7 +8,7 @@
  * - Sugestii entitate asociată (persoană, vehicul, etc.)
  */
 
-import { sendAiRequest } from './aiProvider';
+import { sendAiRequest, sendAiRequestWithImage } from './aiProvider';
 import type { DocumentType, EntityType } from '@/types';
 import { DOCUMENT_TYPE_LABELS } from '@/types';
 
@@ -69,7 +69,8 @@ function sanitizeOcrText(text: string): string {
 
 export async function mapOcrWithAi(
   ocrText: string,
-  entities: AvailableEntities
+  entities: AvailableEntities,
+  imageBase64?: string
 ): Promise<AiOcrResult> {
   // Folosim indecși numerici în loc de ID-uri reale — previne exfiltrarea ID-urilor
   const { entityContext, indexToId } = buildEntityContext(entities);
@@ -171,16 +172,23 @@ Returnează EXCLUSIV JSON valid:
   "entitySuggestions": [
     { "entityType": "person|vehicle|property|card|animal|company", "entityId": "<id exact>", "entityName": "<nume>", "confidence": "high|medium|low" }
   ],
-  "structuredNote": "<rezumat structurat al TUTUROR fișierelor din textul OCR (separate prin '---'):\n- Dacă există mai multe fișiere diferite: secțiune separată pentru FIECARE cu header clar (ex: 'RCA:', 'Factură:')\n- analize_medicale: toate analizele format 'Nume: Valoare Unitate (ref: Min-Max)'; Pacient, Laborator, Medic, Data recoltare\n- reteta_medicala: medicamente cu doze și durată; Medic, Data, Diagnostic\n- factura: Furnizor, Nr. factură, Sumă, Scadență, Perioadă\n- alte tipuri: câmpurile cheie — identificatori, date, sume, părți implicate — format 'Câmp: Valoare'. Omite texte administrative și informații redundante.\nMax 40 rânduri pentru analize, 15 pentru restul. null dacă OCR-ul nu conține nimic util.>"
+  "structuredNote": "<rezumat structurat al TUTUROR fișierelor din textul OCR (separate prin '---'):\n- Dacă există mai multe fișiere diferite: secțiune separată pentru FIECARE cu header clar (ex: 'RCA:', 'Factură:')\n- analize_medicale: toate analizele format 'Nume: Valoare Unitate (ref: Min-Max)'; Pacient, Laborator, Medic, Data recoltare\n- reteta_medicala: medicamente cu doze și durată; Medic, Data, Diagnostic, Unitate medicală\n- factura: Furnizor, Nr. factură, Sumă totală, Scadență, Perioadă facturare, Adresă livrare/consum, Nr. client/contract, detalii consum (kWh, m³, Gcal etc. dacă apar). Include toate valorile și identificatorii găsiți.\n- rca/casco: Nr. poliță, Asigurator, Vehicul, Perioadă valabilitate, Primă\n- contract: Tip, Valoare, Toate părțile (nume, CNP/CUI), Durată, Obiect\n- garantie: Produs, Serie, Perioadă garanție, Vânzător, Data cumpărare\n- alte tipuri: câmpurile cheie — identificatori, date, sume, părți implicate — format 'Câmp: Valoare'. Omite texte administrative și informații redundante.\nMax 40 rânduri pentru analize, 20 pentru restul. null dacă OCR-ul nu conține nimic util.>"
 }
 
 Răspunde DOAR cu JSON, fără text suplimentar.`;
 
-  const messages = [
-    { role: 'system' as const, content: systemMessage },
-    { role: 'user' as const, content: prompt },
-  ];
-  const rawResponse = await sendAiRequest(messages, 1200);
+  let rawResponse: string;
+  if (imageBase64) {
+    rawResponse = await sendAiRequestWithImage(systemMessage, prompt, imageBase64, 'image/jpeg', 1400);
+  } else {
+    rawResponse = await sendAiRequest(
+      [
+        { role: 'system' as const, content: systemMessage },
+        { role: 'user' as const, content: prompt },
+      ],
+      1200
+    );
+  }
 
   return parseAiResponse(rawResponse, entities, indexToId);
 }

@@ -417,8 +417,6 @@ export default function AddDocumentScreen() {
     const consent = await AsyncStorage.getItem(AI_CONSENT_KEY);
     if (consent !== 'true') return;
     if (ocrConsent.getDocTypeSensitivity(type) === 'medical') return;
-    const globalOk = await ocrConsent.getGlobalLlmOcrEnabled();
-    if (!globalOk) return;
 
     setAiOcrLoading(true);
     try {
@@ -431,7 +429,22 @@ export default function AddDocumentScreen() {
         companies: companies.map(c => ({ id: c.id, name: c.name })),
       };
 
-      const result = await mapOcrWithAi(combinedOcrText, availableEntities);
+      // Trimite și imaginea primului fișier pentru context vizual (vision)
+      let firstImageBase64: string | undefined;
+      const firstPage = pages[0];
+      if (firstPage) {
+        try {
+          if (isPdfFile(firstPage.localPath)) {
+            firstImageBase64 = (await renderPdfFirstPageForVision(firstPage.localPath)) ?? undefined;
+          } else {
+            firstImageBase64 = await FileSystem.readAsStringAsync(firstPage.localPath, {
+              encoding: FileSystem.EncodingType.Base64,
+            });
+          }
+        } catch { /* ignoră dacă fișierul nu poate fi citit */ }
+      }
+
+      const result = await mapOcrWithAi(combinedOcrText, availableEntities, firstImageBase64);
 
       // Aplică tipul documentului dacă AI-ul l-a detectat și e vizibil
       if (
