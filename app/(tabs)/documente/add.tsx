@@ -530,7 +530,7 @@ export default function AddDocumentScreen() {
     try {
       const extracted = await extractFieldsWithLlm(type, ocrText);
       if (Object.keys(extracted.metadata).length > 0) {
-        setMetadata(prev => ({ ...prev, ...extracted.metadata }));
+        setMetadata(prev => ({ ...extracted.metadata, ...prev }));
       }
       if (extracted.expiry_date && !expiryDateRef.current) {
         setExpiryDate(extracted.expiry_date);
