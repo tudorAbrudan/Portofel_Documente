@@ -32,24 +32,17 @@ export function getSensitiveDocTypes(): DocumentType[] {
   return [...SENSITIVE_TYPES] as DocumentType[];
 }
 
+export function getMedicalDocTypes(): DocumentType[] {
+  return [...MEDICAL_TYPES] as DocumentType[];
+}
+
 export function getDocTypeSensitivity(type: DocumentType): OcrSensitivity {
   if (MEDICAL_TYPES.has(type)) return 'medical';
   if (SENSITIVE_TYPES.has(type)) return 'sensitive';
   return 'general';
 }
 
-const KEY_GLOBAL_GENERAL = 'ocr_llm_global_general';
 const KEY_PER_TYPE_PREFIX = 'ocr_llm_type_';
-
-// Global toggle: ON by default pentru documente generale
-export async function getGlobalLlmOcrEnabled(): Promise<boolean> {
-  const v = await AsyncStorage.getItem(KEY_GLOBAL_GENERAL);
-  return v !== 'false';
-}
-
-export async function setGlobalLlmOcrEnabled(enabled: boolean): Promise<void> {
-  await AsyncStorage.setItem(KEY_GLOBAL_GENERAL, enabled ? 'true' : 'false');
-}
 
 // Preferință per tip (null = nu a ales niciodată)
 export async function getPerTypeConsent(
@@ -71,20 +64,17 @@ export async function clearPerTypeConsent(type: DocumentType): Promise<void> {
   await AsyncStorage.removeItem(KEY_PER_TYPE_PREFIX + type);
 }
 
-// Rezolvă dacă LLM OCR e activat pentru un tip la momentul curent
-export async function resolveLlmOcrEnabled(type: DocumentType): Promise<boolean> {
-  const sensitivity = getDocTypeSensitivity(type);
+const KEY_IMAGE_AI_CONSENT = 'ocr_image_ai_consent';
 
-  // Medical: niciodată ON by default
-  if (sensitivity === 'medical') return false;
-
-  // Per-type override (orice tip poate fi suprascris explicit)
-  const perType = await getPerTypeConsent(type);
-  if (perType !== null) return perType === 'allow';
-
-  // Sensitive: default OFF dacă nu e explicit 'allow'
-  if (sensitivity === 'sensitive') return false;
-
-  // General: urmează setarea globală
-  return getGlobalLlmOcrEnabled();
+// Consent global pentru trimiterea imaginilor la AI (null = nu a ales niciodată)
+export async function getImageAiConsent(): Promise<boolean | null> {
+  const v = await AsyncStorage.getItem(KEY_IMAGE_AI_CONSENT);
+  if (v === 'true') return true;
+  if (v === 'false') return false;
+  return null;
 }
+
+export async function setImageAiConsent(value: boolean): Promise<void> {
+  await AsyncStorage.setItem(KEY_IMAGE_AI_CONSENT, value ? 'true' : 'false');
+}
+

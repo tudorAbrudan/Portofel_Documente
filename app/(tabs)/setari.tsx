@@ -31,7 +31,6 @@ import { primary } from '@/theme/colors';
 import * as settings from '@/services/settings';
 import * as aiProvider from '@/services/aiProvider';
 import type { AiProviderType } from '@/services/aiProvider';
-import * as ocrConsent from '@/services/ocrConsent';
 import { AI_CONSENT_KEY } from '@/services/aiProvider';
 import { scheduleExpirationReminders } from '@/services/notifications';
 import { exportBackup, importBackup } from '@/services/backup';
@@ -281,9 +280,6 @@ export default function SetariScreen() {
   const [docTypesCollapsed, setDocTypesCollapsed] = useState(true);
   const [aspectCollapsed, setAspectCollapsed] = useState(true);
 
-  // ── OCR Privacy ──────────────────────────────────────────────────────────────
-  const [ocrLlmGlobal, setOcrLlmGlobal] = useState(true);
-
   useEffect(() => {
     settings.getNotificationDays().then(setNotifDays);
     settings.getPushEnabled().then(setPushEnabled);
@@ -300,8 +296,6 @@ export default function SetariScreen() {
         savedExternalRef.current = { url: cfg.url, model: cfg.model, apiKey: cfg.apiKey };
       }
     });
-    // OCR consent
-    ocrConsent.getGlobalLlmOcrEnabled().then(setOcrLlmGlobal);
     // Modele locale
     void (async () => {
       const models = localModel.getAllModels();
@@ -1136,38 +1130,6 @@ export default function SetariScreen() {
           />
         </RNView>
 
-        {/* ── Analiza AI a documentelor ── */}
-        <RNText style={[styles.sectionLabel, { color: C.textSecondary }]}>
-          ANALIZA AI A DOCUMENTELOR
-        </RNText>
-        <RNView style={[styles.card, { backgroundColor: C.card, shadowColor: C.cardShadow }]}>
-          {/* Toggle: trimitere text OCR */}
-          <RNView style={styles.rowLast}>
-            <RNView style={styles.rowLeft}>
-              <RNView style={[styles.rowIcon, { backgroundColor: '#E8F5E9' }]}>
-                <Ionicons name="text-outline" size={18} color={primary} />
-              </RNView>
-              <RNView style={styles.rowLabelWrap}>
-                <RNText style={[styles.rowLabel, { color: C.text }]}>
-                  Trimitere text extras (OCR) la AI
-                </RNText>
-                <RNText style={[styles.rowSub, { color: C.textSecondary }]}>
-                  Facturile, contractele, garanțiile și biletele
-                </RNText>
-              </RNView>
-            </RNView>
-            <Switch
-              value={ocrLlmGlobal}
-              onValueChange={v => {
-                setOcrLlmGlobal(v);
-                ocrConsent.setGlobalLlmOcrEnabled(v).catch(() => {});
-              }}
-              trackColor={{ false: '#ccc', true: primary }}
-              thumbColor="#fff"
-            />
-          </RNView>
-        </RNView>
-
         {/* ── GDPR – Date și confidențialitate ── */}
         <RNText style={[styles.sectionLabel, { color: C.textSecondary }]}>
           DATE ȘI CONFIDENȚIALITATE
@@ -1394,7 +1356,7 @@ export default function SetariScreen() {
                     : 'Sunt de acord cu trimiterea datelor la serviciul AI configurat'}
                 </RNText>
                 <RNText style={[styles.aiToggleSub, { color: C.textSecondary, fontSize: 11 }]}>
-                  Acoperă: text OCR, entități, detalii documente, chat. PIN-ul nu este niciodată trimis. Trimiterea fotografiilor se configurează separat în Setări → Analiza AI.
+                  Acoperă: text OCR, entități, detalii documente, chat. PIN-ul nu este niciodată trimis.
                 </RNText>
               </RNView>
             </Pressable>

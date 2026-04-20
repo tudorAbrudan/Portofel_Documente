@@ -28,7 +28,6 @@ import {
 } from '@/types';
 import type { EntityType, DocumentType } from '@/types';
 import * as settings from '@/services/settings';
-import * as ocrConsent from '@/services/ocrConsent';
 import * as aiProvider from '@/services/aiProvider';
 import type { AiProviderType } from '@/services/aiProvider';
 import { AI_CONSENT_KEY } from '@/services/aiProvider';
@@ -132,7 +131,7 @@ function stepSubtitle(step: number): string {
     case AI_STEP:
       return 'Complet opțional. Datele tale rămân pe dispozitiv — AI-ul e activat doar când îl folosești.';
     case OCR_PRIVACY:
-      return 'Controlezi exact ce documente sunt procesate de AI. Poți schimba oricând din Setări → Confidențialitate OCR.';
+      return 'Controlezi ce date sunt trimise la AI. Poți schimba oricând din Setări → Analiza AI a documentelor.';
     case SUMMARY:
       return 'Verifică setările. Poți modifica totul din Setări oricând.';
     default:
@@ -164,7 +163,6 @@ export default function OnboardingWizard({ onComplete }: Props) {
   const [aiExternalApiKey, setAiExternalApiKey] = useState('');
   const [aiExternalModel, setAiExternalModel] = useState('');
   const [aiConsentChecked, setAiConsentChecked] = useState(false);
-  const [ocrLlmGlobalEnabled, setOcrLlmGlobalEnabled] = useState(true);
 
   useEffect(() => {
     settings.getPushEnabled().then(setPushEnabled);
@@ -172,7 +170,6 @@ export default function OnboardingWizard({ onComplete }: Props) {
       setNotifDays(d === 7 || d === 14 || d === 30 ? d : 7);
     });
     settings.getAppLockEnabled().then(setLockEnabled);
-    ocrConsent.getGlobalLlmOcrEnabled().then(setOcrLlmGlobalEnabled);
     if (Platform.OS !== 'web') {
       Notifications.getPermissionsAsync().then(({ status }) => {
         if (status === 'granted') setNotifPermStatus('granted');
@@ -264,7 +261,6 @@ export default function OnboardingWizard({ onComplete }: Props) {
     if (aiProviderChoice === 'external') {
       await aiProvider.saveAiApiKey(aiExternalApiKey);
     }
-    await ocrConsent.setGlobalLlmOcrEnabled(ocrLlmGlobalEnabled);
     await settings.setOnboardingDone();
     onComplete();
   }
@@ -775,52 +771,20 @@ export default function OnboardingWizard({ onComplete }: Props) {
           <View style={styles.stepContent}>
             <View style={[styles.card, { backgroundColor: C.card }]}>
               <View style={styles.cardRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.cardTitle, { color: C.text }]}>
-                    Documente generale
-                  </Text>
-                  <Text style={[styles.cardSubtitle, { color: C.textSecondary }]}>
-                    Facturi, contracte, garanții, bonuri — text OCR trimis la AI pentru extracție automată câmpuri
-                  </Text>
-                </View>
-                <Switch
-                  value={ocrLlmGlobalEnabled}
-                  onValueChange={setOcrLlmGlobalEnabled}
-                  trackColor={{ true: primary }}
-                />
-              </View>
-            </View>
-
-            <View style={[styles.card, { backgroundColor: C.card, marginTop: spacing.gap }]}>
-              <View style={styles.cardRow}>
-                <Ionicons name="shield-checkmark-outline" size={20} color={primary} />
+                <Ionicons name="image-outline" size={20} color="#F57F17" />
                 <View style={{ flex: 1, marginLeft: spacing.gap }}>
                   <Text style={[styles.cardTitle, { color: C.text }]}>
-                    Documente sensibile
+                    Trimitere imagine/document la AI
                   </Text>
                   <Text style={[styles.cardSubtitle, { color: C.textSecondary }]}>
-                    Buletin, pașaport, talon, card etc. — confirmare explicită la fiecare document
-                  </Text>
-                </View>
-              </View>
-            </View>
-
-            <View style={[styles.card, { backgroundColor: C.card, marginTop: spacing.gap }]}>
-              <View style={styles.cardRow}>
-                <Ionicons name="medkit-outline" size={20} color="#E57373" />
-                <View style={{ flex: 1, marginLeft: spacing.gap }}>
-                  <Text style={[styles.cardTitle, { color: C.text }]}>
-                    Date medicale
-                  </Text>
-                  <Text style={[styles.cardSubtitle, { color: C.textSecondary }]}>
-                    Rețete, analize — confirmare la fiecare document, preferința nu se salvează (GDPR)
+                    Doar la apăsarea butonului „Trimite documentul la AI" din formularul documentului — niciodată automat
                   </Text>
                 </View>
               </View>
             </View>
 
             <Text style={[styles.infoText, { color: C.textSecondary, marginTop: spacing.screen }]}>
-              Se trimite doar textul OCR extras local — nicio imagine nu ajunge la AI.
+              Textul OCR e trimis automat (dacă e activat). Imaginile se trimit doar la cerere explicită — apăsând butonul din formular.
             </Text>
           </View>
         )}
