@@ -20,6 +20,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
+import * as Device from 'expo-device';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
@@ -30,6 +31,8 @@ import { primary } from '@/theme/colors';
 import * as settings from '@/services/settings';
 import * as aiProvider from '@/services/aiProvider';
 import type { AiProviderType } from '@/services/aiProvider';
+import * as ocrConsent from '@/services/ocrConsent';
+import type { OcrConsentChoice } from '@/services/ocrConsent';
 import { AI_CONSENT_KEY } from '@/services/aiProvider';
 import { scheduleExpirationReminders } from '@/services/notifications';
 import { exportBackup, importBackup } from '@/services/backup';
@@ -274,6 +277,13 @@ export default function SetariScreen() {
   const [backupExporting, setBackupExporting] = useState(false);
   const [backupImporting, setBackupImporting] = useState(false);
 
+  // ── OCR Privacy ──────────────────────────────────────────────────────────────
+  const [ocrLlmGlobal, setOcrLlmGlobal] = useState(true);
+  const [ocrSensitiveExpanded, setOcrSensitiveExpanded] = useState(false);
+  const [sensitiveConsents, setSensitiveConsents] = useState<
+    Partial<Record<string, OcrConsentChoice>>
+  >({});
+
   useEffect(() => {
     settings.getNotificationDays().then(setNotifDays);
     settings.getPushEnabled().then(setPushEnabled);
@@ -287,6 +297,26 @@ export default function SetariScreen() {
       setAiProviderModel(cfg.model);
       setAiApiKey(cfg.apiKey);
     });
+    // OCR consent
+    ocrConsent.getGlobalLlmOcrEnabled().then(setOcrLlmGlobal);
+    const sensitiveDocTypes = [
+      'buletin', 'pasaport', 'permis_auto', 'talon', 'carte_auto',
+      'rca', 'casco', 'itp', 'vigneta', 'act_proprietate', 'cadastru',
+      'card', 'pad', 'impozit_proprietate',
+    ] as const;
+    Promise.all(
+      sensitiveDocTypes.map(async t => {
+        const v = await ocrConsent.getPerTypeConsent(t);
+        return [t, v] as const;
+      })
+    ).then(entries => {
+      const obj: Partial<Record<string, OcrConsentChoice>> = {};
+      for (const [t, v] of entries) {
+        if (v) obj[t] = v;
+      }
+      setSensitiveConsents(obj);
+    });
+
     // Modele locale
     void (async () => {
       const models = localModel.getAllModels();
@@ -685,7 +715,18 @@ export default function SetariScreen() {
 
   // ── Contact ──────────────────────────────────────────────────────────────────
   const openEmail = () => {
-    Linking.openURL(`mailto:${CONTACT_EMAIL}?subject=Suport%20${APP_NAME}`).catch(() => {
+    const ramMB = Device.totalMemory ? Math.round(Device.totalMemory / 1024 / 1024) : null;
+    const ramText = ramMB ? `${ramMB} MB` : 'necunoscut';
+    const deviceInfo = [
+      `Model: ${Device.modelName ?? 'necunoscut'}`,
+      `RAM: ${ramText}`,
+      `Tabletă: ${Device.deviceType === 2 ? 'Da' : 'Nu'}`,
+      `OS: ${Platform.OS} ${Device.osVersion ?? ''}`.trim(),
+      `Dosar: ${APP_VERSION}`,
+    ].join('\n');
+    const subject = encodeURIComponent(`Suport ${APP_NAME}`);
+    const body = encodeURIComponent(`Bună ziua,\n\n[Descrie problema ta aici]\n\n---\n${deviceInfo}`);
+    Linking.openURL(`mailto:${CONTACT_EMAIL}?subject=${subject}&body=${body}`).catch(() => {
       Alert.alert('Email indisponibil', `Scrieți-ne la: ${CONTACT_EMAIL}`);
     });
   };
@@ -881,6 +922,121 @@ export default function SetariScreen() {
           />
         </RNView>
 
+        {/* ── Confidențialitate OCR ── */}
+        <RNText style={[styles.sectionLabel, { color: C.textSecondary }]}>
+          CONFIDENȚIALITATE OCR
+        </RNText>
+        <RNView style={[styles.card, { backgroundColor: C.card, shadowColor: C.cardShadow }]}>
+          {/* Rând 1: toggle global documente generale */}
+          <RNView style={[styles.row, { borderBottomColor: C.border }]}>
+            <RNView style={styles.rowLeft}>
+              <RNView style={[styles.rowIcon, { backgroundColor: '#E8F5E9' }]}>
+                <Ionicons name="scan-outline" size={18} color={primary} />
+              </RNView>
+              <RNView style={styles.rowLabelWrap}>
+                <RNText style={[styles.rowLabel, { color: C.text }]}>
+                  Extracție AI — documente generale
+                </RNText>
+                <RNText style={[styles.rowSub, { color: C.textSecondary }]}>
+                  Facturi, contracte, garanții, bilete etc.
+                </RNText>
+              </RNView>
+            </RNView>
+            <Switch
+              value={ocrLlmGlobal}
+              onValueChange={v => {
+                setOcrLlmGlobal(v);
+                ocrConsent.setGlobalLlmOcrEnabled(v).catch(() => {});
+              }}
+              trackColor={{ false: '#ccc', true: primary }}
+              thumbColor="#fff"
+            />
+          </RNView>
+
+          {/* Rând 2: expand/collapse documente sensibile */}
+          <Pressable
+            style={({ pressed }) => [
+              ocrSensitiveExpanded ? styles.row : styles.rowLast,
+              { borderBottomColor: C.border, opacity: pressed ? 0.7 : 1 },
+            ]}
+            onPress={() => setOcrSensitiveExpanded(v => !v)}
+          >
+            <RNView style={styles.rowLeft}>
+              <RNView style={[styles.rowIcon, { backgroundColor: '#FFF3E0' }]}>
+                <Ionicons name="shield-outline" size={18} color="#E65100" />
+              </RNView>
+              <RNView style={styles.rowLabelWrap}>
+                <RNText style={[styles.rowLabel, { color: C.text }]}>
+                  Documente sensibile — preferințe per tip
+                </RNText>
+                <RNText style={[styles.rowSub, { color: C.textSecondary }]}>
+                  Buletin, permis, talon, card, proprietăți etc.
+                </RNText>
+              </RNView>
+            </RNView>
+            <Ionicons
+              name={ocrSensitiveExpanded ? 'chevron-up' : 'chevron-down'}
+              size={16}
+              color={C.textSecondary}
+            />
+          </Pressable>
+
+          {/* Lista expandată cu switch per tip sensibil */}
+          {ocrSensitiveExpanded && (
+            <>
+              {(
+                [
+                  ['buletin', 'Buletin'],
+                  ['pasaport', 'Pașaport'],
+                  ['permis_auto', 'Permis auto'],
+                  ['talon', 'Talon'],
+                  ['carte_auto', 'Carte auto'],
+                  ['rca', 'RCA'],
+                  ['casco', 'CASCO'],
+                  ['itp', 'ITP'],
+                  ['vigneta', 'Vignetă'],
+                  ['act_proprietate', 'Act proprietate'],
+                  ['cadastru', 'Cadastru'],
+                  ['card', 'Card'],
+                  ['pad', 'PAD Asigurare Locuință'],
+                  ['impozit_proprietate', 'Impozit proprietate'],
+                ] as const
+              ).map(([type, label], idx, arr) => {
+                const choice = sensitiveConsents[type];
+                const isAllowed = choice === 'allow';
+                const isLast = idx === arr.length - 1;
+                return (
+                  <RNView
+                    key={type}
+                    style={[
+                      isLast ? styles.rowLast : styles.row,
+                      { borderBottomColor: C.border, paddingLeft: 12 },
+                    ]}
+                  >
+                    <RNView style={styles.rowLeft}>
+                      <RNText style={[styles.rowLabel, { color: C.text }]}>{label}</RNText>
+                    </RNView>
+                    <Switch
+                      value={isAllowed}
+                      onValueChange={v => {
+                        const newChoice: OcrConsentChoice = v ? 'allow' : 'deny';
+                        setSensitiveConsents(prev => ({ ...prev, [type]: newChoice }));
+                        ocrConsent.setPerTypeConsent(type, newChoice).catch(() => {});
+                      }}
+                      trackColor={{ false: '#ccc', true: primary }}
+                      thumbColor="#fff"
+                    />
+                  </RNView>
+                );
+              })}
+              <RNText style={[styles.hint, { color: C.textSecondary, marginTop: 4 }]}>
+                Documentele medicale (rețete, analize) nu sunt niciodată procesate de AI,
+                indiferent de setările de mai sus (Art. 9 GDPR).
+              </RNText>
+            </>
+          )}
+        </RNView>
+
         {/* ── Vizibilitate entități ── */}
         <RNText style={[styles.sectionLabel, { color: C.textSecondary }]}>ENTITĂȚI ACTIVE</RNText>
         <RNView style={[styles.card, { backgroundColor: C.card, shadowColor: C.cardShadow }]}>
@@ -1006,7 +1162,7 @@ export default function SetariScreen() {
             iconBg="#E8F5E9"
             iconColor={primary}
             label="Politică de confidențialitate"
-            sub="Cum sunt protejate datele tale"
+            sub="Cum sunt protejate datele tale · local pe dispozitiv"
             onPress={() => setPrivacyVisible(true)}
             scheme={scheme}
           />
@@ -1018,19 +1174,6 @@ export default function SetariScreen() {
             onPress={() => setTermsVisible(true)}
             scheme={scheme}
           />
-          <RNView style={[styles.row, { borderBottomColor: C.border }]}>
-            <RNView style={styles.rowLeft}>
-              <RNView style={[styles.rowIcon, { backgroundColor: '#FFF3E0' }]}>
-                <Ionicons name="information-circle-outline" size={18} color="#E65100" />
-              </RNView>
-              <RNView style={styles.rowLabelWrap}>
-                <RNText style={[styles.rowLabel, { color: C.text }]}>Stocare date</RNText>
-                <RNText style={[styles.rowSub, { color: C.textSecondary }]}>
-                  Local pe dispozitiv · fără server propriu
-                </RNText>
-              </RNView>
-            </RNView>
-          </RNView>
           <RNView style={styles.rowLast}>
             <RNView style={styles.rowLeft}>
               <RNView style={[styles.rowIcon, { backgroundColor: '#FCE4EC' }]}>
@@ -1051,7 +1194,7 @@ export default function SetariScreen() {
             icon="mail-outline"
             iconBg="#E8EAF6"
             iconColor="#283593"
-            label="Trimite un email"
+            label="Contactează suport aplicație"
             sub={CONTACT_EMAIL}
             onPress={openEmail}
             scheme={scheme}
@@ -1079,6 +1222,21 @@ export default function SetariScreen() {
           />
         </RNView>
 
+        {/* ── Onboarding ── */}
+        <RNText style={[styles.sectionLabel, { color: C.textSecondary }]}>ONBOARDING</RNText>
+        <RNView style={[styles.card, { backgroundColor: C.card, shadowColor: C.cardShadow }]}>
+          <InfoRow
+            icon="rocket-outline"
+            iconBg="#E8F5E9"
+            iconColor={primary}
+            label="Reluare onboarding"
+            sub="Resetează vizibilitatea tipurilor de documente la valorile implicite"
+            onPress={handleResetOnboarding}
+            isLast
+            scheme={scheme}
+          />
+        </RNView>
+
         {/* ── Despre aplicație ── */}
         <RNText style={[styles.sectionLabel, { color: C.textSecondary }]}>DESPRE APLICAȚIE</RNText>
         <RNView style={[styles.card, { backgroundColor: C.card, shadowColor: C.cardShadow }]}>
@@ -1090,7 +1248,7 @@ export default function SetariScreen() {
               <RNView style={styles.rowLabelWrap}>
                 <RNText style={[styles.rowLabel, { color: C.text }]}>{APP_NAME}</RNText>
                 <RNText style={[styles.rowSub, { color: C.textSecondary }]}>
-                  Gestionare documente personale
+                  Local-first · OCR on-device · fără cont · React Native
                 </RNText>
               </RNView>
             </RNView>
@@ -1100,45 +1258,6 @@ export default function SetariScreen() {
               v{APP_VERSION}
             </RNText>
           </RNView>
-          <RNView style={[styles.row, { borderBottomColor: C.border }]}>
-            <RNView style={styles.rowLeft}>
-              <RNView style={[styles.rowIcon, { backgroundColor: '#F3E5F5' }]}>
-                <Ionicons name="phone-portrait-outline" size={18} color="#6A1B9A" />
-              </RNView>
-              <RNView style={styles.rowLabelWrap}>
-                <RNText style={[styles.rowLabel, { color: C.text }]}>Mod de funcționare</RNText>
-                <RNText style={[styles.rowSub, { color: C.textSecondary }]}>
-                  Local-first · offline · fără cont
-                </RNText>
-              </RNView>
-            </RNView>
-          </RNView>
-          <RNView style={[styles.row, { borderBottomColor: C.border }]}>
-            <RNView style={styles.rowLeft}>
-              <RNView style={[styles.rowIcon, { backgroundColor: '#E0F2F1' }]}>
-                <Ionicons name="scan-outline" size={18} color="#00695C" />
-              </RNView>
-              <RNView style={styles.rowLabelWrap}>
-                <RNText style={[styles.rowLabel, { color: C.text }]}>OCR on-device</RNText>
-                <RNText style={[styles.rowSub, { color: C.textSecondary }]}>
-                  Extragere text din poze · fără cloud
-                </RNText>
-              </RNView>
-            </RNView>
-          </RNView>
-          <RNView style={[styles.row, { borderBottomColor: C.border }]}>
-            <RNView style={styles.rowLeft}>
-              <RNView style={[styles.rowIcon, { backgroundColor: '#FFF3E0' }]}>
-                <Ionicons name="construct-outline" size={18} color="#E65100" />
-              </RNView>
-              <RNView style={styles.rowLabelWrap}>
-                <RNText style={[styles.rowLabel, { color: C.text }]}>Tehnologii</RNText>
-                <RNText style={[styles.rowSub, { color: C.textSecondary }]}>
-                  React Native · Expo · SQLite
-                </RNText>
-              </RNView>
-            </RNView>
-          </RNView>
           <InfoRow
             icon="cloud-download-outline"
             iconBg="#E3F2FD"
@@ -1146,15 +1265,6 @@ export default function SetariScreen() {
             label="Verifică actualizări"
             sub={checkingUpdate ? 'Se verifică...' : `Versiune curentă: ${APP_VERSION}`}
             onPress={handleCheckForUpdate}
-            scheme={scheme}
-          />
-          <InfoRow
-            icon="rocket-outline"
-            iconBg="#E8F5E9"
-            iconColor={primary}
-            label="Reluare onboarding"
-            sub="Resetează setările de vizibilitate la valorile implicite"
-            onPress={handleResetOnboarding}
             isLast
             scheme={scheme}
           />
@@ -1294,6 +1404,27 @@ export default function SetariScreen() {
                 </>
               )}
             </RNView>
+
+            {/* Avertisment model local */}
+            {aiProviderType === 'local' && (
+              <RNView style={[styles.localModelWarning, { backgroundColor: '#FFF8E1', borderColor: '#F9A825' }]}>
+                <Ionicons name="flask-outline" size={16} color="#F57F17" style={{ marginRight: 6, marginTop: 1 }} />
+                <RNView style={{ flex: 1 }}>
+                  <RNText style={[styles.localModelWarningTitle, { color: '#E65100' }]}>
+                    Model local – în testare
+                  </RNText>
+                  <RNText style={[styles.localModelWarningText, { color: '#6D4C41' }]}>
+                    Modelele locale pot produce răspunsuri incorecte (halucinații). Dacă observi erori, te rugăm să contactezi dezvoltatorul.{' '}
+                    <RNText
+                      style={{ color: primary, textDecorationLine: 'underline' }}
+                      onPress={openEmail}
+                    >
+                      Trimite email
+                    </RNText>
+                  </RNText>
+                </RNView>
+              </RNView>
+            )}
 
             {/* Catalog modele locale */}
             {compatibleModels.length > 0 && (
@@ -1698,6 +1829,23 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
     marginBottom: 6,
     textTransform: 'uppercase',
+  },
+  localModelWarning: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 12,
+  },
+  localModelWarningTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  localModelWarningText: {
+    fontSize: 13,
+    lineHeight: 18,
   },
   aiInput: {
     borderWidth: 1,
