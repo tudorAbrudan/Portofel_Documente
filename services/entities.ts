@@ -7,15 +7,13 @@ export async function getPersons(): Promise<Person[]> {
     name: string;
     phone: string | null;
     email: string | null;
-    iban: string | null;
     created_at: string;
-  }>('SELECT id, name, phone, email, iban, created_at FROM persons ORDER BY created_at DESC');
+  }>('SELECT id, name, phone, email, created_at FROM persons ORDER BY created_at DESC');
   return rows.map(r => ({
     id: r.id,
     name: r.name,
     phone: r.phone ?? undefined,
     email: r.email ?? undefined,
-    iban: r.iban ?? undefined,
     createdAt: r.created_at,
   }));
 }
@@ -51,19 +49,14 @@ export async function getCards(): Promise<Card[]> {
   }));
 }
 
-export async function createPerson(
-  name: string,
-  phone?: string,
-  email?: string,
-  iban?: string
-): Promise<Person> {
+export async function createPerson(name: string, phone?: string, email?: string): Promise<Person> {
   const id = generateId();
   const created_at = new Date().toISOString();
   await db.runAsync(
-    'INSERT INTO persons (id, name, phone, email, iban, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-    [id, name, phone ?? null, email ?? null, iban ?? null, created_at]
+    'INSERT INTO persons (id, name, phone, email, created_at) VALUES (?, ?, ?, ?, ?)',
+    [id, name, phone ?? null, email ?? null, created_at]
   );
-  return { id, name, phone, email, iban, createdAt: created_at };
+  return { id, name, phone, email, createdAt: created_at };
 }
 
 export async function createProperty(name: string): Promise<Property> {
@@ -102,14 +95,12 @@ export async function updatePerson(
   id: string,
   name: string,
   phone?: string,
-  email?: string,
-  iban?: string
+  email?: string
 ): Promise<void> {
-  await db.runAsync('UPDATE persons SET name = ?, phone = ?, email = ?, iban = ? WHERE id = ?', [
+  await db.runAsync('UPDATE persons SET name = ?, phone = ?, email = ? WHERE id = ?', [
     name,
     phone ?? null,
     email ?? null,
-    iban ?? null,
     id,
   ]);
 }

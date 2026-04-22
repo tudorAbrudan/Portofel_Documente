@@ -1,15 +1,32 @@
 #!/usr/bin/env node
 /**
- * update-site.js — Sincronizează site-ul de prezentare (docs/) cu tipurile de documente din aplicație.
+ * update-site.js — Sursă unică de automatizare pentru documentația Dosar.
  *
- * Rulat automat de hook-ul PostToolUse când se editează types/index.ts sau appKnowledge.ts.
- * Poate fi rulat manual: node scripts/update-site.js
+ * Rulează manual (`node scripts/update-site.js`) sau automat prin hook la
+ * modificări în `types/index.ts` / `app.json` / `services/appKnowledge.ts`.
  *
- * Ce face:
- * - Extrage DOCUMENT_TYPE_LABELS din types/index.ts via regex
- * - Actualizează numărul de tipuri în docs/index.html (<!-- DOSAR:DOC_COUNT_START -->)
- * - Actualizează lista de chips în docs/index.html (<!-- DOSAR:DOC_CHIPS_START -->)
- * - Actualizează FAQ-ul cu tipuri de documente în docs/support.html (<!-- DOSAR:FAQ_DOC_TYPES_START -->)
+ * ─────────────────────────────────────────────────────────────────────────────
+ * CE SINCRONIZEAZĂ:
+ * ─────────────────────────────────────────────────────────────────────────────
+ * docs/index.html:
+ *   <!-- DOSAR:DOC_COUNT_START --> / _END               → număr tipuri
+ *   <!-- DOSAR:DOC_CHIPS_START --> / _END               → chips tipuri
+ *   <!-- DOSAR:FEATURES_START --> / _END                → grid funcționalități
+ *
+ * docs/support.html:
+ *   <!-- DOSAR:FAQ_DOC_TYPES_START --> / _END           → FAQ „ce tipuri suportă?"
+ *   <!-- DOSAR:FAQ_EXTRAS_START --> / _END              → FAQ per feature relevantă
+ *
+ * README.md:
+ *   <!-- DOSAR:APP_FEATURES_START --> / _END            → listă funcționalități
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * CUM EXTINZI:
+ * ─────────────────────────────────────────────────────────────────────────────
+ * - Adaugă feature nouă → adaugă intrare în FEATURES mai jos.
+ * - Adaugă tip de document → se ia automat din `types/index.ts`.
+ *   Dacă vrei emoji diferit de 📄, adaugă-l în EMOJI_MAP.
+ * - Vrei un nou marker undeva (ex. în app) → adaugă în `SYNCS` la final.
  */
 
 const fs = require('fs');
@@ -17,7 +34,7 @@ const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
 
-// ─── Emoji map pentru tipuri de documente ────────────────────────────────────
+// ─── 1. EMOJI MAP — actualizat cu TOATE tipurile din types/index.ts ──────────
 
 const EMOJI_MAP = {
   buletin: '🪪',
@@ -52,11 +69,15 @@ const EMOJI_MAP = {
   act_constitutiv: '📜',
   certificat_tva: '💼',
   asigurare_profesionala: '🛡️',
+  diploma: '🎓',
+  foaie_matricola: '📑',
+  certificat_absolvire: '🏅',
+  certificat_curs: '🏆',
+  adeverinta_studii: '📄',
   altul: '📁',
   custom: '⭐',
 };
 
-// Tipuri evidențiate (chip hl) — cele mai comune/importante
 const HIGHLIGHTED_TYPES = new Set([
   'buletin',
   'pasaport',
@@ -68,134 +89,271 @@ const HIGHLIGHTED_TYPES = new Set([
   'vigneta',
 ]);
 
-// ─── Extrage DOCUMENT_TYPE_LABELS din types/index.ts ─────────────────────────
+// ─── 2. FEATURES — sursă unică pentru site + README + chatbot knowledge ──────
+//
+// Fiecare feature e descrisă o singură dată; generatorii produc:
+//   - card în docs/index.html (features grid)
+//   - bullet în README.md
+//   - frază în appKnowledge.ts (nu rescriem fișierul direct; doar verificăm
+//     acoperirea)
+// Câmpul `faq` (opțional) produce intrare în docs/support.html.
+
+const FEATURES = [
+  {
+    id: 'app-lock',
+    icon: '🔐',
+    title: 'App Lock – Face ID / PIN',
+    desc: 'Documentele sunt protejate cu Face ID, Touch ID sau PIN. Nimeni altcineva nu le poate accesa.',
+    readmeBullet: 'Blocare Face ID / Touch ID / PIN',
+    chatbot: 'blocare Face ID/PIN',
+  },
+  {
+    id: 'expiry-notifications',
+    icon: '⏰',
+    title: 'Notificări de expirare',
+    desc: 'Alerte locale configurabile — primești notificarea cu X zile înainte să expire orice document.',
+    readmeBullet: 'Notificări locale de expirare (configurabile)',
+    chatbot: 'notificări expirare',
+  },
+  {
+    id: 'entities',
+    icon: '🗂️',
+    title: 'Organizat pe entități',
+    desc: 'Persoane, Vehicule, Proprietăți, Carduri, Animale, Firme / PFA — fiecare cu documentele lor specifice.',
+    readmeBullet: 'Organizat pe Persoane / Vehicule / Proprietăți / Carduri / Animale / Firme',
+    chatbot: 'organizare pe entități',
+  },
+  {
+    id: 'backup',
+    icon: '☁️',
+    title: 'Backup & transfer între dispozitive',
+    desc: 'Export complet (.zip cu date + fișiere) în iCloud Drive sau prin AirDrop. Muți totul pe un device nou în câteva secunde.',
+    readmeBullet: 'Backup complet în iCloud / Drive și transfer între dispozitive',
+    chatbot: 'backup iCloud/Drive',
+  },
+  {
+    id: 'calendar',
+    icon: '📅',
+    title: 'Remindere în Calendar',
+    desc: 'Un singur tap adaugă expirarea documentului direct în calendarul iOS.',
+    readmeBullet: 'Export reminder expirare în calendarul nativ',
+    chatbot: 'reminder în calendar',
+  },
+  {
+    id: 'ocr',
+    icon: '🔍',
+    title: 'OCR on-device',
+    desc: 'Fotografiezi un document și app-ul extrage automat textul. Rulează pe device, fără cloud.',
+    readmeBullet: 'OCR on-device pentru extragere automată de text',
+    chatbot: 'scanare și OCR on-device',
+  },
+  {
+    id: 'vehicle-tracker',
+    icon: '🚗',
+    title: 'Tracker auto complet',
+    desc: 'RCA, ITP, CASCO, Vignetă, Talon, Carte auto — toate la un loc, cu alerte înainte de expirare.',
+    readmeBullet: 'Tracker auto (RCA, ITP, CASCO, Vignetă, Talon)',
+  },
+  {
+    id: 'animals',
+    icon: '🐾',
+    title: 'Documente animale',
+    desc: 'Vaccin, deparazitare, vizite vet — organizate per animal, cu notificări de reînnoire.',
+    readmeBullet: 'Documente veterinare per animal (vaccin, deparazitare, vizite)',
+  },
+  {
+    id: 'private-notes',
+    icon: '🔒',
+    title: 'Notă privată protejată de AI',
+    desc: 'Câmp separat per document, destinat datelor sensibile (CVV, PIN, parole). Garantat că nu ajunge niciodată la asistentul AI sau la niciun serviciu extern.',
+    readmeBullet:
+      'Câmp „Notă privată" per document (CVV/PIN/parole) — nu pleacă niciodată la AI',
+    chatbot: 'câmp privat separat care nu se trimite niciodată la AI',
+    faq: {
+      q: 'Cum stochez date sensibile (CVV, PIN, parole)?',
+      a: 'Folosește câmpul <strong>„Notă privată"</strong> din ecranul de document (la editare și detaliu). Acest câmp e destinat explicit datelor sensibile: <strong>nu ajunge niciodată la asistentul AI</strong> și nu este trimis la niciun serviciu extern. Este afișat mascat by default; poți dezvălui conținutul cu butonul „Arată". Se păstrează doar local, pe device.',
+    },
+  },
+  {
+    id: 'duplicate-detection',
+    icon: '🧭',
+    title: 'Detecție duplicate',
+    desc: 'La adăugare și în detaliu document, app-ul te avertizează dacă ai deja un document cu același fișier sau același tip și entitate. Eviți dublurile fără efort.',
+    readmeBullet: 'Detecție duplicate la adăugare și afișare în detaliu (fișier identic + tip+entitate)',
+    chatbot: 'detecție automată de duplicate',
+  },
+  {
+    id: 'ai-assistant',
+    icon: '🤖',
+    title: 'Asistent AI integrat',
+    desc: 'Pune întrebări în limbaj natural: „Când expiră buletinul?", „Ce RCA am?". AI-ul știe toate documentele tale și răspunde instant.',
+    readmeBullet: 'Asistent AI local-aware (chatbot cu context din documentele tale)',
+    chatbot: null, // nu apare în self-description
+    highlighted: true,
+  },
+];
+
+// ─── 3. Extractori din cod ──────────────────────────────────────────────────
 
 function extractDocumentTypes() {
   const typesPath = path.join(ROOT, 'types', 'index.ts');
   const content = fs.readFileSync(typesPath, 'utf8');
-
-  // Găsește blocul DOCUMENT_TYPE_LABELS: { ... }
   const blockMatch = content.match(/DOCUMENT_TYPE_LABELS[^=]*=\s*\{([^}]+)\}/s);
-  if (!blockMatch) {
-    throw new Error('Nu am găsit DOCUMENT_TYPE_LABELS în types/index.ts');
-  }
-
-  const block = blockMatch[1];
+  if (!blockMatch) throw new Error('Nu am găsit DOCUMENT_TYPE_LABELS în types/index.ts');
   const types = {};
-
-  // Parsează linii de forma: key: 'Label',
   const lineRe = /^\s*(\w+):\s*'([^']+)'/gm;
   let m;
-  while ((m = lineRe.exec(block)) !== null) {
-    types[m[1]] = m[2];
-  }
-
+  while ((m = lineRe.exec(blockMatch[1])) !== null) types[m[1]] = m[2];
   return types;
 }
 
-// ─── Generează HTML chips ─────────────────────────────────────────────────────
+function extractAppVersion() {
+  const appJson = JSON.parse(fs.readFileSync(path.join(ROOT, 'app.json'), 'utf8'));
+  return appJson?.expo?.version ?? null;
+}
+
+// ─── 4. Generatori HTML/MD ──────────────────────────────────────────────────
 
 function generateChipsHtml(types) {
   const lines = [];
-
   for (const [key, label] of Object.entries(types)) {
-    if (key === 'altul') continue; // "Altele" e implicat
+    if (key === 'altul') continue;
     const emoji = EMOJI_MAP[key] || '📄';
-    const isHighlighted = HIGHLIGHTED_TYPES.has(key);
-    const cssClass = isHighlighted ? 'chip hl reveal' : 'chip reveal';
-
-    if (key === 'custom') {
-      lines.push(`    <span class="${cssClass}">${emoji} Tip personalizat</span>`);
-    } else {
-      lines.push(`    <span class="${cssClass}">${emoji} ${label}</span>`);
-    }
+    const cls = HIGHLIGHTED_TYPES.has(key) ? 'chip hl reveal' : 'chip reveal';
+    const text = key === 'custom' ? 'Tip personalizat' : label;
+    lines.push(`    <span class="${cls}">${emoji} ${text}</span>`);
   }
-
   return lines.join('\n');
 }
 
-// ─── Generează textul FAQ cu tipuri de documente ──────────────────────────────
-
 function generateFaqDocTypesHtml(types) {
-  const standardTypes = Object.entries(types)
+  const standard = Object.entries(types)
     .filter(([k]) => k !== 'custom' && k !== 'altul')
     .map(([, label]) => label);
-
-  const count = standardTypes.length;
-  const typeList = standardTypes.join(', ');
-
   return `    <div class="faq-item">
       <button class="faq-q" onclick="toggle(this)">
         Ce tipuri de documente suportă aplicația?
         <span class="faq-arrow">▼</span>
       </button>
       <div class="faq-a">
-        Aplicația vine cu ${count} tipuri predefinite: ${typeList}.<br/><br/>
+        Aplicația vine cu ${standard.length} tipuri predefinite: ${standard.join(', ')}.<br/><br/>
         Pentru orice document care nu se încadrează, poți folosi tipul <strong>„Altele"</strong> sau crea un <strong>tip personalizat</strong> (Acte → Adaugă document → Tip → derulează jos → „Tip personalizat").
       </div>
     </div>`;
 }
 
-// ─── Înlocuiește conținut între markeri ───────────────────────────────────────
-
-function replaceMarker(html, markerName, newContent) {
-  const startMarker = `<!-- DOSAR:${markerName}_START -->`;
-  const endMarker = `<!-- DOSAR:${markerName}_END -->`;
-
-  const startIdx = html.indexOf(startMarker);
-  const endIdx = html.indexOf(endMarker);
-
-  if (startIdx === -1 || endIdx === -1) {
-    console.warn(`  [SKIP] Marker ${markerName} nu a fost găsit`);
-    return html;
-  }
-
-  return (
-    html.slice(0, startIdx + startMarker.length) + '\n' + newContent + '\n  ' + html.slice(endIdx)
-  );
+function generateFeaturesGridHtml() {
+  const delays = ['d1', 'd2', 'd3', 'd4', 'd5'];
+  const lines = ['  <div class="features-grid">'];
+  FEATURES.forEach((f, i) => {
+    const delay = delays[i % delays.length];
+    if (f.highlighted) {
+      lines.push(
+        `    <div class="feat-card reveal ${delay}" style="border-color: rgba(158,181,103,0.4); background: rgba(158,181,103,0.05);">`,
+        `      <div class="feat-icon" style="background: rgba(158,181,103,0.2);">${f.icon}</div>`,
+        `      <div class="feat-title" style="color: var(--primary-dark);">${f.title}</div>`,
+        `      <div class="feat-desc">${f.desc}</div>`,
+        `    </div>`
+      );
+    } else {
+      lines.push(
+        `    <div class="feat-card reveal ${delay}">`,
+        `      <div class="feat-icon">${f.icon}</div>`,
+        `      <div class="feat-title">${f.title}</div>`,
+        `      <div class="feat-desc">${f.desc}</div>`,
+        `    </div>`
+      );
+    }
+  });
+  lines.push('  </div>');
+  return lines.join('\n');
 }
 
-// ─── Main ─────────────────────────────────────────────────────────────────────
+function generateFaqExtrasHtml() {
+  const extras = FEATURES.filter(f => f.faq);
+  if (extras.length === 0) return '';
+  return extras
+    .map(
+      f => `    <div class="faq-item">
+      <button class="faq-q" onclick="toggle(this)">
+        ${f.faq.q}
+        <span class="faq-arrow">▼</span>
+      </button>
+      <div class="faq-a">
+        ${f.faq.a}
+      </div>
+    </div>`
+    )
+    .join('\n\n');
+}
+
+function generateReadmeFeatures() {
+  const bullets = FEATURES.filter(f => f.readmeBullet).map(f => `- ${f.readmeBullet}`);
+  return bullets.join('\n');
+}
+
+// ─── 5. Utilitare markeri ───────────────────────────────────────────────────
+
+function replaceMarker(text, markerName, newContent, commentStyle = 'html') {
+  const start =
+    commentStyle === 'html' ? `<!-- DOSAR:${markerName}_START -->` : `<!-- DOSAR:${markerName}_START -->`;
+  const end =
+    commentStyle === 'html' ? `<!-- DOSAR:${markerName}_END -->` : `<!-- DOSAR:${markerName}_END -->`;
+  const startIdx = text.indexOf(start);
+  const endIdx = text.indexOf(end);
+  if (startIdx === -1 || endIdx === -1) {
+    console.warn(`  [SKIP] Marker ${markerName} nu există`);
+    return { text, replaced: false };
+  }
+  const updated =
+    text.slice(0, startIdx + start.length) + '\n' + newContent + '\n  ' + text.slice(endIdx);
+  return { text: updated, replaced: true };
+}
+
+function updateFile(relPath, updates) {
+  const abs = path.join(ROOT, relPath);
+  let content = fs.readFileSync(abs, 'utf8');
+  let anyReplaced = false;
+  for (const { marker, value } of updates) {
+    const r = replaceMarker(content, marker, value);
+    if (r.replaced) anyReplaced = true;
+    content = r.text;
+  }
+  fs.writeFileSync(abs, content, 'utf8');
+  console.log(`  [${anyReplaced ? 'OK' : '·'}] ${relPath}`);
+}
+
+// ─── 6. Main ────────────────────────────────────────────────────────────────
 
 function main() {
-  console.log('[update-site] Sincronizare docs/ ...');
+  console.log('[update-site] Sincronizare documentație ...');
 
-  let types;
-  try {
-    types = extractDocumentTypes();
-  } catch (e) {
-    console.error('[update-site] Eroare extragere tipuri:', e.message);
-    process.exit(1);
-  }
-
+  const types = extractDocumentTypes();
+  const version = extractAppVersion();
   const standardCount = Object.keys(types).filter(k => k !== 'custom' && k !== 'altul').length;
-  console.log(`  Tipuri găsite: ${Object.keys(types).length} total, ${standardCount} standard`);
 
-  // ── docs/index.html ──────────────────────────────────────────────────────
-  const indexPath = path.join(ROOT, 'docs', 'index.html');
-  let indexHtml = fs.readFileSync(indexPath, 'utf8');
+  console.log(
+    `  Tipuri: ${Object.keys(types).length} total, ${standardCount} standard · versiune: ${version ?? '?'}`
+  );
 
-  // Actualizează numărul
-  indexHtml = replaceMarker(indexHtml, 'DOC_COUNT', `${standardCount}+`);
+  // ── docs/index.html ───────────────────────────────────────────────────
+  updateFile('docs/index.html', [
+    { marker: 'DOC_COUNT', value: `${standardCount}+` },
+    {
+      marker: 'DOC_CHIPS',
+      value: `  <div class="chips-wrap">\n${generateChipsHtml(types)}\n  </div>`,
+    },
+    { marker: 'FEATURES', value: generateFeaturesGridHtml() },
+  ]);
 
-  // Actualizează chips
-  const chipsHtml = generateChipsHtml(types);
-  // Chips sunt în interiorul <div class="chips-wrap"> — marcajele înconjoară div-ul întreg
-  const chipsBlock = `  <div class="chips-wrap">\n${chipsHtml}\n  </div>`;
-  indexHtml = replaceMarker(indexHtml, 'DOC_CHIPS', chipsBlock);
+  // ── docs/support.html ─────────────────────────────────────────────────
+  updateFile('docs/support.html', [
+    { marker: 'FAQ_DOC_TYPES', value: generateFaqDocTypesHtml(types) },
+    { marker: 'FAQ_EXTRAS', value: generateFaqExtrasHtml() },
+  ]);
 
-  fs.writeFileSync(indexPath, indexHtml, 'utf8');
-  console.log('  [OK] docs/index.html actualizat');
-
-  // ── docs/support.html ────────────────────────────────────────────────────
-  const supportPath = path.join(ROOT, 'docs', 'support.html');
-  let supportHtml = fs.readFileSync(supportPath, 'utf8');
-
-  const faqHtml = generateFaqDocTypesHtml(types);
-  supportHtml = replaceMarker(supportHtml, 'FAQ_DOC_TYPES', faqHtml);
-
-  fs.writeFileSync(supportPath, supportHtml, 'utf8');
-  console.log('  [OK] docs/support.html actualizat');
+  // ── README.md ─────────────────────────────────────────────────────────
+  updateFile('README.md', [{ marker: 'APP_FEATURES', value: generateReadmeFeatures() }]);
 
   console.log('[update-site] Done.');
 }

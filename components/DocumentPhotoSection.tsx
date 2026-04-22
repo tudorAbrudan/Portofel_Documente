@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   Platform,
   TextInput,
+  ScrollView,
   useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,6 +15,7 @@ import { WebView } from 'react-native-webview';
 import { Text, View } from '@/components/Themed';
 import { primary } from '@/theme/colors';
 import Colors from '@/constants/Colors';
+import * as FileSystem from 'expo-file-system/legacy';
 import { isPdfFile } from '@/services/pdfExtractor';
 
 export interface PhotoPage {
@@ -26,6 +28,7 @@ interface Props {
   ocrLoading: boolean;
   ocrText?: string;
   isEditing?: boolean;
+  refreshKey?: number;
   onAddPage: () => void;
   onRotate: (pageId: string, degrees: number) => void;
   onDelete: (pageId: string) => void;
@@ -40,6 +43,7 @@ export function DocumentPhotoSection({
   ocrLoading,
   ocrText,
   isEditing = true,
+  refreshKey,
   onAddPage,
   onRotate,
   onDelete,
@@ -78,7 +82,7 @@ export function DocumentPhotoSection({
         const isFirst = idx === 0;
         const isLast = idx === pages.length - 1;
         return (
-          <View key={page.id} style={[styles.imageWrap, { backgroundColor: C.surface }]}>
+          <View key={`${page.id}_${page.uri}_${refreshKey ?? 0}`} style={[styles.imageWrap, { backgroundColor: C.surface }]}>
             {pages.length > 1 && (
               <Text style={styles.pageLabel}>
                 Pagina {idx + 1} / {pages.length}
@@ -94,6 +98,9 @@ export function DocumentPhotoSection({
                     style={[styles.pdfWebView, { width: screenWidth - 40 }]}
                     originWhitelist={['file://*', '*']}
                     allowFileAccess
+                    allowFileAccessFromFileURLs
+                    allowUniversalAccessFromFileURLs
+                    allowingReadAccessToURL={FileSystem.documentDirectory ?? undefined}
                   />
                 ) : (
                   <View
@@ -233,12 +240,14 @@ export function DocumentPhotoSection({
             </View>
           </Pressable>
           {ocrExpanded && !ocrEditing && (
-            <Text
-              style={[styles.ocrText, { backgroundColor: C.background, color: C.text }]}
-              selectable
+            <ScrollView
+              style={[styles.ocrScroll, { backgroundColor: C.background }]}
+              nestedScrollEnabled
             >
-              {ocrText}
-            </Text>
+              <Text style={[styles.ocrText, { color: C.text }]} selectable>
+                {ocrText}
+              </Text>
+            </ScrollView>
           )}
           {ocrExpanded && ocrEditing && (
             <View style={{ backgroundColor: C.background }}>
@@ -394,6 +403,11 @@ const styles = StyleSheet.create({
   ocrToggleRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   ocrToggleChevron: { color: primary, fontSize: 13, fontWeight: '500' },
   ocrEditBtn: { paddingHorizontal: 4, paddingVertical: 2 },
+  ocrScroll: {
+    maxHeight: 180,
+    margin: 8,
+    borderRadius: 8,
+  },
   ocrText: {
     fontSize: 12,
     lineHeight: 18,
@@ -406,7 +420,8 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     fontFamily: 'Courier',
     padding: 12,
-    minHeight: 160,
+    minHeight: 80,
+    maxHeight: 180,
     borderWidth: 1,
     borderRadius: 8,
     margin: 8,

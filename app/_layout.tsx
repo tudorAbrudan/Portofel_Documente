@@ -11,6 +11,7 @@ import 'react-native-reanimated';
 
 import AppLockScreen from '@/components/AppLockScreen';
 import OnboardingWizard from '@/components/OnboardingWizard';
+import ReviewSentimentModal from '@/components/ReviewSentimentModal';
 import { UpdateBanner } from '@/components/UpdateBanner';
 import { UpdateBlocker } from '@/components/UpdateBlocker';
 import { checkForUpdate, dismissUpdate } from '@/services/updateCheck';
@@ -19,6 +20,7 @@ import { AppLightTheme, AppDarkTheme } from '@/constants/Theme';
 import { ThemePreferenceContext } from '@/hooks/useThemeScheme';
 import type { ThemePreference } from '@/hooks/useThemeScheme';
 import { useAppLock } from '@/hooks/useAppLock';
+import { useReviewPrompt } from '@/hooks/useReviewPrompt';
 import { db } from '@/services/db';
 import * as settings from '@/services/settings';
 
@@ -65,6 +67,10 @@ function RootLayoutNav() {
   const notifListener = useRef<Notifications.EventSubscription | null>(null);
   const [onboardingDone, setOnboardingDone] = useState<boolean | null>(null);
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const reviewPrompt = useReviewPrompt();
+
+  const showReviewModal =
+    reviewPrompt.visible && onboardingDone === true && !appLock.locked && !updateInfo;
 
   useEffect(() => {
     notifListener.current = Notifications.addNotificationResponseReceivedListener(response => {
@@ -173,6 +179,7 @@ function RootLayoutNav() {
         {onboardingDone === false && (
           <OnboardingWizard onComplete={() => setOnboardingDone(true)} />
         )}
+        <ReviewSentimentModal visible={showReviewModal} onDismiss={reviewPrompt.dismiss} />
       </ThemeProvider>
     </ThemePreferenceContext.Provider>
   );

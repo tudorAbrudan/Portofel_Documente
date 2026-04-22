@@ -34,7 +34,7 @@ export interface AiOcrResult {
 
 export interface AvailableEntities {
   persons: Array<{ id: string; name: string }>;
-  vehicles: Array<{ id: string; name: string }>;
+  vehicles: Array<{ id: string; name: string; plate?: string; vin?: string }>;
   properties: Array<{ id: string; name: string }>;
   cards: Array<{ id: string; nickname: string; last4: string }>;
   animals: Array<{ id: string; name: string; species: string }>;
@@ -93,11 +93,18 @@ IMPORTANT: Dacă există mai multe fișiere/pagini:
 ENTITĂȚI EXISTENTE ÎN APLICAȚIE (folosește indexul e0, e1, ... în entityId):
 ${entityContext}
 
+━━━ REGULI MATCHING ENTITĂȚI ━━━
+
+Pentru a lega documentul de o entitate existentă, compară cu DATELE entității (nu doar cu numele):
+- Vehicule: caută în textul OCR orice placă ("B 123 ABC") sau VIN (17 caractere, fără I/O/Q) care apare în lista de mai sus la un vehicul. Dacă placa sau VIN-ul se potrivește → confidence="high" (chiar dacă numele vehiculului nu apare în text). CIV conține de obicei doar VIN; talonul conține placa și VIN; facturi service/amenzi conțin placa.
+- Persoane, Proprietăți, Animale, Firme: matching după nume (exact sau parțial semnificativ).
+- Nu inventa legături — dacă niciun identificator nu corespunde, nu returna entitySuggestions pentru acel tip.
+
 ━━━ REGULI IDENTIFICARE TIP DOCUMENT ━━━
 
 VEHICULE — distincție critică:
 - "talon" = Certificat de Înmatriculare (CR). Conține: "CERTIFICAT DE ÎNMATRICULARE", marcă/model/culoare/proprietar, ștampilă RAR cu data ITP. NU are "CARTE DE IDENTITATE". NU expiră ca document.
-- "carte_auto" = Carte de Identitate a Vehiculului (CIV). Conține: "CARTE DE IDENTITATE A VEHICULULUI" sau "CERTIFICATUL DE ÎNMATRICULARE AL VEHICULULUI" cu booklet mic. NU expiră.
+- "carte_auto" = Carte de Identitate a Vehiculului (CIV). Conține: "CARTE DE IDENTITATE A VEHICULULUI" sau "CERTIFICATUL DE ÎNMATRICULARE AL VEHICULULUI" cu booklet mic. NU expiră. NU conține placa (placa e doar pe talon). VIN-ul e etichetat "NUMĂRUL DE IDENTIFICARE AL VEHICULULUI" sau "NIV" sau ca punct "E." (câmpul E din formatul EU) — NU ca "VIN". Caută după aceste etichete. VIN-ul poate apărea fragmentat în OCR (ex: "WVW ZZZ1JZ3W 386752") — concatenează-l la 17 caractere fără spații.
 - "itp" = Inspecție Tehnică Periodică. Conține: "INSPECȚIE TEHNICĂ PERIODICĂ", nr. stație ITP, rezultat ADMIS/RESPINS.
 - "rca" = Poliță RCA (Răspundere Civilă Auto). Conține: "ASIGURARE OBLIGATORIE" sau "RCA", nr. poliță (format RO/XX/... sau ROXXV...), asigurator, interval de valabilitate, primă de asigurare.
   - Asiguratori români: Allianz, Groupama (prefix RO32V), Generali, Omniasig, Uniqa, Asirom, Grawe, Signal Iduna, Euroins, Axeria, Certasig, Metropolitan.
@@ -129,7 +136,7 @@ FACTURI (utilități și servicii):
 ━━━ CÂMPURI EXACTE PER TIP (folosește EXACT aceste chei în "fields") ━━━
 
 talon: plate="B 123 ABC", marca="VW", model="Golf", vin="VIN17CARACTERE", itp_expiry_date="ZZ.LL.AAAA" (data din ștampila ITP/RAR sau din "Data urmatoarei inspectii tehnice")
-carte_auto: plate="B 123 ABC", vin="VIN17CARACTERE"
+carte_auto: vin="VIN17CARACTERE" (CIV NU conține nr. de înmatriculare — nu-l include chiar dacă apare)
 itp: plate="B 123 ABC"
 rca: policy_number="RO32V32LM1100745021", insurer="Groupama", plate="B 123 ABC", prima="850.00", valid_from="01.04.2024", marca_model="Dacia Logan"
 casco: policy_number="...", insurer="...", plate="B 123 ABC"
@@ -224,7 +231,13 @@ function buildEntityContext(entities: AvailableEntities): {
   );
   addGroup(
     'Vehicule',
-    entities.vehicles.map(v => ({ id: v.id, display: v.name }))
+    entities.vehicles.map(v => {
+      const extras: string[] = [];
+      if (v.plate) extras.push(`placă: ${v.plate}`);
+      if (v.vin) extras.push(`VIN: ${v.vin}`);
+      const suffix = extras.length > 0 ? ` (${extras.join(', ')})` : '';
+      return { id: v.id, display: `${v.name}${suffix}` };
+    })
   );
   addGroup(
     'Proprietăți',

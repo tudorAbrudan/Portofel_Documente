@@ -65,45 +65,51 @@ describe('getIphoneGeneration', () => {
 });
 
 describe('isModelCompatible', () => {
-  // ministral-3b: minRam=6GB, minGen=14
-  const model6GB: LocalModelEntry = { ...LOCAL_MODEL_CATALOG[0] };
-  // mistral-7b: minRam=8GB, minGen=15
-  const model8GB: LocalModelEntry = { ...LOCAL_MODEL_CATALOG[1] };
+  // ministral-3b: minRam=5GiB, minGen=14
+  const modelMinistral: LocalModelEntry = { ...LOCAL_MODEL_CATALOG[0] };
+  // mistral-7b: minRam=7GiB, minGen=15
+  const modelMistral7b: LocalModelEntry = { ...LOCAL_MODEL_CATALOG[1] };
 
-  const RAM_6GB = 6 * 1024 * 1024 * 1024;
-  const RAM_8GB = 8 * 1024 * 1024 * 1024;
+  // Real device values: iOS NSProcessInfo.physicalMemory reports less than marketed RAM
+  const RAM_IPHONE14PRO = 5905580032; // iPhone 14 Pro (marketed 6GB) — real reported value
+  const RAM_IPHONE15PRO = 8053063680; // iPhone 15 Pro (marketed 8GB) — real reported value
+  const RAM_6GIB = 6 * 1024 * 1024 * 1024; // idealized binary value
 
-  it('compatibil: model 6GB pe iPhone 14 cu 6GB RAM', () => {
-    expect(isModelCompatible(model6GB, RAM_6GB, 14)).toBe(true);
+  it('compatibil: ministral-3b pe iPhone 14 Pro (valoare RAM reală)', () => {
+    expect(isModelCompatible(modelMinistral, RAM_IPHONE14PRO, 14)).toBe(true);
   });
 
-  it('incompatibil: model 6GB pe telefon cu 4GB RAM', () => {
-    expect(isModelCompatible(model6GB, 4 * 1024 * 1024 * 1024, 14)).toBe(false);
+  it('compatibil: ministral-3b pe iPhone 14 cu RAM idealizat 6GiB', () => {
+    expect(isModelCompatible(modelMinistral, RAM_6GIB, 14)).toBe(true);
+  });
+
+  it('incompatibil: ministral-3b pe telefon cu 4GB RAM', () => {
+    expect(isModelCompatible(modelMinistral, 4 * 1024 * 1024 * 1024, 14)).toBe(false);
   });
 
   it('incompatibil: generație prea mică (iPhone 13 < 14)', () => {
-    expect(isModelCompatible(model6GB, RAM_6GB, 13)).toBe(false);
+    expect(isModelCompatible(modelMinistral, RAM_IPHONE14PRO, 13)).toBe(false);
   });
 
-  it('compatibil: model 8GB pe iPhone 15 Pro (8GB)', () => {
-    expect(isModelCompatible(model8GB, RAM_8GB, 15)).toBe(true);
+  it('compatibil: mistral-7b pe iPhone 15 Pro (valoare RAM reală)', () => {
+    expect(isModelCompatible(modelMistral7b, RAM_IPHONE15PRO, 15)).toBe(true);
   });
 
-  it('incompatibil: model 8GB pe iPhone 15 standard (6GB)', () => {
-    expect(isModelCompatible(model8GB, RAM_6GB, 15)).toBe(false);
+  it('incompatibil: mistral-7b pe iPhone 15 standard (6GB RAM)', () => {
+    expect(isModelCompatible(modelMistral7b, RAM_IPHONE14PRO, 15)).toBe(false);
   });
 
   it('compatibil cu RAM null → true (emulator/dev)', () => {
-    expect(isModelCompatible(model6GB, null, 14)).toBe(true);
+    expect(isModelCompatible(modelMinistral, null, 14)).toBe(true);
   });
 });
 
 describe('getCompatibleModels', () => {
-  // Mock in setup.ts sets: totalMemory=6GB, modelName='iPhone 14 Pro'
-  it('returnează doar modele cu minRam≤6GB și minGen≤14', () => {
+  // Mock in setup.ts sets: totalMemory=5905580032 (iPhone 14 Pro real value), modelName='iPhone 14 Pro'
+  it('returnează doar modele compatibile cu iPhone 14 Pro', () => {
     const compatible = getCompatibleModels();
     for (const model of compatible) {
-      expect(model.minRamBytes).toBeLessThanOrEqual(6 * 1024 * 1024 * 1024);
+      expect(model.minRamBytes).toBeLessThanOrEqual(5905580032);
       expect(model.minIphoneGen).toBeLessThanOrEqual(14);
     }
   });

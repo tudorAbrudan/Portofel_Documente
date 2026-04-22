@@ -34,7 +34,7 @@ export function BottomActionBar({
         {
           backgroundColor: C.surface,
           borderTopColor: C.border,
-          paddingBottom: 4,
+          paddingBottom: safeArea ? insets.bottom + 4 : 4,
         },
       ]}
     >

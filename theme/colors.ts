@@ -10,11 +10,19 @@ export const primaryMuted = '#E8F0D8';
 /** Badge / fundal discret pentru accente primary */
 export const primaryTint = 'rgba(163, 184, 108, 0.16)';
 
+/** Accent cald pentru zone sensibile (câmpuri private, avertismente blânde). */
+export const sensitive = '#8a6d2f';
+export const sensitiveBorder = '#d1b37a';
+export const sensitiveBg = 'rgba(209, 179, 122, 0.08)';
+
 export const light = {
   primary,
   primaryPressed,
   primaryMuted,
   primaryTint,
+  sensitive,
+  sensitiveBorder,
+  sensitiveBg,
   text: '#1a1a1a',
   textSecondary: '#6b6b6b',
   /** Fundal ecran – ușor cald, integrat cu tab bar */
@@ -32,6 +40,9 @@ export const dark = {
   primaryPressed: '#B8C98A',
   primaryMuted: 'rgba(163, 184, 108, 0.22)',
   primaryTint: 'rgba(163, 184, 108, 0.22)',
+  sensitive: '#d1b37a',
+  sensitiveBorder: '#8a6d2f',
+  sensitiveBg: 'rgba(209, 179, 122, 0.12)',
   text: '#f5f5f5',
   textSecondary: '#a8a8a8',
   background: '#1a1b18',

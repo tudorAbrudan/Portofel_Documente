@@ -15,13 +15,15 @@ import {
 } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@react-navigation/native';
+import { useHeaderHeight } from '@react-navigation/elements';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
+import { Ionicons } from '@expo/vector-icons';
 import { Text, View, ThemedTextInput } from '@/components/Themed';
 import { BottomActionBar } from '@/components/ui/BottomActionBar';
-import { primary } from '@/theme/colors';
+import { primary, sensitive, sensitiveBorder, sensitiveBg } from '@/theme/colors';
 import { DatePickerField } from '@/components/DatePickerField';
 import { DocumentPhotoSection } from '@/components/DocumentPhotoSection';
 import type { PhotoPage } from '@/components/DocumentPhotoSection';
@@ -79,6 +81,7 @@ function autoDeleteLabel(val: string | null): string {
 export default function EditDocumentScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { colors } = useTheme();
+  const headerHeight = useHeaderHeight();
   const { customTypes } = useCustomTypes();
   const { docTypeOptions: standardTypes } = useFilteredDocTypes();
   const { companies, persons, properties, vehicles, cards, animals } = useEntities();
@@ -93,10 +96,8 @@ export default function EditDocumentScreen() {
   const [llmFieldLoading, setLlmFieldLoading] = useState(false);
   const [textAiConsentAvailable, setTextAiConsentAvailable] = useState(false);
   const [fullscreenUri, setFullscreenUri] = useState<string | null>(null);
-  const [fsKey, setFsKey] = useState(0);
 
   function handleFullscreen(uri: string) {
-    setFsKey(k => k + 1);
     setFullscreenUri(uri);
   }
   const [linkEntityVisible, setLinkEntityVisible] = useState(false);
@@ -111,6 +112,7 @@ export default function EditDocumentScreen() {
   const [expiryDate, setExpiryDate] = useState('');
   const expiryDateRef = useRef('');
   const [note, setNote] = useState('');
+  const [privateNotes, setPrivateNotes] = useState('');
   const [metadata, setMetadata] = useState<Record<string, string>>({});
   const [autoDelete, setAutoDelete] = useState<string | null>(null);
 
@@ -141,6 +143,7 @@ export default function EditDocumentScreen() {
         setExpiryDate(d.expiry_date ?? '');
         expiryDateRef.current = d.expiry_date ?? '';
         setNote(d.note ?? '');
+        setPrivateNotes(d.private_notes ?? '');
         setMetadata(d.metadata ?? {});
         setAutoDelete(d.auto_delete ?? null);
       })
@@ -616,6 +619,7 @@ export default function EditDocumentScreen() {
         file_path: doc.file_path,
         metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
         auto_delete: autoDelete ?? undefined,
+        private_notes: privateNotes.trim() || undefined,
       });
       scheduleExpirationReminders().catch(() => {});
 
@@ -694,6 +698,7 @@ export default function EditDocumentScreen() {
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? headerHeight : 0}
       >
         <ScrollView
           style={styles.flex}
@@ -944,6 +949,28 @@ export default function EditDocumentScreen() {
             multiline
             editable={!saving}
           />
+
+          {/* 7b. NOTĂ PRIVATĂ — nu se trimite la AI */}
+          <View style={styles.privateLabelRow}>
+            <Ionicons name="lock-closed" size={14} color={sensitive} />
+            <Text style={[styles.label, { color: sensitive, opacity: 1 }]}>
+              Notă privată (opțional)
+            </Text>
+          </View>
+          <Text style={[styles.privateHint, { color: colors.text }]}>
+            Rămâne pe acest telefon. Nu se trimite niciodată la asistentul AI. Potrivită pentru CVV, PIN, parole, coduri de acces.
+          </Text>
+          <ThemedTextInput
+            style={[styles.input, styles.inputMultiline, styles.privateInput]}
+            placeholder="Ex. CVV 123 · PIN 4821"
+            placeholderTextColor="#999"
+            value={privateNotes}
+            onChangeText={setPrivateNotes}
+            multiline
+            editable={!saving}
+            autoCorrect={false}
+            autoCapitalize="none"
+          />
         </ScrollView>
         <BottomActionBar label="Salvează" onPress={handleSave} loading={saving} safeArea />
       </KeyboardAvoidingView>
@@ -952,26 +979,26 @@ export default function EditDocumentScreen() {
       <Modal visible={!!fullscreenUri} transparent animationType="fade" statusBarTranslucent>
         <View style={styles.fsOverlay}>
           <StatusBar hidden />
-          <View key={fsKey} style={{ flex: 1 }}>
-            <ScrollView
-              style={{ flex: 1 }}
-              contentContainerStyle={styles.fsScrollContent}
-              maximumZoomScale={6}
-              minimumZoomScale={1}
-              showsHorizontalScrollIndicator={false}
-              showsVerticalScrollIndicator={false}
-              centerContent
-              bouncesZoom
-            >
-              {fullscreenUri && (
-                <Image
-                  source={{ uri: fullscreenUri }}
-                  style={{ width: screenWidth, height: screenHeight }}
-                  resizeMode="contain"
-                />
-              )}
-            </ScrollView>
-          </View>
+          <ScrollView
+            key={fullscreenUri}
+            style={{ flex: 1 }}
+            contentContainerStyle={styles.fsScrollContent}
+            maximumZoomScale={6}
+            minimumZoomScale={1}
+            showsHorizontalScrollIndicator={false}
+            showsVerticalScrollIndicator={false}
+            centerContent
+            bouncesZoom
+          >
+            {fullscreenUri && (
+              <Image
+                key={fullscreenUri}
+                source={{ uri: fullscreenUri }}
+                style={{ width: screenWidth, height: screenHeight }}
+                resizeMode="contain"
+              />
+            )}
+          </ScrollView>
           <Pressable style={styles.fsCloseBtn} onPress={() => setFullscreenUri(null)}>
             <Text style={styles.fsCloseBtnText}>✕</Text>
           </Pressable>
@@ -1146,6 +1173,9 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   inputMultiline: { minHeight: 80 },
+  privateLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 },
+  privateHint: { fontSize: 12, marginBottom: 8, lineHeight: 16, opacity: 0.6 },
+  privateInput: { borderColor: sensitiveBorder, backgroundColor: sensitiveBg },
   typeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 },
   typeChip: {
     paddingVertical: 8,

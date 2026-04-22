@@ -10,6 +10,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+import { useHeaderHeight } from '@react-navigation/elements';
 import * as ImagePicker from 'expo-image-picker';
 import { Text, View, ThemedTextInput } from '@/components/Themed';
 import { primary } from '@/theme/colors';
@@ -45,6 +46,7 @@ export default function AddEntityScreen() {
   } = useEntities();
   const { visibleEntityTypes } = useVisibilitySettings();
   const ENTITY_TYPES = ALL_ENTITY_TYPES.filter(t => visibleEntityTypes.includes(t.key));
+  const headerHeight = useHeaderHeight();
 
   const [name, setName] = useState('');
   const [nickname, setNickname] = useState('');
@@ -160,6 +162,7 @@ export default function AddEntityScreen() {
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? headerHeight : 0}
     >
       <Pressable style={{ flex: 1 }} onPress={Keyboard.dismiss} accessible={false}>
         <ScrollView
@@ -175,20 +178,33 @@ export default function AddEntityScreen() {
                 style={styles.input}
                 placeholder={
                   type === 'company'
-                    ? 'Denumire firmă (ex. ABC SRL)'
+                    ? 'Denumire firmă (ex. S.C. ABC S.R.L.)'
                     : type === 'person'
-                      ? 'Nume persoană'
+                      ? 'ex. Diana Popescu'
                       : type === 'vehicle'
-                        ? 'Mașină (ex. Dacia Logan)'
+                        ? 'ex. Dacia Logan B 123 ABC'
                         : type === 'animal'
-                          ? 'Nume animal (ex. Rex)'
-                          : 'Proprietate (ex. Apartament X)'
+                          ? 'ex. Rex'
+                          : 'ex. Apartament Str. Eminescu 5'
                 }
                 placeholderTextColor="#999"
                 value={name}
                 onChangeText={setName}
                 editable={!loading}
               />
+              <Text style={styles.hint}>
+                {type === 'person'
+                  ? 'Important pentru AI: folosește numele complet (Prenume Nume) exact cum apare în acte, pentru legarea automată a documentelor.'
+                  : type === 'vehicle'
+                    ? 'Important pentru AI: format recomandat Marcă Model Nr.înmatriculare (ex. Dacia Logan B 123 ABC), exact cum apare în talon și RCA.'
+                    : type === 'property'
+                      ? 'Important pentru AI: folosește adresa completă sau o descriere unică pentru potrivire automată cu actele de proprietate.'
+                      : type === 'animal'
+                        ? 'Important pentru AI: folosește numele exact din actele veterinare pentru legarea automată a vaccinurilor și consultațiilor.'
+                        : type === 'company'
+                          ? 'Important pentru AI: folosește denumirea exactă din documente (facturi, contracte) pentru potrivire automată.'
+                          : null}
+              </Text>
             </>
           )}
           {isCompany && (
@@ -280,6 +296,7 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   inner: { flex: 1, padding: 24 },
   label: { fontSize: 14, marginBottom: 6, opacity: 0.9 },
+  hint: { fontSize: 12, opacity: 0.55, marginTop: -14, marginBottom: 20, lineHeight: 17 },
   input: {
     borderWidth: 1,
     borderColor: '#e0e0e0',

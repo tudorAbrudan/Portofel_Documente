@@ -8,6 +8,7 @@ import * as entities from './entities';
 import * as docs from './documents';
 import { getCustomTypes, createCustomType } from './customTypes';
 import { toFileUri, toRelativePath } from './fileUtils';
+import { onRestoreSuccess } from './reviewPrompt';
 
 /**
  * Citește un fișier ca base64. Returnează null dacă nu există sau nu poate fi citit.
@@ -577,6 +578,12 @@ export async function importBackup(): Promise<ImportResult> {
     } catch (e) {
       errors.push(`Pagina document: ${e instanceof Error ? e.message : 'eroare'}`);
     }
+  }
+
+  try {
+    await onRestoreSuccess(imported);
+  } catch {
+    // Trigger review opțional.
   }
 
   return { imported, skipped, errors };

@@ -9,13 +9,14 @@
  *
  * Cheia din `metadata` trebuie să coincidă exact cu `key` din DOCUMENT_FIELDS.
  */
-import { extractPlateNumber } from './ocr';
+import { extractPlateNumber, extractDobFromCnp } from './ocr';
 import type { DocumentType } from '@/types';
 
 export interface ExtractResult {
   metadata: Record<string, string>;
   expiry_date?: string; // YYYY-MM-DD
   issue_date?: string; // YYYY-MM-DD
+  note?: string; // rezumat structurat generat de AI
 }
 
 // ─── Utilități ───────────────────────────────────────────────────────────────
@@ -26,14 +27,14 @@ function parseDate(s: string): string | undefined {
   return undefined;
 }
 
-function findDateNear(text: string, keyword: RegExp): string | undefined {
+function findDateNear(text: string, keyword: RegExp, windowLines = 1): string | undefined {
   const lines = text.split('\n');
   for (let i = 0; i < lines.length; i++) {
     if (keyword.test(lines[i])) {
       const d = parseDate(lines[i]);
       if (d) return d;
-      if (i + 1 < lines.length) {
-        const d2 = parseDate(lines[i + 1]);
+      for (let j = 1; j <= windowLines && i + j < lines.length; j++) {
+        const d2 = parseDate(lines[i + j]);
         if (d2) return d2;
       }
     }
@@ -53,10 +54,28 @@ function extractBuletin(text: string): ExtractResult {
   const meta: Record<string, string> = {};
 
   const cnp = text.match(/\b([1-8]\d{12})\b/);
-  if (cnp) meta['cnp'] = cnp[1];
+  if (cnp) {
+    meta['cnp'] = cnp[1];
+    const dob = extractDobFromCnp(cnp[1]);
+    if (dob) {
+      const [y, m, d] = dob.split('-');
+      meta['birth_date'] = `${d}.${m}.${y}`;
+    }
+  }
 
   const series = text.match(/\b([A-Z]{2})\s*(\d{6})\b/);
   if (series) meta['series'] = `${series[1]} ${series[2]}`;
+
+  // Adresă domiciliu (pe unele CI-uri apare pe față sau verso)
+  const addrByKeyword = text.match(/(?:domiciliu|adres[aă])\s*:?\s*\n?\s*(.{10,120})/i);
+  if (addrByKeyword) {
+    meta['address'] = addrByKeyword[1].trim().replace(/\s+/g, ' ');
+  } else {
+    const addrInline = text.match(
+      /\b(?:str\.|strada|b-dul|bulevardul?|calea|aleea|bd\.)\s+[A-ZĂÂÎȘȚ][^\n]{5,80}/i
+    );
+    if (addrInline) meta['address'] = addrInline[0].trim().replace(/\s+/g, ' ');
+  }
 
   // Format specific CI română: "07.07.16-28.09.2026" (emisiune YY – expirare YYYY)
   let expiry: string | undefined;
@@ -194,17 +213,42 @@ function extractTalonDoc(text: string): ExtractResult {
 
 // ─── CARTE AUTO (CIV) ────────────────────────────────────────────────────────
 
+/**
+ * Extrage VIN (17 caractere, fără I/O/Q) dintr-un text. Tolerează spații/liniuțe
+ * din OCR ("WVW ZZZ1JZ3W 386752") căutând 17 caractere valide cu separatori.
+ * Caută întâi lângă etichetele uzuale din CIV ("NIV", "număr de identificare",
+ * "E."), apoi fallback global.
+ */
+function extractVinFromText(text: string): string | null {
+  const VIN_CHAR = '[A-HJ-NPR-Z0-9]';
+  const VIN17 = `(?:${VIN_CHAR}[\\s\\-]?){17}`;
+
+  const labelPatterns: RegExp[] = [
+    new RegExp(`num[ăa]r(?:ul)?\\s*de\\s*identificare(?:\\s*al)?(?:\\s*vehiculului)?[\\s:.\\-]*(${VIN17})`, 'i'),
+    new RegExp(`\\bNIV\\b[\\s:.\\-]*(${VIN17})`, 'i'),
+    new RegExp(`(?:^|[\\s|])E[\\s.:]+(${VIN17})`, 'mi'),
+    new RegExp(`\\bVIN\\b[\\s:.\\-]*(${VIN17})`, 'i'),
+  ];
+
+  for (const re of labelPatterns) {
+    const m = text.match(re);
+    if (m) {
+      const clean = m[1].replace(/[\s\-]/g, '').toUpperCase();
+      if (clean.length === 17) return clean;
+    }
+  }
+
+  const fallback = text.match(new RegExp(`\\b(${VIN_CHAR}{17})\\b`));
+  return fallback ? fallback[1].toUpperCase() : null;
+}
+
 function extractCarteAuto(text: string): ExtractResult {
   const meta: Record<string, string> = {};
 
-  const plate = extractPlateNumber(text);
-  if (plate) meta['plate'] = plate;
+  const vin = extractVinFromText(text);
+  if (vin) meta['vin'] = vin;
 
-  const vin =
-    text.match(/\bE\s*[:\s]\s*([A-HJ-NPR-Z0-9]{17})\b/i) ?? text.match(/\b([A-HJ-NPR-Z0-9]{17})\b/);
-  if (vin) meta['vin'] = vin[1];
-
-  // CIV nu expiră
+  // CIV nu expiră și nu conține placa (placa e doar pe talon).
   return { metadata: meta };
 }
 
@@ -499,6 +543,11 @@ function detectUtilitySupplier(text: string): string | undefined {
   return undefined;
 }
 
+export function isKnownUtilitySupplier(supplier: string): boolean {
+  const su = supplier.toUpperCase();
+  return ROMANIAN_UTILITY_SUPPLIERS.some(s => su.includes(s.toUpperCase()) || s.toUpperCase().includes(su));
+}
+
 function extractFactura(text: string): ExtractResult {
   const meta: Record<string, string> = {};
 
@@ -506,15 +555,20 @@ function extractFactura(text: string): ExtractResult {
   const invNr = text.match(
     /(?:factur[aă]\s*nr\.?\s*|nr\.?\s*factur[aă]\s*|invoice\s*(?:no\.?|nr\.?)\s*|seria\s+[A-Z]+\s+nr\.?\s*)([A-Z0-9\-\/]+)/i
   );
-  if (invNr) meta['invoice_number'] = invNr[1].trim();
+  if (invNr) {
+    // OCR confundă adesea '0' cu 'o' (lowercase) în șiruri numerice
+    meta['invoice_number'] = invNr[1].trim().replace(/(\d)[oO](\d)/g, '$10$2').replace(/(\d)[oO]$/g, '$10');
+  }
 
-  // Furnizor — mai întâi keyword explicit, apoi detectare din lista de furnizori cunoscuți
+  // Furnizor — keyword explicit (fără 'operator'/'prestat' care sunt prea generice)
   const supplierKeyword = text.match(
-    /(?:furnizor|emitent|v[âa]nz[aă]tor|operator|prestat)[:\s]+([^\n]{5,80})/i
+    /(?:furnizor|emitent|v[âa]nz[aă]tor)[:\s]+([^\n]{5,80})/i
   );
   if (supplierKeyword) {
     meta['supplier'] = supplierKeyword[1].trim().slice(0, 60);
-  } else {
+  }
+  // Întotdeauna verificăm și lista de furnizori cunoscuți — mai fiabil decât keyword match
+  if (!meta['supplier'] || !isKnownUtilitySupplier(meta['supplier'])) {
     const known = detectUtilitySupplier(text);
     if (known) meta['supplier'] = known;
   }
@@ -545,28 +599,35 @@ function extractFactura(text: string): ExtractResult {
     if (withCurrency) meta['amount'] = withCurrency[1].replace(',', '.');
   }
 
-  // Scadență
-  const due = findDateNear(
-    text,
-    /scaden[tț][aă]|termen\s*(?:de\s*)?plat[aă]|data\s*limit[aă]/i
-  );
+  // Scadență — căutăm cu fereastră extinsă (3 linii) și suportăm variante de diacritice OCR
+  const dueKeyword =
+    /scadent|termen\s*(?:de\s*)?plat|data\s*limit|limit[aă]\s*(?:de\s*)?plat|pl[aă]tibil|data\s*scaden/i;
+  let due = findDateNear(text, dueKeyword, 3);
   if (due) meta['due_date'] = due.replace(/-/g, '.').replace(/(\d{4})\.(\d{2})\.(\d{2})/, '$3.$2.$1');
 
-  // Perioadă de facturare
-  const periodMatch = text.match(
-    /perioad[aă]\s*(?:de\s*)?factur[aă]?[:\s]+([^\n]{10,40})/i
-  );
-  if (periodMatch) {
-    meta['period'] = periodMatch[1].trim();
-  } else {
-    // Fallback: două date de forma DD.MM.YYYY - DD.MM.YYYY pe aceeași linie
-    const rangeLine = text.match(
-      /(\d{2}[.\/-]\d{2}[.\/-]\d{4})\s*[-–]\s*(\d{2}[.\/-]\d{2}[.\/-]\d{4})/
-    );
-    if (rangeLine) meta['period'] = `${rangeLine[1]} - ${rangeLine[2]}`;
+  // Perioadă de facturare — label-ul poate fi pe linie separată față de interval
+  const periodLines = text.split('\n');
+  const periodKeyword = /perioad[aă]\s*(?:de\s*)?factur/i;
+  const rangePattern = /(\d{2}[.\/-]\d{2}[.\/-]\d{4})\s*[-–-]\s*(\d{2}[.\/-]\d{2}[.\/-]\d{4})/;
+  for (let pi = 0; pi < periodLines.length && !meta['period']; pi++) {
+    if (periodKeyword.test(periodLines[pi])) {
+      // Caută intervalul pe aceeași linie sau pe următoarele 2
+      for (let pj = 0; pj <= 2; pj++) {
+        const m = (periodLines[pi + pj] ?? '').match(rangePattern);
+        if (m) { meta['period'] = `${m[1]} - ${m[2]}`; break; }
+      }
+    }
+  }
+  if (!meta['period']) {
+    // Fallback: primul interval de date care NU e pe o linie cu "interval de timp"
+    for (const line of periodLines) {
+      if (/interval\s*de\s*timp/i.test(line)) continue;
+      const m = line.match(rangePattern);
+      if (m) { meta['period'] = `${m[1]} - ${m[2]}`; break; }
+    }
   }
 
-  const issue = findDateNear(text, /data\s*factur[ii]|data\s*emiter|data\s*document/i);
+  const issue = findDateNear(text, /data\s*factur[ii]|data\s*emiter|data\s*document|din\s*data\s*de/i);
 
   return { metadata: meta, issue_date: issue, expiry_date: due };
 }
@@ -737,7 +798,6 @@ function extractAnalize(text: string): ExtractResult {
   const lab = text.match(/(?:laborator|clinica|spital)[:\s]+([^\n]{5,60})/i);
   if (lab) meta['lab'] = lab[1].trim();
   else {
-    // Detectare automată laboratoare cunoscute
     const knownLabs = ['SYNEVO', 'MEDLIFE', 'REGINA MARIA', 'MEDICOVER', 'BIOCLINICA', 'PONDERAS'];
     const tu = text.toUpperCase();
     for (const l of knownLabs) {
@@ -747,6 +807,11 @@ function extractAnalize(text: string): ExtractResult {
       }
     }
   }
+
+  const doctorMatch = text.match(
+    /(?:medic\s*(?:solicitant|prescriptor|de\s*familie|specialist)|solicitat\s*de|dr\.?)[:\s.]+([A-ZĂÂÎȘȚ][a-zăâîșțA-Z\s\-\.]{3,50})/i
+  );
+  if (doctorMatch) meta['doctor'] = doctorMatch[1].trim();
 
   const issue = findDateNear(text, /data\s*(?:recolt|eliber|rezult)/i) ?? firstDate(text);
 

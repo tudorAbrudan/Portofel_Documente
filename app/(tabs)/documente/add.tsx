@@ -14,6 +14,7 @@ import {
   InteractionManager,
 } from 'react-native';
 import { router, useLocalSearchParams, Stack, useFocusEffect } from 'expo-router';
+import { useHeaderHeight } from '@react-navigation/elements';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
@@ -26,7 +27,7 @@ import { Text, View, ThemedTextInput } from '@/components/Themed';
 import { BottomActionBar } from '@/components/ui/BottomActionBar';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
-import { primary } from '@/theme/colors';
+import { primary, sensitive, sensitiveBorder, sensitiveBg } from '@/theme/colors';
 import { useDocuments } from '@/hooks/useDocuments';
 import { useEntities } from '@/hooks/useEntities';
 import { scheduleExpirationReminders } from '@/services/notifications';
@@ -44,7 +45,12 @@ import {
 import { extractFieldsForType, isKnownUtilitySupplier } from '@/services/ocrExtractors';
 import { reconstructLayout } from '@/services/ocrLayout';
 import { toRelativePath } from '@/services/fileUtils';
-import { getDocumentsByEntity, findDuplicateDocument, updateDocument } from '@/services/documents';
+import {
+  getDocumentsByEntity,
+  findDuplicateDocument,
+  updateDocument,
+  getVehicleIdentifiers,
+} from '@/services/documents';
 import { DOCUMENT_TYPE_LABELS } from '@/types';
 import type { Document } from '@/types';
 import type { DocumentType, EntityType, DocumentEntityLink } from '@/types';
@@ -126,6 +132,7 @@ export default function AddDocumentScreen() {
   }>();
   const { createDocument, refresh } = useDocuments();
   const { persons, properties, vehicles, cards, animals, companies } = useEntities();
+  const headerHeight = useHeaderHeight();
   const { customTypes } = useCustomTypes();
   const { visibleEntityTypes, visibleDocTypes } = useVisibilitySettings();
 
@@ -137,6 +144,7 @@ export default function AddDocumentScreen() {
   const expiryDateRef = useRef('');
   const issueDateRef = useRef('');
   const [note, setNote] = useState('');
+  const [privateNotes, setPrivateNotes] = useState('');
   const [autoDelete, setAutoDelete] = useState<string | null>(null);
   const [pages, setPages] = useState<{ uri: string; localPath: string }[]>([]);
   const ocrTextsRef = useRef<Map<string, string>>(new Map());
@@ -169,7 +177,6 @@ export default function AddDocumentScreen() {
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
 
   // Entity picker state
-  const [pickerCategory, setPickerCategory] = useState<EntityType>('person');
   const [entityLinks, setEntityLinks] = useState<DocumentEntityLink[]>(() => {
     const initial: DocumentEntityLink[] = [];
     if (params.person_id) initial.push({ entityType: 'person', entityId: params.person_id });
@@ -180,6 +187,20 @@ export default function AddDocumentScreen() {
     if (params.company_id) initial.push({ entityType: 'company', entityId: params.company_id });
     return initial;
   });
+  const [pickerCategory, setPickerCategory] = useState<EntityType>(
+    () => entityLinks[0]?.entityType ?? 'person'
+  );
+
+  // Auto-comută tab-ul picker-ului pe primul tip de entitate legat, dacă tab-ul
+  // curent e gol și există legături pe alt tip. Respectă alegerea manuală:
+  // dacă user-ul e deja pe un tab cu entități legate, nu schimbă nimic.
+  useEffect(() => {
+    if (entityLinks.length === 0) return;
+    const currentTabHasLinks = entityLinks.some(l => l.entityType === pickerCategory);
+    if (!currentTabHasLinks) {
+      setPickerCategory(entityLinks[0].entityType);
+    }
+  }, [entityLinks, pickerCategory]);
 
   const personId = params.person_id;
   const propertyId = params.property_id;
@@ -420,9 +441,15 @@ export default function AddDocumentScreen() {
 
     setAiOcrLoading(true);
     try {
+      // Îmbogățim contextul vehiculelor cu placa/VIN din talon/carte_auto atașate,
+      // ca AI-ul să poată lega documentele și după identificatori tehnici.
+      const vehicleIds = await getVehicleIdentifiers();
       const availableEntities: AvailableEntities = {
         persons: persons.map(p => ({ id: p.id, name: p.name })),
-        vehicles: vehicles.map(v => ({ id: v.id, name: v.name })),
+        vehicles: vehicles.map(v => {
+          const ids = vehicleIds.get(v.id);
+          return { id: v.id, name: v.name, plate: ids?.plate, vin: ids?.vin };
+        }),
         properties: properties.map(p => ({ id: p.id, name: p.name })),
         cards: cards.map(c => ({ id: c.id, nickname: c.nickname, last4: c.last4 })),
         animals: animals.map(a => ({ id: a.id, name: a.name, species: a.species })),
@@ -643,6 +670,24 @@ export default function AddDocumentScreen() {
     setLiveOcrText(Array.from(ocrStructuredTextsRef.current.values()).join('\n\n---\n\n'));
   }
 
+  function handleReorderPage(fromIndex: number, toIndex: number) {
+    setPages(prev => {
+      if (
+        fromIndex < 0 ||
+        fromIndex >= prev.length ||
+        toIndex < 0 ||
+        toIndex >= prev.length ||
+        fromIndex === toIndex
+      ) {
+        return prev;
+      }
+      const next = [...prev];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      return next;
+    });
+  }
+
   async function handleRotate(pageId: string, degrees: number) {
     const page = pages.find(p => p.localPath === pageId);
     if (!page) return;
@@ -849,6 +894,7 @@ export default function AddDocumentScreen() {
     issueDate.trim() !== '' ||
     expiryDate.trim() !== '' ||
     note.trim() !== '' ||
+    privateNotes.trim() !== '' ||
     Object.values(metadata).some(v => v.trim() !== '') ||
     entityLinks.length > 0;
 
@@ -902,6 +948,7 @@ export default function AddDocumentScreen() {
             metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
             auto_delete: autoDelete ?? duplicateDoc.auto_delete ?? undefined,
             ocr_text: newOcrText,
+            private_notes: privateNotes.trim() || duplicateDoc.private_notes || undefined,
           });
           if (pages.length > 1) {
             const { addDocumentPage } = await import('@/services/documents');
@@ -945,6 +992,7 @@ export default function AddDocumentScreen() {
         ocr_text:
           Array.from(ocrStructuredTextsRef.current.values()).filter(Boolean).join('\n\n---\n\n') ||
           undefined,
+        private_notes: privateNotes.trim() || undefined,
       });
       const { addDocumentPage } = await import('@/services/documents');
       for (let i = 1; i < pages.length; i++) {
@@ -1092,6 +1140,7 @@ export default function AddDocumentScreen() {
       <KeyboardAvoidingView
         style={[styles.container, { backgroundColor: C.background }]}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? headerHeight : 0}
       >
         <ScrollView
           style={[styles.scroll, { backgroundColor: C.background }]}
@@ -1112,6 +1161,7 @@ export default function AddDocumentScreen() {
             onDelete={handleDeletePage}
             onRunOcr={handleManualOcr}
             onFullscreen={setFullscreenUri}
+            onReorderPage={handleReorderPage}
           />
           {aiOcrApplied && (
             <View style={[styles.aiBadge, { backgroundColor: C.primaryMuted ?? '#f0f5e8' }]}>
@@ -1371,6 +1421,28 @@ export default function AddDocumentScreen() {
             editable={!loading}
           />
 
+          {/* 6b. NOTĂ PRIVATĂ — nu se trimite la AI */}
+          <View style={styles.privateLabelRow}>
+            <Ionicons name="lock-closed" size={14} color={sensitive} />
+            <Text style={[styles.label, { color: sensitive, opacity: 1 }]}>Notă privată (opțional)</Text>
+          </View>
+          <Text style={[styles.privateHint, { color: C.textSecondary }]}>
+            Rămâne pe acest telefon. Nu se trimite niciodată la asistentul AI. Potrivită pentru CVV, PIN, parole, coduri de acces.
+          </Text>
+          <ThemedTextInput
+            style={[styles.input, styles.inputMultiline, styles.privateInput]}
+            placeholder="Ex. CVV 123 · PIN 4821"
+            placeholderTextColor="#999"
+            value={privateNotes}
+            onChangeText={setPrivateNotes}
+            multiline
+            scrollEnabled
+            editable={!loading}
+            secureTextEntry={false}
+            autoCorrect={false}
+            autoCapitalize="none"
+          />
+
           {/* 7. LEAGĂ DE ENTITATE */}
           <>
             <Text style={[styles.label, styles.sectionLabel]}>
@@ -1466,6 +1538,7 @@ export default function AddDocumentScreen() {
         <View style={styles.fsOverlay}>
           <StatusBar hidden />
           <ScrollView
+            key={fullscreenUri}
             style={{ flex: 1 }}
             contentContainerStyle={styles.fsScrollContent}
             maximumZoomScale={6}
@@ -1477,6 +1550,7 @@ export default function AddDocumentScreen() {
           >
             {fullscreenUri && (
               <Image
+                key={fullscreenUri}
                 source={{ uri: fullscreenUri }}
                 style={{ width: screenWidth, height: screenHeight }}
                 resizeMode="contain"
@@ -1539,6 +1613,9 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   inputMultiline: { minHeight: 80, maxHeight: 180 },
+  privateLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 },
+  privateHint: { fontSize: 12, marginBottom: 8, lineHeight: 16, opacity: 0.8 },
+  privateInput: { borderColor: sensitiveBorder, backgroundColor: sensitiveBg },
   // Entity picker
   categoryRow: { marginBottom: 12, marginTop: 8 },
   categoryRowContent: { flexDirection: 'row', gap: 8 },

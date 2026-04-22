@@ -92,7 +92,8 @@ jest.mock('expo-local-authentication', () => ({
 }));
 
 jest.mock('expo-device', () => ({
-  totalMemory: 6 * 1024 * 1024 * 1024, // 6GB — iPhone 14 Pro
+  // iPhone 14 Pro (6GB marketed) — NSProcessInfo.physicalMemory reports ~5.9B bytes after kernel overhead
+  totalMemory: 5905580032,
   modelName: 'iPhone 14 Pro',
 }));
 

@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
   StyleSheet,
   ScrollView,
@@ -193,6 +193,7 @@ export default function ExpirariScreen() {
   const { documents, loading, refresh } = useDocuments();
   const { persons, properties, vehicles, cards, animals, companies } = useEntities();
   const { visibleDocTypes } = useVisibilitySettings();
+  const [showStale, setShowStale] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -202,13 +203,16 @@ export default function ExpirariScreen() {
   );
 
   const withExpiry = documents.filter(d => !!d.expiry_date && visibleDocTypes.includes(d.type));
-  // Expirate vechi (>30 zile de la expirare) rămân în DB pentru chatbot și în pagina entității,
-  // dar sunt ascunse aici ca să nu aglomereze lista de atenție.
   const expired = withExpiry
     .filter(d => d.expiry_date && isExpired(d.expiry_date) && !isStaleExpired(d.expiry_date))
     .sort(sortByExpiryAsc);
   const upcoming = withExpiry
     .filter(d => d.expiry_date && !isExpired(d.expiry_date))
+    .sort(sortByExpiryAsc);
+  // Expirate de mult (>30 zile de la expirare): ascunse by default ca să nu aglomereze
+  // lista de atenție, dar accesibile printr-un toggle la bază.
+  const staleExpired = withExpiry
+    .filter(d => d.expiry_date && isStaleExpired(d.expiry_date))
     .sort(sortByExpiryAsc);
 
   const subtitleText =
@@ -370,6 +374,44 @@ export default function ExpirariScreen() {
             {upcoming.map(renderCard)}
           </RNView>
         )}
+
+        {/* ── Expirate de mult (>30 zile) — collapsible ── */}
+        {staleExpired.length > 0 && (
+          <RNView style={styles.section}>
+            <Pressable
+              style={({ pressed }) => [
+                styles.staleToggle,
+                { backgroundColor: C.card, shadowColor: C.cardShadow },
+                pressed && styles.cardPressed,
+              ]}
+              onPress={() => setShowStale(v => !v)}
+              android_ripple={{ color: 'rgba(0,0,0,0.05)', borderless: false }}
+            >
+              <Ionicons
+                name="archive-outline"
+                size={18}
+                color={C.textSecondary}
+                style={styles.staleIcon}
+              />
+              <RNView style={styles.staleTextWrap}>
+                <RNText style={[styles.staleTitle, { color: C.text }]}>
+                  Expirate de peste 30 zile
+                </RNText>
+                <RNText style={[styles.staleSub, { color: C.textSecondary }]}>
+                  {staleExpired.length}{' '}
+                  {staleExpired.length === 1 ? 'document' : 'documente'} · arhivate din lista
+                  de atenție
+                </RNText>
+              </RNView>
+              <Ionicons
+                name={showStale ? 'chevron-up' : 'chevron-down'}
+                size={18}
+                color={C.textSecondary}
+              />
+            </Pressable>
+            {showStale && <RNView style={styles.staleList}>{staleExpired.map(renderCard)}</RNView>}
+          </RNView>
+        )}
       </ScrollView>
     </RNView>
   );
@@ -502,4 +544,26 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     lineHeight: 15,
   },
+
+  // Stale expired toggle
+  staleToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 12,
+    padding: 14,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.06,
+        shadowRadius: 3,
+      },
+      android: { elevation: 1 },
+    }),
+  },
+  staleIcon: { marginRight: 12 },
+  staleTextWrap: { flex: 1, gap: 2 },
+  staleTitle: { fontSize: 14, fontWeight: '600' },
+  staleSub: { fontSize: 12 },
+  staleList: { gap: 8, marginTop: 8 },
 });

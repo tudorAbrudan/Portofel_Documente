@@ -1,5 +1,7 @@
 import { getPersons, getProperties, getVehicles, getCards, getAnimals } from './entities';
-import { getDocuments } from './documents';
+// `getDocumentsForAI` strips private_notes. NU folosi `getDocuments` aici —
+// vezi `.claude/rules/ai-privacy.md`.
+import { getDocumentsForAI } from './documents';
 import { DOCUMENT_TYPE_LABELS } from '@/types';
 import type { DocumentType, Document } from '@/types';
 import { buildAppKnowledge } from './appKnowledge';
@@ -210,7 +212,7 @@ async function buildContext(
     getVehicles(),
     getCards(),
     getAnimals(),
-    getDocuments(),
+    getDocumentsForAI(),
   ]);
 
   const noData =
@@ -300,7 +302,6 @@ async function buildContext(
       const extra: string[] = [];
       if (p.phone) extra.push(`tel: ${p.phone}`);
       if (p.email) extra.push(`email: ${p.email}`);
-      if (p.iban) extra.push(`IBAN: ${p.iban}`);
       const details = extra.length ? ` (${extra.join(', ')})` : '';
       return `[ENT:${p.name}|person|${p.id}]${details}`;
     });

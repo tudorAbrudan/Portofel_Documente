@@ -11,7 +11,9 @@ import {
   View as RNView,
   Text as RNText,
   FlatList,
+  Linking,
 } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { router, useLocalSearchParams, useFocusEffect, Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { ThemedTextInput } from '@/components/Themed';
@@ -73,7 +75,7 @@ export default function EntityDetailScreen() {
   const [editRegCom, setEditRegCom] = useState('');
   const [editPhone, setEditPhone] = useState('');
   const [editEmail, setEditEmail] = useState('');
-  const [editIban, setEditIban] = useState('');
+  const [contactExpanded, setContactExpanded] = useState(false);
   const [linkDocVisible, setLinkDocVisible] = useState(false);
   const [unlinkedDocs, setUnlinkedDocs] = useState<DocType[]>([]);
 
@@ -203,7 +205,6 @@ export default function EntityDetailScreen() {
       if (entityKind === 'person_id' && person) {
         setEditPhone(person.phone ?? '');
         setEditEmail(person.email ?? '');
-        setEditIban(person.iban ?? '');
       }
     }
     setEditVisible(true);
@@ -228,8 +229,7 @@ export default function EntityDetailScreen() {
           id!,
           editName.trim(),
           editPhone.trim() || undefined,
-          editEmail.trim() || undefined,
-          editIban.trim() || undefined
+          editEmail.trim() || undefined
         );
       else if (entityKind === 'property_id') await updateProperty(id!, editName.trim());
       else if (entityKind === 'vehicle_id') await updateVehicle(id!, editName.trim());
@@ -302,48 +302,111 @@ export default function EntityDetailScreen() {
           (() => {
             const person = persons.find(p => p.id === id);
             if (!person) return null;
-            const hasContact = person.phone || person.email || person.iban;
+            const hasContact = Boolean(person.phone || person.email);
             if (!hasContact) return null;
+            const openTel = async (phone: string) => {
+              const url = `tel:${phone.replace(/\s+/g, '')}`;
+              try {
+                await Linking.openURL(url);
+              } catch {
+                Alert.alert('Eroare', 'Nu s-a putut iniția apelul.');
+              }
+            };
+            const openMail = async (email: string) => {
+              try {
+                await Linking.openURL(`mailto:${email}`);
+              } catch {
+                Alert.alert('Eroare', 'Nu s-a putut deschide clientul de email.');
+              }
+            };
+            const copyValue = async (value: string, label: string) => {
+              await Clipboard.setStringAsync(value);
+              Alert.alert('Copiat', `${label} a fost copiat în clipboard.`);
+            };
             return (
               <RNView
                 style={[styles.contactCard, { backgroundColor: C.card, shadowColor: C.cardShadow }]}
               >
-                <RNText style={[styles.sectionTitle, { color: C.textSecondary }]}>
-                  DATE CONTACT
-                </RNText>
-                {person.phone ? (
-                  <RNView style={styles.contactRow}>
+                <Pressable
+                  onPress={() => setContactExpanded(v => !v)}
+                  style={styles.contactHeader}
+                  hitSlop={8}
+                >
+                  <RNText style={[styles.sectionTitle, { color: C.textSecondary, marginBottom: 0 }]}>
+                    DATE CONTACT
+                  </RNText>
+                  <RNView style={styles.contactHeaderRight}>
+                    {!contactExpanded && (
+                      <>
+                        {person.phone ? (
+                          <Ionicons
+                            name="call-outline"
+                            size={14}
+                            color={C.textSecondary}
+                            style={styles.contactHeaderIcon}
+                          />
+                        ) : null}
+                        {person.email ? (
+                          <Ionicons
+                            name="mail-outline"
+                            size={14}
+                            color={C.textSecondary}
+                            style={styles.contactHeaderIcon}
+                          />
+                        ) : null}
+                      </>
+                    )}
                     <Ionicons
-                      name="call-outline"
+                      name={contactExpanded ? 'chevron-up' : 'chevron-down'}
                       size={16}
                       color={C.textSecondary}
-                      style={styles.contactIcon}
                     />
-                    <RNText style={[styles.contactValue, { color: C.text }]}>{person.phone}</RNText>
                   </RNView>
-                ) : null}
-                {person.email ? (
-                  <RNView style={styles.contactRow}>
-                    <Ionicons
-                      name="mail-outline"
-                      size={16}
-                      color={C.textSecondary}
-                      style={styles.contactIcon}
-                    />
-                    <RNText style={[styles.contactValue, { color: C.text }]}>{person.email}</RNText>
+                </Pressable>
+                {contactExpanded && (
+                  <RNView style={styles.contactBody}>
+                    {person.phone ? (
+                      <Pressable
+                        onPress={() => openTel(person.phone!)}
+                        onLongPress={() => copyValue(person.phone!, 'Telefonul')}
+                        style={({ pressed }) => [
+                          styles.contactRow,
+                          pressed && styles.contactRowPressed,
+                        ]}
+                      >
+                        <Ionicons
+                          name="call-outline"
+                          size={16}
+                          color={C.primary}
+                          style={styles.contactIcon}
+                        />
+                        <RNText style={[styles.contactValue, { color: C.primary }]}>
+                          {person.phone}
+                        </RNText>
+                      </Pressable>
+                    ) : null}
+                    {person.email ? (
+                      <Pressable
+                        onPress={() => openMail(person.email!)}
+                        onLongPress={() => copyValue(person.email!, 'Emailul')}
+                        style={({ pressed }) => [
+                          styles.contactRow,
+                          pressed && styles.contactRowPressed,
+                        ]}
+                      >
+                        <Ionicons
+                          name="mail-outline"
+                          size={16}
+                          color={C.primary}
+                          style={styles.contactIcon}
+                        />
+                        <RNText style={[styles.contactValue, { color: C.primary }]}>
+                          {person.email}
+                        </RNText>
+                      </Pressable>
+                    ) : null}
                   </RNView>
-                ) : null}
-                {person.iban ? (
-                  <RNView style={styles.contactRow}>
-                    <Ionicons
-                      name="card-outline"
-                      size={16}
-                      color={C.textSecondary}
-                      style={styles.contactIcon}
-                    />
-                    <RNText style={[styles.contactValue, { color: C.text }]}>{person.iban}</RNText>
-                  </RNView>
-                ) : null}
+                )}
               </RNView>
             );
           })()}
@@ -576,17 +639,6 @@ export default function EntityDetailScreen() {
                   autoCapitalize="none"
                   editable={!editLoading}
                 />
-                <RNText style={[styles.modalLabel, { color: C.textSecondary }]}>
-                  IBAN (opțional)
-                </RNText>
-                <ThemedTextInput
-                  style={styles.modalInput}
-                  placeholder="RO49 AAAA 1B31 0075 9384 0000"
-                  value={editIban}
-                  onChangeText={setEditIban}
-                  autoCapitalize="characters"
-                  editable={!editLoading}
-                />
               </>
             )}
 
@@ -706,7 +758,22 @@ const styles = StyleSheet.create({
       android: { elevation: 2 },
     }),
   },
-  contactRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  contactHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 2,
+  },
+  contactHeaderRight: { flexDirection: 'row', alignItems: 'center' },
+  contactHeaderIcon: { marginRight: 8 },
+  contactBody: { marginTop: 10 },
+  contactRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    paddingVertical: 4,
+  },
+  contactRowPressed: { opacity: 0.6 },
   contactIcon: { marginRight: 8 },
   contactValue: { fontSize: 15 },
 

@@ -27,7 +27,7 @@ import { Text, View } from '@/components/Themed';
 import { DocumentPhotoSection } from '@/components/DocumentPhotoSection';
 import type { PhotoPage } from '@/components/DocumentPhotoSection';
 import { BottomActionBar } from '@/components/BottomActionBar';
-import { primary } from '@/theme/colors';
+import { primary, sensitive, sensitiveBorder, sensitiveBg } from '@/theme/colors';
 import {
   getDocumentById,
   deleteDocument,
@@ -37,7 +37,9 @@ import {
   setDocumentOcrText,
   reorderAllDocumentFiles,
   getDocumentEntityLinks,
+  findDuplicatesOfDocument,
 } from '@/services/documents';
+import type { DocumentDuplicates } from '@/services/documents';
 import type { DocumentEntityLink, EntityType } from '@/types';
 import { scheduleExpirationReminders } from '@/services/notifications';
 import {
@@ -104,13 +106,17 @@ export default function DocumentDetailScreen() {
 
   const [fullscreenUri, setFullscreenUri] = useState<string | null>(null);
   const [fullscreenPdfUri, setFullscreenPdfUri] = useState<string | null>(null);
-  const [fsKey, setFsKey] = useState(0);
 
   function handleFullscreen(uri: string) {
-    setFsKey(k => k + 1);
     setFullscreenUri(uri);
   }
   const [entityLinks, setEntityLinks] = useState<DocumentEntityLink[]>([]);
+  const [privateVisible, setPrivateVisible] = useState(false);
+  const [duplicates, setDuplicates] = useState<DocumentDuplicates>({
+    byHash: [],
+    byTypeAndEntity: [],
+  });
+  const [focusNonce, setFocusNonce] = useState(0);
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
 
   useEffect(() => {
@@ -128,12 +134,18 @@ export default function DocumentDetailScreen() {
         setEntityLinks(links);
       })
       .catch(() => {});
+    findDuplicatesOfDocument(id)
+      .then(setDuplicates)
+      .catch(() => {});
   }, [id]);
 
   // Reîncarcă documentul la revenirea din ecranul de editare
   useFocusEffect(
     useCallback(() => {
       if (!id) return;
+      // Forțează remount pentru Image (iOS uneori nu re-randează file:// URIs după ce
+      // view-ul a fost acoperit de un alt ecran în stack).
+      setFocusNonce(n => n + 1);
       getDocumentById(id)
         .then(updated => {
           if (updated) setDoc(updated);
@@ -141,6 +153,9 @@ export default function DocumentDetailScreen() {
         .catch(() => {});
       getDocumentEntityLinks(id)
         .then(links => setEntityLinks(links))
+        .catch(() => {});
+      findDuplicatesOfDocument(id)
+        .then(setDuplicates)
         .catch(() => {});
     }, [id])
   );
@@ -920,6 +935,7 @@ export default function DocumentDetailScreen() {
           ocrLoading={ocrLoading}
           ocrText={doc.ocr_text ?? undefined}
           isEditing={false}
+          refreshKey={focusNonce}
           onAddPage={handleAddPage}
           onRotate={handleRotate}
           onDelete={handleDeletePage}
@@ -933,7 +949,7 @@ export default function DocumentDetailScreen() {
           .map((pdfPage, idx) => {
             const pdfUri = toFileUri(pdfPage.file_path);
             return (
-              <View key={pdfPage.id} style={styles.pdfContainer}>
+              <View key={`${pdfPage.id}_${focusNonce}`} style={styles.pdfContainer}>
                 <View style={styles.pdfHeaderRow}>
                   <Text style={styles.pdfSectionLabel}>
                     PDF{' '}
@@ -967,6 +983,61 @@ export default function DocumentDetailScreen() {
               </View>
             );
           })}
+        {(duplicates.byHash.length > 0 || duplicates.byTypeAndEntity.length > 0) && (
+          <View style={styles.dupBox}>
+            <View style={styles.dupHeader}>
+              <Ionicons name="copy-outline" size={14} color="#8a6d2f" />
+              <Text style={styles.dupHeaderText}>Posibil duplicat</Text>
+            </View>
+            {duplicates.byHash.length > 0 && (
+              <View style={styles.dupSection}>
+                <Text style={styles.dupSectionLabel}>
+                  Fișier identic ({duplicates.byHash.length})
+                </Text>
+                {duplicates.byHash.map(d => (
+                  <Pressable
+                    key={d.id}
+                    style={styles.dupRow}
+                    onPress={() => router.push(`/(tabs)/documente/${d.id}`)}
+                  >
+                    <Text style={styles.dupRowText} numberOfLines={1}>
+                      {getDocumentLabel(d, customTypes)}
+                      {d.created_at
+                        ? ` · ${new Date(d.created_at).toLocaleDateString('ro-RO')}`
+                        : ''}
+                    </Text>
+                    <Ionicons name="chevron-forward" size={14} color="#8a6d2f" />
+                  </Pressable>
+                ))}
+              </View>
+            )}
+            {duplicates.byTypeAndEntity.length > 0 && (
+              <View style={styles.dupSection}>
+                <Text style={styles.dupSectionLabel}>
+                  Același tip și entitate ({duplicates.byTypeAndEntity.length})
+                </Text>
+                {duplicates.byTypeAndEntity.map(d => (
+                  <Pressable
+                    key={d.id}
+                    style={styles.dupRow}
+                    onPress={() => router.push(`/(tabs)/documente/${d.id}`)}
+                  >
+                    <Text style={styles.dupRowText} numberOfLines={1}>
+                      {getDocumentLabel(d, customTypes)}
+                      {d.expiry_date
+                        ? ` · expiră ${new Date(d.expiry_date).toLocaleDateString('ro-RO')}`
+                        : d.issue_date
+                          ? ` · emis ${new Date(d.issue_date).toLocaleDateString('ro-RO')}`
+                          : ''}
+                    </Text>
+                    <Ionicons name="chevron-forward" size={14} color="#8a6d2f" />
+                  </Pressable>
+                ))}
+              </View>
+            )}
+          </View>
+        )}
+
         <View style={styles.meta}>
           <Text style={styles.label}>Tip</Text>
           <Text style={styles.value}>{getDocumentLabel(doc, customTypes)}</Text>
@@ -1053,6 +1124,28 @@ export default function DocumentDetailScreen() {
               <Text style={styles.label}>Notă</Text>
               <Text style={styles.value}>{doc.note}</Text>
             </>
+          )}
+          {doc.private_notes && (
+            <View style={styles.privateBox}>
+              <View style={styles.privateHeader}>
+                <Ionicons name="lock-closed" size={13} color={sensitive} />
+                <Text style={styles.privateLabel}>Notă privată · nu se trimite la AI</Text>
+                <Pressable
+                  onPress={() => setPrivateVisible(v => !v)}
+                  hitSlop={8}
+                  style={styles.privateToggle}
+                >
+                  <Text style={styles.privateToggleText}>
+                    {privateVisible ? 'Ascunde' : 'Arată'}
+                  </Text>
+                </Pressable>
+              </View>
+              <Text style={styles.privateValue}>
+                {privateVisible
+                  ? doc.private_notes
+                  : '•'.repeat(Math.min(doc.private_notes.length, 16))}
+              </Text>
+            </View>
           )}
           {doc.auto_delete && (
             <>
@@ -1148,26 +1241,26 @@ export default function DocumentDetailScreen() {
       <Modal visible={!!fullscreenUri} transparent animationType="fade" statusBarTranslucent>
         <View style={styles.fsOverlay}>
           <StatusBar hidden />
-          <View key={fsKey} style={{ flex: 1 }}>
-            <ScrollView
-              style={{ flex: 1 }}
-              contentContainerStyle={styles.fsScrollContent}
-              maximumZoomScale={6}
-              minimumZoomScale={1}
-              showsHorizontalScrollIndicator={false}
-              showsVerticalScrollIndicator={false}
-              centerContent
-              bouncesZoom
-            >
-              {fullscreenUri && (
-                <Image
-                  source={{ uri: fullscreenUri }}
-                  style={{ width: screenWidth, height: screenHeight }}
-                  resizeMode="contain"
-                />
-              )}
-            </ScrollView>
-          </View>
+          <ScrollView
+            key={fullscreenUri}
+            style={{ flex: 1 }}
+            contentContainerStyle={styles.fsScrollContent}
+            maximumZoomScale={6}
+            minimumZoomScale={1}
+            showsHorizontalScrollIndicator={false}
+            showsVerticalScrollIndicator={false}
+            centerContent
+            bouncesZoom
+          >
+            {fullscreenUri && (
+              <Image
+                key={fullscreenUri}
+                source={{ uri: fullscreenUri }}
+                style={{ width: screenWidth, height: screenHeight }}
+                resizeMode="contain"
+              />
+            )}
+          </ScrollView>
           <Pressable style={styles.fsCloseBtn} onPress={() => setFullscreenUri(null)}>
             <Text style={styles.fsCloseBtnText}>✕</Text>
           </Pressable>
@@ -1295,6 +1388,39 @@ const styles = StyleSheet.create({
   meta: { marginBottom: 24 },
   label: { fontSize: 12, opacity: 0.7, marginTop: 12, marginBottom: 2 },
   value: { fontSize: 16 },
+  privateBox: {
+    marginTop: 16,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: sensitiveBorder,
+    borderRadius: 12,
+    backgroundColor: sensitiveBg,
+  },
+  dupBox: {
+    marginBottom: 16,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#d1b37a',
+    borderRadius: 12,
+    backgroundColor: 'rgba(209, 179, 122, 0.08)',
+  },
+  dupHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
+  dupHeaderText: { fontSize: 12, color: '#8a6d2f', fontWeight: '700', letterSpacing: 0.3 },
+  dupSection: { marginTop: 4 },
+  dupSectionLabel: { fontSize: 11, color: '#8a6d2f', fontWeight: '600', marginBottom: 4 },
+  dupRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 6,
+    gap: 8,
+  },
+  dupRowText: { fontSize: 14, flex: 1 },
+  privateHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
+  privateLabel: { fontSize: 11, color: sensitive, flex: 1, fontWeight: '600' },
+  privateToggle: { paddingHorizontal: 8, paddingVertical: 2 },
+  privateToggleText: { fontSize: 12, color: sensitive, fontWeight: '600' },
+  privateValue: { fontSize: 16, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
   entityRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   entityPlaceholder: { opacity: 0.4 },
   entityLinksRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4, marginBottom: 4 },

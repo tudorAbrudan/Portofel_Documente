@@ -1370,6 +1370,34 @@ export default function SetariScreen() {
             keyboardDismissMode="on-drag"
             automaticallyAdjustKeyboardInsets
           >
+            {/* Info: ce date se trimit la AI (mirror OCR_PRIVACY onboarding) */}
+            {(aiProviderType === 'builtin' || aiProviderType === 'external') && (
+              <RNView style={[styles.aiPrivacyCard, { backgroundColor: C.card, borderColor: C.border }]}>
+                <RNView style={styles.aiPrivacyRow}>
+                  <Ionicons name="image-outline" size={18} color="#F57F17" style={{ marginTop: 2 }} />
+                  <RNView style={{ flex: 1 }}>
+                    <RNText style={[styles.aiToggleLabel, { color: C.text }]}>
+                      Trimitere imagine/document la AI
+                    </RNText>
+                    <RNText style={[styles.aiToggleSub, { color: C.textSecondary, marginTop: 2 }]}>
+                      Doar la apăsarea butonului „Trimite documentul la AI" din formularul documentului — niciodată automat.
+                    </RNText>
+                  </RNView>
+                </RNView>
+                <RNView style={styles.aiPrivacyRow}>
+                  <Ionicons name="lock-closed-outline" size={18} color={primary} style={{ marginTop: 2 }} />
+                  <RNView style={{ flex: 1 }}>
+                    <RNText style={[styles.aiToggleLabel, { color: C.text }]}>
+                      Câmpul „Notă privată" nu pleacă niciodată la AI
+                    </RNText>
+                    <RNText style={[styles.aiToggleSub, { color: C.textSecondary, marginTop: 2 }]}>
+                      Folosește-l pentru date strict sensibile (CVV, PIN, parole). E separat de câmpul „Notă" normal.
+                    </RNText>
+                  </RNView>
+                </RNView>
+              </RNView>
+            )}
+
             {/* Selector AI unificat */}
             <RNView>
               <RNText style={[styles.aiLabel, { color: C.textSecondary }]}>Configurare asistent AI</RNText>
@@ -1944,5 +1972,16 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 17,
     marginTop: 2,
+  },
+  aiPrivacyCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 12,
+    gap: 12,
+  },
+  aiPrivacyRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
   },
 });

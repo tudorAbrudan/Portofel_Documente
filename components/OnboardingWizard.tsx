@@ -131,7 +131,7 @@ function stepSubtitle(step: number): string {
     case AI_STEP:
       return 'Complet opțional. Datele tale rămân pe dispozitiv — AI-ul e activat doar când îl folosești.';
     case OCR_PRIVACY:
-      return 'Controlezi ce date sunt trimise la AI. Poți schimba oricând din Setări → Analiza AI a documentelor.';
+      return 'Controlezi ce date sunt trimise la AI. Poți schimba oricând din Setări → Asistent AI.';
     case SUMMARY:
       return 'Verifică setările. Poți modifica totul din Setări oricând.';
     default:
