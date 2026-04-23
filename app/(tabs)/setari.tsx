@@ -26,7 +26,7 @@ import Colors from '@/constants/Colors';
 import { useThemePreference } from '@/hooks/useThemeScheme';
 import { PRIVACY_URL, SUPPORT_URL } from '@/constants/AppLinks';
 import AppLockPinModal from '@/components/AppLockPinModal';
-import { primary } from '@/theme/colors';
+import { primary, statusColors } from '@/theme/colors';
 import * as settings from '@/services/settings';
 import * as aiProvider from '@/services/aiProvider';
 import type { AiProviderType } from '@/services/aiProvider';
@@ -270,7 +270,9 @@ export default function SetariScreen() {
   const [downloadedMb, setDownloadedMb] = useState(0);
   const [downloadTotalMb, setDownloadTotalMb] = useState(0);
   const [selectedLocalModelId, setSelectedLocalModelId] = useState<string | null>(null);
-  const downloadResumableRef = useRef<ReturnType<typeof localModel.createModelDownload> | null>(null);
+  const downloadResumableRef = useRef<ReturnType<typeof localModel.createModelDownload> | null>(
+    null
+  );
   const [backupExporting, setBackupExporting] = useState(false);
   const [backupImporting, setBackupImporting] = useState(false);
 
@@ -278,9 +280,7 @@ export default function SetariScreen() {
     settings.getNotificationDays().then(setNotifDays);
     settings.getPushEnabled().then(setPushEnabled);
     settings.getAppLockEnabled().then(setAppLockEnabled);
-    AsyncStorage.getItem(AI_CONSENT_KEY).then(v =>
-      setAiConsentGiven(v === 'true')
-    );
+    AsyncStorage.getItem(AI_CONSENT_KEY).then(v => setAiConsentGiven(v === 'true'));
     aiProvider.getAiConfig().then(cfg => {
       setAiProviderType(cfg.type);
       setAiProviderUrl(cfg.url);
@@ -531,8 +531,6 @@ export default function SetariScreen() {
     );
   };
 
-
-
   const handleSelectLocalModel = async (modelId: string) => {
     await localModel.setSelectedModelId(modelId);
     setSelectedLocalModelId(modelId);
@@ -565,7 +563,10 @@ export default function SetariScreen() {
         await AsyncStorage.removeItem(AI_CONSENT_KEY);
         setAiConsentGiven(false);
         if (hadConsent) {
-          Alert.alert('Acord revocat', 'Consimțământul pentru asistentul AI a fost revocat automat deoarece ai dezactivat asistentul.');
+          Alert.alert(
+            'Acord revocat',
+            'Consimțământul pentru asistentul AI a fost revocat automat deoarece ai dezactivat asistentul.'
+          );
         }
       }
       setAiModalVisible(false);
@@ -604,7 +605,9 @@ export default function SetariScreen() {
       } else {
         const errText = await response.text().catch(() => '');
         setAiTestStatus('error');
-        setAiTestMessage(`Eroare (${response.status}): ${errText || 'Răspuns invalid de la server'}`);
+        setAiTestMessage(
+          `Eroare (${response.status}): ${errText || 'Răspuns invalid de la server'}`
+        );
       }
     } catch (e) {
       setAiTestStatus('error');
@@ -728,7 +731,7 @@ export default function SetariScreen() {
             <Switch
               value={appLockEnabled}
               onValueChange={handleAppLockToggle}
-              trackColor={{ false: '#ccc', true: primary }}
+              trackColor={{ false: C.border, true: primary }}
               thumbColor="#fff"
             />
           </RNView>
@@ -807,7 +810,7 @@ export default function SetariScreen() {
             <Switch
               value={pushEnabled}
               onValueChange={handlePushToggle}
-              trackColor={{ false: '#ccc', true: primary }}
+              trackColor={{ false: C.border, true: primary }}
               thumbColor="#fff"
             />
           </RNView>
@@ -871,7 +874,12 @@ export default function SetariScreen() {
             iconBg="#EDE7F6"
             iconColor="#4527A0"
             label="Provider AI"
-            sub={aiProvider.PROVIDER_DEFAULTS[aiProviderType].label + (aiConsentGiven && (aiProviderType === 'builtin' || aiProviderType === 'external') ? ' · Acord acordat' : '')}
+            sub={
+              aiProvider.PROVIDER_DEFAULTS[aiProviderType].label +
+              (aiConsentGiven && (aiProviderType === 'builtin' || aiProviderType === 'external')
+                ? ' · Acord acordat'
+                : '')
+            }
             onPress={() => {
               setAiModalConsentChecked(aiConsentGiven);
               setAiModalVisible(true);
@@ -898,7 +906,7 @@ export default function SetariScreen() {
               >
                 <RNView style={styles.rowLeft}>
                   <RNView
-                    style={[styles.rowIcon, { backgroundColor: isActive ? '#E8F5E9' : '#F5F5F5' }]}
+                    style={[styles.rowIcon, { backgroundColor: isActive ? '#E8F5E9' : C.border }]}
                   >
                     <RNText style={{ fontSize: 16 }}>{ENTITY_ICONS[entityType]}</RNText>
                   </RNView>
@@ -909,7 +917,7 @@ export default function SetariScreen() {
                 <Switch
                   value={isActive}
                   onValueChange={() => handleToggleEntityType(entityType)}
-                  trackColor={{ false: '#ccc', true: primary }}
+                  trackColor={{ false: C.border, true: primary }}
                   thumbColor="#fff"
                 />
               </RNView>
@@ -969,7 +977,7 @@ export default function SetariScreen() {
             >
               <RNText style={[styles.customTypeName, { color: C.text }]}>{ct.name}</RNText>
               <Pressable onPress={() => handleDeleteCustomType(ct.id, ct.name)} hitSlop={8}>
-                <Ionicons name="trash-outline" size={18} color="#E53935" />
+                <Ionicons name="trash-outline" size={18} color={statusColors.critical} />
               </Pressable>
             </RNView>
           ))}
@@ -1036,7 +1044,9 @@ export default function SetariScreen() {
               <RNView style={[styles.rowIcon, { backgroundColor: '#FCE4EC' }]}>
                 <Ionicons name="trash-outline" size={18} color="#C62828" />
               </RNView>
-              <RNText style={[styles.rowLabel, { color: '#E53935' }]}>Șterge toate datele</RNText>
+              <RNText style={[styles.rowLabel, { color: statusColors.critical }]}>
+                Șterge toate datele
+              </RNText>
             </RNView>
             <Pressable onPress={handleDeleteAllData} hitSlop={8}>
               <Ionicons name="chevron-forward" size={16} color={C.textSecondary} />
@@ -1203,7 +1213,12 @@ export default function SetariScreen() {
           </RNView>
 
           {/* Salvează + Testează — fixate sub header, vizibile fără scroll */}
-          <RNView style={[styles.aiActionBar, { backgroundColor: C.background, borderBottomColor: C.border }]}>
+          <RNView
+            style={[
+              styles.aiActionBar,
+              { backgroundColor: C.background, borderBottomColor: C.border },
+            ]}
+          >
             <Pressable
               style={({ pressed }) => [styles.btn, { flex: 1, opacity: pressed ? 0.85 : 1 }]}
               onPress={handleSaveAiConfig}
@@ -1214,19 +1229,58 @@ export default function SetariScreen() {
             <Pressable
               style={({ pressed }) => [
                 styles.btnOutline,
-                { flex: 1, borderColor: aiTestStatus === 'error' ? '#C62828' : aiTestStatus === 'ok' ? '#2E7D32' : primary, opacity: pressed || aiTestStatus === 'loading' ? 0.7 : 1 },
+                {
+                  flex: 1,
+                  borderColor:
+                    aiTestStatus === 'error'
+                      ? statusColors.critical
+                      : aiTestStatus === 'ok'
+                        ? statusColors.ok
+                        : primary,
+                  opacity: pressed || aiTestStatus === 'loading' ? 0.7 : 1,
+                },
               ]}
               onPress={handleTestAiConnection}
               disabled={aiTestStatus === 'loading'}
             >
               <Ionicons
-                name={aiTestStatus === 'ok' ? 'checkmark-circle-outline' : aiTestStatus === 'error' ? 'close-circle-outline' : 'wifi-outline'}
+                name={
+                  aiTestStatus === 'ok'
+                    ? 'checkmark-circle-outline'
+                    : aiTestStatus === 'error'
+                      ? 'close-circle-outline'
+                      : 'wifi-outline'
+                }
                 size={18}
-                color={aiTestStatus === 'ok' ? '#2E7D32' : aiTestStatus === 'error' ? '#C62828' : primary}
+                color={
+                  aiTestStatus === 'ok'
+                    ? statusColors.ok
+                    : aiTestStatus === 'error'
+                      ? statusColors.critical
+                      : primary
+                }
                 style={styles.btnIcon}
               />
-              <RNText style={[styles.btnOutlineText, { color: aiTestStatus === 'ok' ? '#2E7D32' : aiTestStatus === 'error' ? '#C62828' : primary }]}>
-                {aiTestStatus === 'loading' ? 'Se testează…' : aiTestStatus === 'ok' ? 'Conexiune OK' : aiTestStatus === 'error' ? 'Eroare' : 'Testează'}
+              <RNText
+                style={[
+                  styles.btnOutlineText,
+                  {
+                    color:
+                      aiTestStatus === 'ok'
+                        ? statusColors.ok
+                        : aiTestStatus === 'error'
+                          ? statusColors.critical
+                          : primary,
+                  },
+                ]}
+              >
+                {aiTestStatus === 'loading'
+                  ? 'Se testează…'
+                  : aiTestStatus === 'ok'
+                    ? 'Conexiune OK'
+                    : aiTestStatus === 'error'
+                      ? 'Eroare'
+                      : 'Testează'}
               </RNText>
             </Pressable>
           </RNView>
@@ -1239,17 +1293,27 @@ export default function SetariScreen() {
           >
             {/* Selector AI unificat */}
             <RNView>
-              <RNText style={[styles.aiLabel, { color: C.textSecondary }]}>Configurare asistent AI</RNText>
+              <RNText style={[styles.aiLabel, { color: C.textSecondary }]}>
+                Configurare asistent AI
+              </RNText>
               {(['none', 'builtin', 'external'] as AiProviderType[]).map(type => (
                 <Pressable
                   key={type}
                   style={[
                     styles.aiRadioRow,
-                    { borderColor: aiProviderType === type ? primary : C.border, backgroundColor: C.card },
+                    {
+                      borderColor: aiProviderType === type ? primary : C.border,
+                      backgroundColor: C.card,
+                    },
                   ]}
                   onPress={() => handleAiProviderSelect(type)}
                 >
-                  <RNView style={[styles.aiRadioDot, { borderColor: aiProviderType === type ? primary : C.border }]}>
+                  <RNView
+                    style={[
+                      styles.aiRadioDot,
+                      { borderColor: aiProviderType === type ? primary : C.border },
+                    ]}
+                  >
                     {aiProviderType === type && (
                       <RNView style={[styles.aiRadioDotInner, { backgroundColor: primary }]} />
                     )}
@@ -1267,7 +1331,8 @@ export default function SetariScreen() {
                   {downloadedModelIds.map(modelId => {
                     const model = compatibleModels.find(m => m.id === modelId);
                     if (!model) return null;
-                    const isSelected = aiProviderType === 'local' && selectedLocalModelId === modelId;
+                    const isSelected =
+                      aiProviderType === 'local' && selectedLocalModelId === modelId;
                     return (
                       <Pressable
                         key={modelId}
@@ -1277,9 +1342,16 @@ export default function SetariScreen() {
                         ]}
                         onPress={() => handleSelectLocalModel(modelId)}
                       >
-                        <RNView style={[styles.aiRadioDot, { borderColor: isSelected ? primary : C.border }]}>
+                        <RNView
+                          style={[
+                            styles.aiRadioDot,
+                            { borderColor: isSelected ? primary : C.border },
+                          ]}
+                        >
                           {isSelected && (
-                            <RNView style={[styles.aiRadioDotInner, { backgroundColor: primary }]} />
+                            <RNView
+                              style={[styles.aiRadioDotInner, { backgroundColor: primary }]}
+                            />
                           )}
                         </RNView>
                         <RNView style={{ flex: 1 }}>
@@ -1308,23 +1380,39 @@ export default function SetariScreen() {
                   return (
                     <RNView
                       key={model.id}
-                      style={[styles.modelCard, { backgroundColor: C.card, borderColor: C.border, opacity: incompatible ? 0.6 : 1 }]}
+                      style={[
+                        styles.modelCard,
+                        {
+                          backgroundColor: C.card,
+                          borderColor: C.border,
+                          opacity: incompatible ? 0.6 : 1,
+                        },
+                      ]}
                     >
                       <RNView style={styles.modelCardHeader}>
                         <RNView style={{ flex: 1 }}>
-                          <RNText style={[styles.aiToggleLabel, { color: C.text }]}>{model.name}</RNText>
-                          <RNText style={[styles.aiLabel, { color: C.textSecondary, marginTop: 2 }]}>
-                            {'★'.repeat(model.qualityStars)}{'☆'.repeat(5 - model.qualityStars)} · {model.sizeLabel}
+                          <RNText style={[styles.aiToggleLabel, { color: C.text }]}>
+                            {model.name}
+                          </RNText>
+                          <RNText
+                            style={[styles.aiLabel, { color: C.textSecondary, marginTop: 2 }]}
+                          >
+                            {'★'.repeat(model.qualityStars)}
+                            {'☆'.repeat(5 - model.qualityStars)} · {model.sizeLabel}
                           </RNText>
                         </RNView>
                         {isDownloaded && !isDownloading && (
                           <Pressable onPress={() => handleDeleteModel(model.id)} hitSlop={8}>
-                            <RNText style={[styles.aiLabel, { color: '#e74c3c' }]}>Șterge</RNText>
+                            <RNText style={[styles.aiLabel, { color: statusColors.critical }]}>
+                              Șterge
+                            </RNText>
                           </Pressable>
                         )}
                         {!isDownloaded && !isDownloading && incompatible && (
                           <RNView style={[styles.downloadBtn, { backgroundColor: C.border }]}>
-                            <RNText style={[styles.downloadBtnText, { color: C.textSecondary }]}>Incompatibil</RNText>
+                            <RNText style={[styles.downloadBtnText, { color: C.textSecondary }]}>
+                              Incompatibil
+                            </RNText>
                           </RNView>
                         )}
                         {!isDownloaded && !isDownloading && !incompatible && (
@@ -1345,25 +1433,37 @@ export default function SetariScreen() {
                             <RNView
                               style={[
                                 styles.progressFill,
-                                { backgroundColor: primary, width: `${Math.round(downloadProgress * 100)}%` as `${number}%` },
+                                {
+                                  backgroundColor: primary,
+                                  width: `${Math.round(downloadProgress * 100)}%` as `${number}%`,
+                                },
                               ]}
                             />
                           </RNView>
-                          <RNText style={[styles.aiLabel, { color: C.textSecondary, marginTop: 4 }]}>
-                            {Math.round(downloadedMb)}MB / {Math.round(downloadTotalMb)}MB ({Math.round(downloadProgress * 100)}%)
+                          <RNText
+                            style={[styles.aiLabel, { color: C.textSecondary, marginTop: 4 }]}
+                          >
+                            {Math.round(downloadedMb)}MB / {Math.round(downloadTotalMb)}MB (
+                            {Math.round(downloadProgress * 100)}%)
                           </RNText>
                           <Pressable onPress={handleCancelDownload} style={{ marginTop: 4 }}>
-                            <RNText style={[styles.aiLabel, { color: '#e74c3c' }]}>Anulează</RNText>
+                            <RNText style={[styles.aiLabel, { color: statusColors.critical }]}>
+                              Anulează
+                            </RNText>
                           </Pressable>
                         </RNView>
                       )}
                       {incompatible && (
-                        <RNText style={[styles.aiLabel, { color: '#e67e22', marginTop: 4 }]}>
+                        <RNText
+                          style={[styles.aiLabel, { color: statusColors.warning, marginTop: 4 }]}
+                        >
                           ⚠ Incompatibil: {model.incompatibilityReason}
                         </RNText>
                       )}
                       {isDownloaded && !isDownloading && (
-                        <RNText style={[styles.aiLabel, { color: '#27ae60', marginTop: 4 }]}>✓ Instalat</RNText>
+                        <RNText style={[styles.aiLabel, { color: statusColors.ok, marginTop: 4 }]}>
+                          ✓ Instalat
+                        </RNText>
                       )}
                     </RNView>
                   );
@@ -1386,8 +1486,11 @@ export default function SetariScreen() {
                   },
                 ]}
               >
-                <RNText style={[styles.aiInputReadonlyText, { color: C.textSecondary, lineHeight: 20 }]}>
-                  Utilizează serviciul AI inclus în aplicație. Nu este necesară o cheie API personală.
+                <RNText
+                  style={[styles.aiInputReadonlyText, { color: C.textSecondary, lineHeight: 20 }]}
+                >
+                  Utilizează serviciul AI inclus în aplicație. Nu este necesară o cheie API
+                  personală.
                 </RNText>
               </RNView>
             )}
@@ -1398,9 +1501,15 @@ export default function SetariScreen() {
                 <RNView>
                   <RNText style={[styles.aiLabel, { color: C.textSecondary }]}>URL API</RNText>
                   <TextInput
-                    style={[styles.aiInput, { color: C.text, borderColor: C.border, backgroundColor: C.card }]}
+                    style={[
+                      styles.aiInput,
+                      { color: C.text, borderColor: C.border, backgroundColor: C.card },
+                    ]}
                     value={aiProviderUrl}
-                    onChangeText={text => { setAiProviderUrl(text); setAiTestStatus('idle'); }}
+                    onChangeText={text => {
+                      setAiProviderUrl(text);
+                      setAiTestStatus('idle');
+                    }}
                     placeholder="ex: https://api.mistral.ai/v1"
                     placeholderTextColor={C.textSecondary}
                     autoCapitalize="none"
@@ -1411,9 +1520,15 @@ export default function SetariScreen() {
                 <RNView>
                   <RNText style={[styles.aiLabel, { color: C.textSecondary }]}>Cheie API</RNText>
                   <TextInput
-                    style={[styles.aiInput, { color: C.text, borderColor: C.border, backgroundColor: C.card }]}
+                    style={[
+                      styles.aiInput,
+                      { color: C.text, borderColor: C.border, backgroundColor: C.card },
+                    ]}
                     value={aiApiKey}
-                    onChangeText={text => { setAiApiKey(text); setAiTestStatus('idle'); }}
+                    onChangeText={text => {
+                      setAiApiKey(text);
+                      setAiTestStatus('idle');
+                    }}
                     placeholder="••••••••••"
                     placeholderTextColor={C.textSecondary}
                     secureTextEntry
@@ -1424,9 +1539,15 @@ export default function SetariScreen() {
                 <RNView>
                   <RNText style={[styles.aiLabel, { color: C.textSecondary }]}>Model</RNText>
                   <TextInput
-                    style={[styles.aiInput, { color: C.text, borderColor: C.border, backgroundColor: C.card }]}
+                    style={[
+                      styles.aiInput,
+                      { color: C.text, borderColor: C.border, backgroundColor: C.card },
+                    ]}
                     value={aiProviderModel}
-                    onChangeText={text => { setAiProviderModel(text); setAiTestStatus('idle'); }}
+                    onChangeText={text => {
+                      setAiProviderModel(text);
+                      setAiTestStatus('idle');
+                    }}
                     placeholder="ex: mistral-small-latest"
                     placeholderTextColor={C.textSecondary}
                     autoCapitalize="none"
@@ -1465,9 +1586,7 @@ export default function SetariScreen() {
                     flexShrink: 0,
                   }}
                 >
-                  {aiModalConsentChecked && (
-                    <Ionicons name="checkmark" size={14} color="#fff" />
-                  )}
+                  {aiModalConsentChecked && <Ionicons name="checkmark" size={14} color="#fff" />}
                 </RNView>
                 <RNView style={{ flex: 1 }}>
                   <RNText style={[styles.aiToggleLabel, { color: C.text, fontSize: 14 }]}>
@@ -1476,7 +1595,8 @@ export default function SetariScreen() {
                       : 'Sunt de acord cu trimiterea datelor la serviciul AI configurat'}
                   </RNText>
                   <RNText style={[styles.aiToggleSub, { color: C.textSecondary }]}>
-                    Textul extras, numele entităților și detaliile documentelor sunt trimise pentru procesare. Fotografiile și PIN-ul NU sunt trimise.
+                    Textul extras, numele entităților și detaliile documentelor sunt trimise pentru
+                    procesare. Fotografiile și PIN-ul NU sunt trimise.
                   </RNText>
                 </RNView>
               </Pressable>
@@ -1484,7 +1604,10 @@ export default function SetariScreen() {
 
             {aiTestMessage ? (
               <RNText
-                style={[styles.aiHint, { color: aiTestStatus === 'error' ? '#C62828' : '#2E7D32' }]}
+                style={[
+                  styles.aiHint,
+                  { color: aiTestStatus === 'error' ? statusColors.critical : statusColors.ok },
+                ]}
               >
                 {aiTestMessage}
               </RNText>
@@ -1506,18 +1629,6 @@ export default function SetariScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-
-  header: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 4,
-  },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: '700',
-    letterSpacing: -0.5,
-    lineHeight: 34,
-  },
 
   scroll: { flex: 1 },
   content: { paddingHorizontal: 12, paddingTop: 16, paddingBottom: 40 },
@@ -1622,18 +1733,6 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   btnOutlineText: { fontSize: 15, fontWeight: '600' },
-
-  btnDanger: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1.5,
-    borderColor: '#E53935',
-    borderRadius: 12,
-    paddingVertical: 13,
-    marginBottom: 6,
-  },
-  btnDangerText: { color: '#E53935', fontSize: 15, fontWeight: '600' },
 
   customTypeRow: {
     flexDirection: 'row',
@@ -1785,9 +1884,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     padding: 12,
     gap: 12,
-  },
-  aiToggleText: {
-    flex: 1,
   },
   aiToggleLabel: {
     fontSize: 14,
