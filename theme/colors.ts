@@ -10,6 +10,15 @@ export const primaryMuted = '#E8F0D8';
 /** Badge / fundal discret pentru accente primary */
 export const primaryTint = 'rgba(163, 184, 108, 0.16)';
 
+/** Paleta severity pentru status bar auto */
+export const statusColors = {
+  ok: primary,
+  warning: '#E8A53A',
+  critical: '#D84C4C',
+} as const;
+
+export type StatusSeverity = 'ok' | 'warning' | 'critical';
+
 export const light = {
   primary,
   primaryPressed,
