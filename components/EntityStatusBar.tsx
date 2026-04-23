@@ -1,15 +1,8 @@
 import { memo } from 'react';
-import {
-  StyleSheet,
-  ScrollView,
-  Pressable,
-  View,
-  Text,
-  Platform,
-  useColorScheme,
-} from 'react-native';
+import { StyleSheet, ScrollView, Pressable, View, Text, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Polyline } from 'react-native-svg';
+import { useColorScheme } from '@/components/useColorScheme';
 import { statusColors, primary, light, dark } from '@/theme/colors';
 import type { VehicleStatusItem } from '@/hooks/useVehicleStatus';
 

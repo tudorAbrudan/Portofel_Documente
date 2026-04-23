@@ -10,12 +10,12 @@ import {
   ActivityIndicator,
   TextInput,
   Switch,
-  useColorScheme,
 } from 'react-native';
 import { useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { useTheme } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { Text, View } from '@/components/Themed';
+import { useColorScheme } from '@/components/useColorScheme';
 import { primary, light, dark, statusColors } from '@/theme/colors';
 import {
   getFuelRecords,
