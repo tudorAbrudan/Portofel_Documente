@@ -1,28 +1,33 @@
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useCallback } from 'react';
 import {
   StyleSheet,
   Pressable,
   ScrollView,
   Alert,
   Image,
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Modal,
   StatusBar,
   useWindowDimensions,
+  InteractionManager,
 } from 'react-native';
-import { router, useLocalSearchParams, Stack } from 'expo-router';
+import { router, useLocalSearchParams, Stack, useFocusEffect } from 'expo-router';
+import { useHeaderHeight } from '@react-navigation/elements';
+import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImageManipulator from 'expo-image-manipulator';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { extractTextFromPdf, isPdfFile } from '@/services/pdfExtractor';
+import { renderPdfFirstPageForVision } from '@/services/pdfOcr';
 import { Text, View, ThemedTextInput } from '@/components/Themed';
 import { BottomActionBar } from '@/components/ui/BottomActionBar';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
-import { primary, statusColors } from '@/theme/colors';
+import { primary, statusColors, sensitive, sensitiveBorder, sensitiveBg } from '@/theme/colors';
 import { useDocuments } from '@/hooks/useDocuments';
 import { useEntities } from '@/hooks/useEntities';
 import { scheduleExpirationReminders } from '@/services/notifications';
@@ -37,10 +42,15 @@ import {
   detectDocumentType,
   formatOcrSummary,
 } from '@/services/ocr';
-import { extractFieldsForType } from '@/services/ocrExtractors';
+import { extractFieldsForType, isKnownUtilitySupplier } from '@/services/ocrExtractors';
 import { reconstructLayout } from '@/services/ocrLayout';
 import { toRelativePath } from '@/services/fileUtils';
-import { getDocumentsByEntity, findDuplicateDocument } from '@/services/documents';
+import {
+  getDocumentsByEntity,
+  findDuplicateDocument,
+  updateDocument,
+  getVehicleIdentifiers,
+} from '@/services/documents';
 import { DOCUMENT_TYPE_LABELS } from '@/types';
 import type { Document } from '@/types';
 import type { DocumentType, EntityType, DocumentEntityLink } from '@/types';
@@ -54,6 +64,25 @@ import type { PhotoPage } from '@/components/DocumentPhotoSection';
 import { mapOcrWithAi } from '@/services/aiOcrMapper';
 import type { AvailableEntities } from '@/services/aiOcrMapper';
 import { AI_CONSENT_KEY } from '@/services/aiProvider';
+import * as ocrConsent from '@/services/ocrConsent';
+import { extractFieldsWithLlm } from '@/services/ocrLlmExtractor';
+
+
+const DELETE_OPTIONS: { label: string; value: string | null }[] = [
+  { label: 'Niciodată', value: null },
+  { label: '30 zile', value: '30d' },
+  { label: '90 zile', value: '90d' },
+  { label: '180 zile', value: '180d' },
+  { label: '1 an', value: '365d' },
+  { label: '2 ani', value: '730d' },
+  { label: '3 ani', value: '1095d' },
+  { label: '4 ani', value: '1460d' },
+  { label: '5 ani', value: '1825d' },
+];
+
+function autoDeleteLabel(val: string | null): string {
+  return DELETE_OPTIONS.find(o => o.value === val)?.label ?? 'Niciodată';
+}
 
 const ALL_STANDARD_TYPES = Object.entries(DOCUMENT_TYPE_LABELS)
   .filter(([value]) => value !== 'custom')
@@ -67,6 +96,7 @@ const HIDE_EXPIRY_TYPES: DocumentType[] = [
 ];
 const CUSTOM_EXPIRY_LABEL: Partial<Record<DocumentType, string>> = {
   talon: 'Scadență ITP (pentru reminder)',
+  factura: 'Scadență (pentru reminder)',
 };
 
 const ENTITY_CATEGORIES: { key: EntityType; label: string }[] = [
@@ -102,10 +132,11 @@ export default function AddDocumentScreen() {
   }>();
   const { createDocument, refresh } = useDocuments();
   const { persons, properties, vehicles, cards, animals, companies } = useEntities();
+  const headerHeight = useHeaderHeight();
   const { customTypes } = useCustomTypes();
   const { visibleEntityTypes, visibleDocTypes } = useVisibilitySettings();
 
-  const [type, setType] = useState<DocumentType>((params.type as DocumentType) || 'buletin');
+  const [type, setType] = useState<DocumentType>((params.type as DocumentType) || 'altul');
   const [customTypeId, setCustomTypeId] = useState<string | null>(null);
   const [metadata, setMetadata] = useState<Record<string, string>>({});
   const [issueDate, setIssueDate] = useState('');
@@ -113,6 +144,7 @@ export default function AddDocumentScreen() {
   const expiryDateRef = useRef('');
   const issueDateRef = useRef('');
   const [note, setNote] = useState('');
+  const [privateNotes, setPrivateNotes] = useState('');
   const [autoDelete, setAutoDelete] = useState<string | null>(null);
   const [pages, setPages] = useState<{ uri: string; localPath: string }[]>([]);
   const ocrTextsRef = useRef<Map<string, string>>(new Map());
@@ -122,20 +154,29 @@ export default function AddDocumentScreen() {
   const [ocrLoading, setOcrLoading] = useState(false);
   const [aiOcrLoading, setAiOcrLoading] = useState(false);
   const [aiOcrApplied, setAiOcrApplied] = useState(false);
+  const [llmFieldLoading, setLlmFieldLoading] = useState(false);
   const lastAiTextLengthRef = useRef(0);
-  const [aiConsentAvailable, setAiConsentAvailable] = useState(false);
+  const [textAiConsentAvailable, setTextAiConsentAvailable] = useState(false);
   const [duplicateDoc, setDuplicateDoc] = useState<Document | null>(null);
+  const [suggestedInactiveType, setSuggestedInactiveType] = useState<DocumentType | null>(null);
+  const [photoRefreshKey, setPhotoRefreshKey] = useState(0);
+  const hasMountedRef = useRef(false);
 
   useEffect(() => {
-    AsyncStorage.getItem(AI_CONSENT_KEY).then(v => setAiConsentAvailable(v === 'true'));
+    AsyncStorage.getItem(AI_CONSENT_KEY).then(v => setTextAiConsentAvailable(v === 'true'));
   }, []);
+
+  useFocusEffect(useCallback(() => {
+    if (!hasMountedRef.current) { hasMountedRef.current = true; return; }
+    setPhotoRefreshKey(k => k + 1);
+  }, []));
+
 
   const [fullscreenUri, setFullscreenUri] = useState<string | null>(null);
   const [typePickerVisible, setTypePickerVisible] = useState(false);
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
 
   // Entity picker state
-  const [pickerCategory, setPickerCategory] = useState<EntityType>('person');
   const [entityLinks, setEntityLinks] = useState<DocumentEntityLink[]>(() => {
     const initial: DocumentEntityLink[] = [];
     if (params.person_id) initial.push({ entityType: 'person', entityId: params.person_id });
@@ -146,6 +187,20 @@ export default function AddDocumentScreen() {
     if (params.company_id) initial.push({ entityType: 'company', entityId: params.company_id });
     return initial;
   });
+  const [pickerCategory, setPickerCategory] = useState<EntityType>(
+    () => entityLinks[0]?.entityType ?? 'person'
+  );
+
+  // Auto-comută tab-ul picker-ului pe primul tip de entitate legat, dacă tab-ul
+  // curent e gol și există legături pe alt tip. Respectă alegerea manuală:
+  // dacă user-ul e deja pe un tab cu entități legate, nu schimbă nimic.
+  useEffect(() => {
+    if (entityLinks.length === 0) return;
+    const currentTabHasLinks = entityLinks.some(l => l.entityType === pickerCategory);
+    if (!currentTabHasLinks) {
+      setPickerCategory(entityLinks[0].entityType);
+    }
+  }, [entityLinks, pickerCategory]);
 
   const personId = params.person_id;
   const propertyId = params.property_id;
@@ -186,6 +241,59 @@ export default function AddDocumentScreen() {
 
   // PhotoPage array for DocumentPhotoSection (uses localPath as id)
   const photoPages: PhotoPage[] = pages.map(p => ({ id: p.localPath, uri: p.uri }));
+
+  // ── Entity fuzzy match local ──────────────────────────────────────────────
+  // Fallback când AI-ul nu sugerează nicio entitate: caută simplul subșir al
+  // numelui entității (normalizat fără diacritice) în textul OCR.
+
+  function tryLocalEntityMatch(ocrText: string) {
+    // Nu suprascrie legăturile existente
+    if (entityLinks.length > 0) return;
+
+    const norm = (s: string) =>
+      s
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9 ]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    const normOcr = norm(ocrText);
+
+    type Candidate = { entityType: EntityType; entityId: string; score: number };
+    const candidates: Candidate[] = [];
+
+    const check = (etype: EntityType, items: Array<{ id: string; name: string }>) => {
+      for (const item of items) {
+        const normName = norm(item.name);
+        if (normName.length < 2) continue;
+        if (normOcr.includes(normName)) {
+          // Scor = lungimea numelui (evităm false-positive pe nume scurte)
+          candidates.push({ entityType: etype, entityId: item.id, score: normName.length });
+        }
+      }
+    };
+
+    check('person', persons);
+    check('vehicle', vehicles);
+    check('property', properties);
+    check('animal', animals);
+    check('company', companies);
+
+    if (candidates.length === 0) return;
+    candidates.sort((a, b) => b.score - a.score);
+    const best = candidates[0];
+    // Minim 3 caractere ca să evităm potriviri accidentale pe silabe
+    if (best.score < 3) return;
+
+    setEntityLinks(prev => {
+      if (prev.some(l => l.entityType === best.entityType && l.entityId === best.entityId))
+        return prev;
+      return [...prev, { entityType: best.entityType, entityId: best.entityId }];
+    });
+    setPickerCategory(best.entityType);
+  }
 
   // ── OCR ──────────────────────────────────────────────────────────────────
 
@@ -245,7 +353,7 @@ export default function AddDocumentScreen() {
       const structuredCombined = Array.from(ocrStructuredTextsRef.current.values()).join(
         '\n\n---\n\n'
       );
-      setLiveOcrText(combinedText);
+      setLiveOcrText(structuredCombined);
 
       const detectedType = detectDocumentType(text);
       if (
@@ -295,17 +403,27 @@ export default function AddDocumentScreen() {
       }
 
       const summary = formatOcrSummary(text, info);
-      if (summary && !note) {
-        setNote(summary);
+      if (summary) {
+        setNote(prev => prev || summary);
       }
 
-      // Re-declanșează AI ori de câte ori textul combinat crește cu cel puțin 80 de caractere.
-      // Astfel, documentele multi-pagină (ex: talon + ANEXA) primesc o analiză completă
-      // și nu se blochează la textul parțial al primei pagini.
+      // Preset auto-ștergere 5 ani pentru facturi furnizori utilități (OCR local)
+      const localSupplier = finalMeta.supplier ?? '';
+      if (
+        docType === 'factura' &&
+        localSupplier &&
+        isKnownUtilitySupplier(localSupplier)
+      ) {
+        setAutoDelete(prev => (prev === null ? '1825d' : prev));
+      }
+
+      // Re-declanșează AI (text) ori de câte ori textul combinat crește cu cel puțin 80 de caractere.
       const trimmedLen = combinedText.trim().length;
       if (trimmedLen > 20 && trimmedLen > lastAiTextLengthRef.current + 80) {
         lastAiTextLengthRef.current = trimmedLen;
         void runAiOcrMapper(structuredCombined);
+      } else {
+        tryLocalEntityMatch(combinedText);
       }
 
       // Reminder-ul pentru dată expirare se oferă la Salvează (cu data finală după AI)
@@ -319,34 +437,56 @@ export default function AddDocumentScreen() {
   async function runAiOcrMapper(combinedOcrText: string) {
     const consent = await AsyncStorage.getItem(AI_CONSENT_KEY);
     if (consent !== 'true') return;
+    if (ocrConsent.getDocTypeSensitivity(type) === 'medical') return;
 
     setAiOcrLoading(true);
     try {
+      // Îmbogățim contextul vehiculelor cu placa/VIN din talon/carte_auto atașate,
+      // ca AI-ul să poată lega documentele și după identificatori tehnici.
+      const vehicleIds = await getVehicleIdentifiers();
       const availableEntities: AvailableEntities = {
         persons: persons.map(p => ({ id: p.id, name: p.name })),
-        vehicles: vehicles.map(v => ({
-          id: v.id,
-          name: v.name,
-          plate: v.plate_number,
-        })),
+        vehicles: vehicles.map(v => {
+          const ids = vehicleIds.get(v.id);
+          return { id: v.id, name: v.name, plate: ids?.plate, vin: ids?.vin };
+        }),
         properties: properties.map(p => ({ id: p.id, name: p.name })),
         cards: cards.map(c => ({ id: c.id, nickname: c.nickname, last4: c.last4 })),
         animals: animals.map(a => ({ id: a.id, name: a.name, species: a.species })),
         companies: companies.map(c => ({ id: c.id, name: c.name })),
       };
 
-      const result = await mapOcrWithAi(combinedOcrText, availableEntities);
+      // Trimite și imaginea primului fișier pentru context vizual (vision)
+      let firstImageBase64: string | undefined;
+      const firstPage = pages[0];
+      if (firstPage) {
+        try {
+          if (isPdfFile(firstPage.localPath)) {
+            firstImageBase64 = (await renderPdfFirstPageForVision(firstPage.localPath)) ?? undefined;
+          } else {
+            firstImageBase64 = await FileSystem.readAsStringAsync(firstPage.localPath, {
+              encoding: FileSystem.EncodingType.Base64,
+            });
+          }
+        } catch { /* ignoră dacă fișierul nu poate fi citit */ }
+      }
+
+      const result = await mapOcrWithAi(combinedOcrText, availableEntities, firstImageBase64);
 
       // Aplică tipul documentului dacă AI-ul l-a detectat și e vizibil
       if (
         result.documentType &&
         result.documentType !== 'altul' &&
-        result.documentType !== 'custom' &&
-        visibleDocTypes.includes(result.documentType)
+        result.documentType !== 'custom'
       ) {
-        setType(result.documentType);
-        setCustomTypeId(null);
-        setMetadata({});
+        if (visibleDocTypes.includes(result.documentType)) {
+          setType(result.documentType);
+          setCustomTypeId(null);
+          setMetadata({});
+          setSuggestedInactiveType(null);
+        } else {
+          setSuggestedInactiveType(result.documentType);
+        }
       }
 
       // Aplică câmpurile — AI-ul suprascrie câmpurile locale
@@ -384,21 +524,33 @@ export default function AddDocumentScreen() {
         issueDateRef.current = result.issueDate;
       }
 
-      // Aplică prima sugestie de entitate cu confidence high sau medium
+      // Preset auto-ștergere 5 ani pentru facturi furnizori utilități
+      const effectiveDocType = result.documentType ?? type;
+      const supplierField = result.fields.supplier ?? '';
+      if (effectiveDocType === 'factura' && supplierField && isKnownUtilitySupplier(supplierField)) {
+        setAutoDelete(prev => (prev === null ? '1825d' : prev));
+      }
+
+      // Aplică prima sugestie de entitate cu confidence high sau medium.
+      // Nu adăugăm o a doua entitate de același tip dacă există deja una —
+      // previne dublarea când AI rulează de mai multe ori (scan multi-pagină).
       const topSuggestion = result.entitySuggestions.find(
         s => s.confidence === 'high' || s.confidence === 'medium'
       );
       if (topSuggestion) {
-        const alreadyLinked = entityLinks.some(
-          l => l.entityType === topSuggestion.entityType && l.entityId === topSuggestion.entityId
+        const alreadyLinkedSameType = entityLinks.some(
+          l => l.entityType === topSuggestion.entityType
         );
-        if (!alreadyLinked) {
+        if (!alreadyLinkedSameType) {
           setEntityLinks(prev => [
             ...prev,
             { entityType: topSuggestion.entityType, entityId: topSuggestion.entityId },
           ]);
           setPickerCategory(topSuggestion.entityType);
         }
+      } else {
+        // AI nu a găsit nicio entitate — fallback fuzzy local
+        tryLocalEntityMatch(combinedOcrText);
       }
 
       setAiOcrApplied(true);
@@ -411,6 +563,70 @@ export default function AddDocumentScreen() {
       // Alte erori sunt silențioase (OCR local deja aplicat)
     } finally {
       setAiOcrLoading(false);
+    }
+  }
+
+  async function handleAiImageAnalysis() {
+    if (pages.length === 0) {
+      Alert.alert('Fără imagini', 'Nu există imagini sau documente atașate.');
+      return;
+    }
+
+    if (ocrConsent.getDocTypeSensitivity(type) === 'medical') {
+      const confirmed = await new Promise<boolean>(resolve => {
+        Alert.alert(
+          'Date medicale (GDPR Art. 9)',
+          `Imaginea documentului „${DOCUMENT_TYPE_LABELS[type]}" va fi trimisă la AI.\n\nPreferința nu se salvează.\n\nEști de acord?`,
+          [
+            { text: 'Anulează', style: 'cancel', onPress: () => resolve(false) },
+            { text: 'De acord', onPress: () => resolve(true) },
+          ]
+        );
+      });
+      if (!confirmed) return;
+    }
+
+    setLlmFieldLoading(true);
+    try {
+      const fileNotes: string[] = [];
+      const pagesToProcess = pages.slice(0, 5); // max 5 fișiere per analiză AI
+      for (const page of pagesToProcess) {
+        const ocrText = ocrTextsRef.current.get(page.localPath) ?? '';
+        let imageBase64: string | undefined;
+        try {
+          if (isPdfFile(page.localPath)) {
+            imageBase64 = (await renderPdfFirstPageForVision(page.localPath)) ?? undefined;
+          } else {
+            imageBase64 = await FileSystem.readAsStringAsync(page.localPath, {
+              encoding: FileSystem.EncodingType.Base64,
+            });
+          }
+        } catch { }
+
+        const extracted = await extractFieldsWithLlm(type, ocrText, imageBase64);
+
+        if (Object.keys(extracted.metadata).length > 0) {
+          setMetadata(prev => ({ ...extracted.metadata, ...prev }));
+        }
+        if (extracted.expiry_date && !expiryDateRef.current) {
+          setExpiryDate(extracted.expiry_date);
+          expiryDateRef.current = extracted.expiry_date;
+        }
+        if (extracted.issue_date && !issueDateRef.current) {
+          setIssueDate(extracted.issue_date);
+          issueDateRef.current = extracted.issue_date;
+        }
+        if (extracted.note) {
+          fileNotes.push(extracted.note);
+        }
+      }
+
+      const combined = fileNotes.join('\n___________\n');
+      if (combined) setNote(combined);
+    } catch {
+      // LLM field extraction e opțional
+    } finally {
+      setLlmFieldLoading(false);
     }
   }
 
@@ -436,8 +652,7 @@ export default function AddDocumentScreen() {
       const structuredCombined = Array.from(ocrStructuredTextsRef.current.values()).join(
         '\n\n---\n\n'
       );
-      setLiveOcrText(combined);
-      // Trimite la AI pentru cross-validare și completare câmpuri (dacă consent dat)
+      setLiveOcrText(structuredCombined);
       if (combined.trim().length > 20) {
         void runAiOcrMapper(structuredCombined);
       }
@@ -452,7 +667,25 @@ export default function AddDocumentScreen() {
     setPages(prev => prev.filter(p => p.localPath !== pageId));
     ocrTextsRef.current.delete(pageId);
     ocrStructuredTextsRef.current.delete(pageId);
-    setLiveOcrText(Array.from(ocrTextsRef.current.values()).join('\n\n---\n\n'));
+    setLiveOcrText(Array.from(ocrStructuredTextsRef.current.values()).join('\n\n---\n\n'));
+  }
+
+  function handleReorderPage(fromIndex: number, toIndex: number) {
+    setPages(prev => {
+      if (
+        fromIndex < 0 ||
+        fromIndex >= prev.length ||
+        toIndex < 0 ||
+        toIndex >= prev.length ||
+        fromIndex === toIndex
+      ) {
+        return prev;
+      }
+      const next = [...prev];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      return next;
+    });
   }
 
   async function handleRotate(pageId: string, degrees: number) {
@@ -508,7 +741,7 @@ export default function AddDocumentScreen() {
         const displayText = pdfText || '[PDF atașat – fișier tip imagine/scan, fără text extras]';
         ocrTextsRef.current.set(dest, displayText);
         ocrStructuredTextsRef.current.set(dest, displayText);
-        setLiveOcrText(Array.from(ocrTextsRef.current.values()).join('\n\n---\n\n'));
+        setLiveOcrText(Array.from(ocrStructuredTextsRef.current.values()).join('\n\n---\n\n'));
         if (pdfText) {
           if (pdfText.length < 100) {
             Alert.alert(
@@ -546,7 +779,10 @@ export default function AddDocumentScreen() {
             setIssueDate(info.issue_date);
             issueDateRef.current = info.issue_date;
           }
-          // Trimite la AI (PDF are text deja disponibil)
+          const summary = formatOcrSummary(pdfText, info);
+          if (summary) {
+            setNote(prev => prev || summary);
+          }
           const allStructured = Array.from(ocrStructuredTextsRef.current.values()).join(
             '\n\n---\n\n'
           );
@@ -658,6 +894,7 @@ export default function AddDocumentScreen() {
     issueDate.trim() !== '' ||
     expiryDate.trim() !== '' ||
     note.trim() !== '' ||
+    privateNotes.trim() !== '' ||
     Object.values(metadata).some(v => v.trim() !== '') ||
     entityLinks.length > 0;
 
@@ -668,24 +905,68 @@ export default function AddDocumentScreen() {
   async function handleSubmit() {
     if (duplicateDoc) {
       const typeName = DOCUMENT_TYPE_LABELS[duplicateDoc.type] ?? duplicateDoc.type;
-      const confirmed = await new Promise<boolean>(resolve => {
+      const action = await new Promise<'save' | 'update' | null>(resolve => {
         Alert.alert(
           'Document similar există',
           `Există deja un document de tip „${typeName}" pentru această entitate. Ce vrei să faci?`,
           [
-            { text: 'Anulare', style: 'cancel', onPress: () => resolve(false) },
+            { text: 'Anulare', style: 'cancel', onPress: () => resolve(null) },
             {
               text: 'Deschide existentul',
               onPress: () => {
-                router.push(`/(tabs)/documente/${duplicateDoc.id}`);
-                resolve(false);
+                resolve(null);
+                InteractionManager.runAfterInteractions(() => {
+                  router.push(`/(tabs)/documente/${duplicateDoc.id}`);
+                });
               },
             },
-            { text: 'Salvează oricum', onPress: () => resolve(true) },
+            {
+              text: 'Actualizează existent',
+              onPress: () => resolve('update'),
+            },
+            { text: 'Salvează document nou', onPress: () => resolve('save') },
           ]
         );
       });
-      if (!confirmed) return;
+      if (!action) return;
+
+      if (action === 'update') {
+        setLoading(true);
+        try {
+          const newOcrText = Array.from(ocrStructuredTextsRef.current.values())
+            .filter(Boolean).join('\n\n---\n\n') || undefined;
+          await updateDocument(duplicateDoc.id, {
+            type: duplicateDoc.type,
+            issue_date: issueDate.trim() || duplicateDoc.issue_date || undefined,
+            expiry_date: !HIDE_EXPIRY_TYPES.includes(duplicateDoc.type)
+              ? expiryDate.trim() || duplicateDoc.expiry_date || undefined
+              : undefined,
+            note: note.trim() || duplicateDoc.note || undefined,
+            file_path: pages.length > 0
+              ? toRelativePath(pages[0].localPath)
+              : (duplicateDoc.file_path ?? undefined),
+            metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
+            auto_delete: autoDelete ?? duplicateDoc.auto_delete ?? undefined,
+            ocr_text: newOcrText,
+            private_notes: privateNotes.trim() || duplicateDoc.private_notes || undefined,
+          });
+          if (pages.length > 1) {
+            const { addDocumentPage } = await import('@/services/documents');
+            for (let i = 1; i < pages.length; i++) {
+              await addDocumentPage(duplicateDoc.id, toRelativePath(pages[i].localPath));
+            }
+          }
+          await refresh();
+          router.replace(`/(tabs)/documente/${duplicateDoc.id}`);
+        } catch (e) {
+          Alert.alert('Eroare', e instanceof Error ? e.message : 'Nu s-a putut actualiza');
+        } finally {
+          setLoading(false);
+        }
+        return;
+      }
+
+      if (action !== 'save') return;
     }
 
     setLoading(true);
@@ -711,6 +992,7 @@ export default function AddDocumentScreen() {
         ocr_text:
           Array.from(ocrStructuredTextsRef.current.values()).filter(Boolean).join('\n\n---\n\n') ||
           undefined,
+        private_notes: privateNotes.trim() || undefined,
       });
       const { addDocumentPage } = await import('@/services/documents');
       for (let i = 1; i < pages.length; i++) {
@@ -858,6 +1140,7 @@ export default function AddDocumentScreen() {
       <KeyboardAvoidingView
         style={[styles.container, { backgroundColor: C.background }]}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? headerHeight : 0}
       >
         <ScrollView
           style={[styles.scroll, { backgroundColor: C.background }]}
@@ -872,11 +1155,13 @@ export default function AddDocumentScreen() {
             pages={photoPages}
             ocrLoading={ocrLoading || aiOcrLoading}
             ocrText={liveOcrText || undefined}
+            refreshKey={photoRefreshKey}
             onAddPage={handleAddPage}
             onRotate={handleRotate}
             onDelete={handleDeletePage}
             onRunOcr={handleManualOcr}
             onFullscreen={setFullscreenUri}
+            onReorderPage={handleReorderPage}
           />
           {aiOcrApplied && (
             <View style={[styles.aiBadge, { backgroundColor: C.primaryMuted ?? '#f0f5e8' }]}>
@@ -885,29 +1170,54 @@ export default function AddDocumentScreen() {
               </Text>
             </View>
           )}
-          {aiOcrLoading && (
-            <Text style={[styles.aiLoadingText, { color: C.textSecondary }]}>
-              Analizez cu AI...
-            </Text>
-          )}
-          {aiConsentAvailable && liveOcrText.trim().length > 20 && !aiOcrLoading && (
-            <Pressable
-              style={({ pressed }) => [
-                styles.aiManualBtn,
-                { borderColor: primary, opacity: pressed ? 0.75 : 1 },
-              ]}
-              onPress={() => {
-                setAiOcrApplied(false);
-                const structured = Array.from(ocrStructuredTextsRef.current.values())
-                  .filter(Boolean)
-                  .join('\n\n---\n\n');
-                void runAiOcrMapper(structured || liveOcrText);
-              }}
-            >
-              <Text style={[styles.aiManualBtnText, { color: primary }]}>
-                {aiOcrApplied ? '↺ Re-analizează cu AI' : '✦ Analizează cu AI'}
+          {(aiOcrLoading || llmFieldLoading) && (
+            <View style={styles.aiLoadingRow}>
+              <ActivityIndicator size="small" color={primary} style={{ marginRight: 6 }} />
+              <Text style={[styles.aiLoadingText, { color: C.textSecondary }]}>
+                {llmFieldLoading ? 'Analizez documentul cu AI...' : 'Analizez cu AI...'}
               </Text>
-            </Pressable>
+            </View>
+          )}
+          {textAiConsentAvailable && pages.length > 0 && !llmFieldLoading && (
+            <View>
+              <View style={styles.aiActionsRow}>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.aiActionBtn,
+                    { borderColor: '#F57F17', opacity: pressed ? 0.75 : 1 },
+                  ]}
+                  onPress={handleAiImageAnalysis}
+                >
+                  <Text style={[styles.aiActionBtnText, { color: '#F57F17' }]}>
+                    Trimite documentul la AI
+                  </Text>
+                </Pressable>
+              </View>
+              <Text style={[styles.aiActionInfo, { color: C.textSecondary }]}>
+                Se trimite imaginea/PDF-ul documentului la AI pentru extragerea datelor. Acțiune manuală explicită.
+              </Text>
+            </View>
+          )}
+
+          {/* TIP INACTIV DETECTAT DE AI */}
+          {suggestedInactiveType && (
+            <View style={styles.inactiveBanner}>
+              <Ionicons name="information-circle-outline" size={18} color="#E65100" style={{ marginRight: 8, marginTop: 1 }} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.inactiveBannerTitle}>
+                  AI-ul a detectat tipul „{DOCUMENT_TYPE_LABELS[suggestedInactiveType] ?? suggestedInactiveType}"
+                </Text>
+                <Text style={styles.inactiveBannerBody}>
+                  Acest tip nu e activat. Activează-l din Setări → Tipuri de documente vizibile.
+                </Text>
+                <Pressable onPress={() => router.push('/(tabs)/setari')}>
+                  <Text style={styles.inactiveBannerLink}>Deschide Setările →</Text>
+                </Pressable>
+              </View>
+              <Pressable onPress={() => setSuggestedInactiveType(null)} hitSlop={8}>
+                <Ionicons name="close" size={16} color="#999" />
+              </Pressable>
+            </View>
           )}
 
           {/* DUPLICAT */}
@@ -1094,7 +1404,10 @@ export default function AddDocumentScreen() {
           ) : null}
 
           {/* 5. AUTO-ȘTERGERE */}
-          <Text style={styles.label}>Auto-ștergere (opțional)</Text>
+          <Text style={styles.label}>
+            {'Auto-ștergere (opțional)'}
+            {autoDelete !== null ? `: ${autoDeleteLabel(autoDelete)}` : ''}
+          </Text>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -1104,11 +1417,7 @@ export default function AddDocumentScreen() {
             {(
               [
                 ...(expiryDate ? [{ label: 'La expirare', value: 'expiry' }] : []),
-                { label: 'Niciodată', value: null },
-                { label: '30 zile', value: '30d' },
-                { label: '90 zile', value: '90d' },
-                { label: '180 zile', value: '180d' },
-                { label: '1 an', value: '365d' },
+                ...DELETE_OPTIONS,
               ] as { label: string; value: string | null }[]
             ).map(opt => {
               const active = autoDelete === opt.value;
@@ -1144,7 +1453,30 @@ export default function AddDocumentScreen() {
             value={note}
             onChangeText={setNote}
             multiline
+            scrollEnabled
             editable={!loading}
+          />
+
+          {/* 6b. NOTĂ PRIVATĂ — nu se trimite la AI */}
+          <View style={styles.privateLabelRow}>
+            <Ionicons name="lock-closed" size={14} color={sensitive} />
+            <Text style={[styles.label, { color: sensitive, opacity: 1 }]}>Notă privată (opțional)</Text>
+          </View>
+          <Text style={[styles.privateHint, { color: C.textSecondary }]}>
+            Rămâne pe acest telefon. Nu se trimite niciodată la asistentul AI. Potrivită pentru CVV, PIN, parole, coduri de acces.
+          </Text>
+          <ThemedTextInput
+            style={[styles.input, styles.inputMultiline, styles.privateInput]}
+            placeholder="Ex. CVV 123 · PIN 4821"
+            placeholderTextColor="#999"
+            value={privateNotes}
+            onChangeText={setPrivateNotes}
+            multiline
+            scrollEnabled
+            editable={!loading}
+            secureTextEntry={false}
+            autoCorrect={false}
+            autoCapitalize="none"
           />
 
           {/* 7. LEAGĂ DE ENTITATE */}
@@ -1253,6 +1585,7 @@ export default function AddDocumentScreen() {
         <View style={styles.fsOverlay}>
           <StatusBar hidden />
           <ScrollView
+            key={fullscreenUri}
             style={{ flex: 1 }}
             contentContainerStyle={styles.fsScrollContent}
             maximumZoomScale={6}
@@ -1264,6 +1597,7 @@ export default function AddDocumentScreen() {
           >
             {fullscreenUri && (
               <Image
+                key={fullscreenUri}
                 source={{ uri: fullscreenUri }}
                 style={{ width: screenWidth, height: screenHeight }}
                 resizeMode="contain"
@@ -1293,16 +1627,17 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   aiBadgeText: { fontSize: 13, fontWeight: '600' },
-  aiLoadingText: { fontSize: 12, marginTop: 6, fontStyle: 'italic' },
-  aiManualBtn: {
-    alignSelf: 'flex-start',
-    marginTop: 8,
+  aiLoadingRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
+  aiLoadingText: { fontSize: 12, fontStyle: 'italic' },
+  aiActionsRow: { flexDirection: 'row', gap: 8, marginTop: 8, flexWrap: 'wrap' },
+  aiActionBtn: {
     paddingVertical: 7,
     paddingHorizontal: 14,
     borderRadius: 8,
     borderWidth: 1,
   },
-  aiManualBtnText: { fontSize: 13, fontWeight: '600' },
+  aiActionBtnText: { fontSize: 13, fontWeight: '600' },
+  aiActionInfo: { fontSize: 11, marginTop: 4, lineHeight: 15 },
   selectedBadge: { color: primary },
   typeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 },
   typeChip: {
@@ -1322,7 +1657,10 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginBottom: 20,
   },
-  inputMultiline: { minHeight: 80 },
+  inputMultiline: { minHeight: 80, maxHeight: 180 },
+  privateLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 },
+  privateHint: { fontSize: 12, marginBottom: 8, lineHeight: 16, opacity: 0.8 },
+  privateInput: { borderColor: sensitiveBorder, backgroundColor: sensitiveBg },
   // Entity picker
   categoryRow: { marginBottom: 12, marginTop: 8 },
   categoryRowContent: { flexDirection: 'row', gap: 8 },
@@ -1410,6 +1748,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   fsCloseBtnText: { color: '#fff', fontSize: 20, fontWeight: '600' },
+  inactiveBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#FFF3E0',
+    borderColor: '#FF9800',
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 16,
+  },
+  inactiveBannerTitle: { fontSize: 13, fontWeight: '700', color: '#E65100', marginBottom: 3 },
+  inactiveBannerBody: { fontSize: 12, color: '#BF360C', marginBottom: 4, lineHeight: 17 },
+  inactiveBannerLink: { fontSize: 12, fontWeight: '600', color: '#E65100' },
   duplicateBanner: {
     borderWidth: 1,
     borderRadius: 10,

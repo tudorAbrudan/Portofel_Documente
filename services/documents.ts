@@ -1,4 +1,7 @@
+import * as FileSystem from 'expo-file-system/legacy';
 import { db, generateId } from './db';
+import { computeFileHash } from './fileHash';
+import { onDocumentCreated, onDocumentRenewed } from './reviewPrompt';
 import type { Document, DocumentPage, DocumentType, DocumentEntityLink, EntityType } from '@/types';
 
 export interface CreateDocumentInput {
@@ -18,6 +21,8 @@ export interface CreateDocumentInput {
   auto_delete?: string;
   ocr_text?: string;
   metadata?: Record<string, string>;
+  /** Notă privată — nu ajunge niciodată la AI. Vezi sanitizeDocumentForAI. */
+  private_notes?: string;
   // Multi-entity links suplimentare
   extra_entity_links?: DocumentEntityLink[];
 }
@@ -39,6 +44,8 @@ type Row = {
   auto_delete: string | null;
   ocr_text: string | null;
   metadata: string | null;
+  file_hash: string | null;
+  private_notes: string | null;
   created_at: string;
 };
 
@@ -117,8 +124,32 @@ function mapRow(r: Row, pages?: DocumentPage[]): Document {
     company_id: r.company_id ?? undefined,
     auto_delete: r.auto_delete ?? undefined,
     ocr_text: r.ocr_text ?? undefined,
+    file_hash: r.file_hash ?? undefined,
+    private_notes: r.private_notes ?? undefined,
     created_at: r.created_at,
   };
+}
+
+/**
+ * Îndepărtează câmpurile private înainte de trimiterea către AI.
+ * ORICE flux care construiește context pentru un LLM extern (chatbot, OCR
+ * LLM, clasificare, sumarizare) TREBUIE să treacă documentele prin această
+ * funcție. Vezi `.claude/rules/ai-privacy.md`.
+ */
+export function sanitizeDocumentForAI(doc: Document): Document {
+  if (doc.private_notes === undefined) return doc;
+  const { private_notes: _private, ...rest } = doc;
+  return rest;
+}
+
+/**
+ * Variantă de `getDocuments()` garantată fără date private.
+ * Folosește-o în locul `getDocuments()` pentru orice pipeline care trimite
+ * date la un model extern.
+ */
+export async function getDocumentsForAI(): Promise<Document[]> {
+  const all = await getDocuments();
+  return all.map(sanitizeDocumentForAI);
 }
 
 async function loadPages(documentId: string): Promise<DocumentPage[]> {
@@ -205,12 +236,56 @@ export async function getDocumentsByEntity(
   return rows.map(r => mapRow(r));
 }
 
+/**
+ * Extrage placa și VIN-ul pentru fiecare vehicul, din documentele atașate
+ * (talon sau carte_auto). Folosit pentru a îmbogăți contextul AI cu identificatori
+ * tehnici, ca matching-ul să funcționeze chiar și când în textul OCR apare
+ * doar placa sau VIN-ul (nu numele vehiculului).
+ */
+export async function getVehicleIdentifiers(): Promise<
+  Map<string, { plate?: string; vin?: string }>
+> {
+  const rows = await db.getAllAsync<Row>(
+    `SELECT * FROM documents
+     WHERE vehicle_id IS NOT NULL
+       AND (type = 'talon' OR type = 'carte_auto')
+     ORDER BY created_at DESC`
+  );
+
+  const map = new Map<string, { plate?: string; vin?: string }>();
+  for (const r of rows) {
+    if (!r.vehicle_id || !r.metadata) continue;
+    let meta: Record<string, string>;
+    try {
+      meta = JSON.parse(r.metadata);
+    } catch {
+      continue;
+    }
+    const existing = map.get(r.vehicle_id) ?? {};
+    if (!existing.plate && typeof meta.plate === 'string' && meta.plate.trim()) {
+      existing.plate = meta.plate.trim();
+    }
+    if (!existing.vin && typeof meta.vin === 'string' && meta.vin.trim()) {
+      existing.vin = meta.vin.trim();
+    }
+    map.set(r.vehicle_id, existing);
+  }
+  return map;
+}
+
 export async function createDocument(input: CreateDocumentInput): Promise<Document> {
   const id = generateId();
   const created_at = new Date().toISOString();
+
+  let file_hash: string | null = null;
+  if (input.file_path) {
+    const abs = `${FileSystem.documentDirectory}${input.file_path}`;
+    file_hash = await computeFileHash(abs);
+  }
+
   await db.runAsync(
-    `INSERT INTO documents (id, type, custom_type_id, issue_date, expiry_date, note, file_path, person_id, property_id, vehicle_id, card_id, animal_id, company_id, metadata, auto_delete, ocr_text, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO documents (id, type, custom_type_id, issue_date, expiry_date, note, file_path, person_id, property_id, vehicle_id, card_id, animal_id, company_id, metadata, auto_delete, ocr_text, file_hash, private_notes, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       input.type,
@@ -228,6 +303,8 @@ export async function createDocument(input: CreateDocumentInput): Promise<Docume
       input.metadata ? JSON.stringify(input.metadata) : null,
       input.auto_delete ?? null,
       input.ocr_text != null ? input.ocr_text.trim() : null,
+      file_hash,
+      input.private_notes ?? null,
       created_at,
     ]
   );
@@ -236,6 +313,13 @@ export async function createDocument(input: CreateDocumentInput): Promise<Docume
   const entityLinks = buildEntityLinksFromInput(input);
   if (entityLinks.length > 0) {
     await saveEntityLinks(id, entityLinks);
+  }
+
+  try {
+    const row = await db.getFirstAsync<{ cnt: number }>('SELECT COUNT(*) as cnt FROM documents');
+    await onDocumentCreated(row?.cnt ?? 0);
+  } catch {
+    // Trigger review opțional — nu blochează crearea documentului.
   }
 
   return {
@@ -255,6 +339,8 @@ export async function createDocument(input: CreateDocumentInput): Promise<Docume
     company_id: input.company_id,
     auto_delete: input.auto_delete,
     ocr_text: input.ocr_text,
+    file_hash: file_hash ?? undefined,
+    private_notes: input.private_notes,
     entity_links: entityLinks,
     created_at,
   };
@@ -278,13 +364,22 @@ export interface UpdateDocumentInput {
   animal_id?: string;
   auto_delete?: string;
   metadata?: Record<string, string>;
+  ocr_text?: string;
+  /** Notă privată — nu ajunge niciodată la AI. Vezi sanitizeDocumentForAI. */
+  private_notes?: string;
   // Pentru update multi-entity: dacă prezent, rescrie junction table
   entity_links?: DocumentEntityLink[];
 }
 
 export async function updateDocument(id: string, input: UpdateDocumentInput): Promise<void> {
+  const prev = await db.getFirstAsync<{ expiry_date: string | null }>(
+    'SELECT expiry_date FROM documents WHERE id = ?',
+    [id]
+  );
+  const oldExpiry = prev?.expiry_date ?? null;
+
   await db.runAsync(
-    'UPDATE documents SET type=?, custom_type_id=?, issue_date=?, expiry_date=?, note=?, file_path=?, animal_id=?, metadata=?, auto_delete=? WHERE id=?',
+    'UPDATE documents SET type=?, custom_type_id=?, issue_date=?, expiry_date=?, note=?, file_path=?, animal_id=?, metadata=?, auto_delete=?, ocr_text=?, private_notes=? WHERE id=?',
     [
       input.type,
       input.custom_type_id ?? null,
@@ -295,9 +390,20 @@ export async function updateDocument(id: string, input: UpdateDocumentInput): Pr
       input.animal_id ?? null,
       input.metadata ? JSON.stringify(input.metadata) : null,
       input.auto_delete ?? null,
+      input.ocr_text ?? null,
+      input.private_notes ?? null,
       id,
     ]
   );
+
+  if (oldExpiry && input.expiry_date && oldExpiry !== input.expiry_date) {
+    try {
+      await onDocumentRenewed({ oldExpiry, newExpiry: input.expiry_date });
+    } catch {
+      // Trigger review opțional.
+    }
+  }
+
   // Actualizează junction table dacă s-au trimis linkuri explicite
   if (input.entity_links !== undefined) {
     await saveEntityLinks(id, input.entity_links);
@@ -484,6 +590,99 @@ export async function findDuplicateDocument(
     if (row) return mapRow(row);
   }
   return null;
+}
+
+export interface DocumentDuplicates {
+  /** Alte documente cu fișier identic (același SHA-256). Certitudine. */
+  byHash: Document[];
+  /** Alte documente cu același tip + custom_type + cel puțin o entitate comună. Suspiciune. */
+  byTypeAndEntity: Document[];
+}
+
+/**
+ * Returnează documente care par a fi duplicate pentru `docId`.
+ * Nu include documentul curent. Nu deduplică între `byHash` și `byTypeAndEntity`
+ * — un document poate apărea în ambele (e util să știi de ce e flaggat).
+ */
+export async function findDuplicatesOfDocument(docId: string): Promise<DocumentDuplicates> {
+  const current = await getDocumentById(docId);
+  if (!current) return { byHash: [], byTypeAndEntity: [] };
+
+  // ── byHash ── fișier identic bit-cu-bit
+  let byHash: Document[] = [];
+  if (current.file_hash) {
+    const rows = await db.getAllAsync<Row>(
+      'SELECT * FROM documents WHERE file_hash = ? AND id != ? ORDER BY created_at ASC',
+      [current.file_hash, docId]
+    );
+    byHash = rows.map(r => mapRow(r));
+  }
+
+  // ── byTypeAndEntity ── același tip + cel puțin o entitate legată comună
+  const links = await getEntityLinks(docId);
+  let byTypeAndEntity: Document[] = [];
+  if (links.length > 0) {
+    const seen = new Set<string>();
+    for (const link of links) {
+      const customFilter =
+        current.type === 'custom' && current.custom_type_id ? 'AND d.custom_type_id = ?' : '';
+      const params: (string | null)[] =
+        current.type === 'custom' && current.custom_type_id ? [current.custom_type_id] : [];
+      const rows = await db.getAllAsync<Row>(
+        `SELECT d.* FROM documents d
+         WHERE d.type = ?
+         ${customFilter}
+         AND d.id != ?
+         AND EXISTS (
+           SELECT 1 FROM document_entities de
+           WHERE de.document_id = d.id
+           AND de.entity_type = ?
+           AND de.entity_id = ?
+         )
+         ORDER BY d.created_at ASC`,
+        [current.type, ...params, docId, link.entityType, link.entityId]
+      );
+      for (const r of rows) {
+        if (!seen.has(r.id)) {
+          seen.add(r.id);
+          byTypeAndEntity.push(mapRow(r));
+        }
+      }
+    }
+  }
+
+  return { byHash, byTypeAndEntity };
+}
+
+export async function findFileDuplicates(): Promise<Document[][]> {
+  const hashes = await db.getAllAsync<{ file_hash: string }>(
+    `SELECT file_hash FROM documents
+     WHERE file_hash IS NOT NULL
+     GROUP BY file_hash
+     HAVING COUNT(*) > 1`
+  );
+  const groups: Document[][] = [];
+  for (const { file_hash } of hashes) {
+    const rows = await db.getAllAsync<Row>(
+      'SELECT * FROM documents WHERE file_hash = ? ORDER BY created_at ASC',
+      [file_hash]
+    );
+    if (rows.length > 1) groups.push(rows.map(r => mapRow(r)));
+  }
+  return groups;
+}
+
+export async function backfillFileHashes(): Promise<void> {
+  const rows = await db.getAllAsync<{ id: string; file_path: string }>(
+    'SELECT id, file_path FROM documents WHERE file_hash IS NULL AND file_path IS NOT NULL'
+  );
+  for (const row of rows) {
+    const abs = `${FileSystem.documentDirectory}${row.file_path}`;
+    const hash = await computeFileHash(abs);
+    if (hash) {
+      await db.runAsync('UPDATE documents SET file_hash = ? WHERE id = ?', [hash, row.id]);
+    }
+  }
 }
 
 export async function getAllDocumentPages(): Promise<DocumentPage[]> {

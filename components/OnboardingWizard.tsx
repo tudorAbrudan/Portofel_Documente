@@ -39,7 +39,7 @@ import { primary, statusColors } from '@/theme/colors';
 import { radius, spacing } from '@/theme/layout';
 import { useThemePreference } from '@/hooks/useThemeScheme';
 
-const TOTAL_STEPS = 9;
+const TOTAL_STEPS = 10;
 
 const WELCOME = 0;
 const APPEARANCE = 1;
@@ -49,7 +49,8 @@ const DOCS = 4;
 const NOTIFICATIONS = 5;
 const BACKUP = 6;
 const AI_STEP = 7;
-const SUMMARY = 8;
+const OCR_PRIVACY = 8;
+const SUMMARY = 9;
 
 const NOTIF_DAY_OPTIONS = [7, 14, 30] as const;
 
@@ -102,6 +103,8 @@ function stepTitle(step: number): string {
       return 'Backup';
     case AI_STEP:
       return 'Asistent AI';
+    case OCR_PRIVACY:
+      return 'Extracție AI din documente';
     case SUMMARY:
       return 'Rezumat';
     default:
@@ -127,6 +130,8 @@ function stepSubtitle(step: number): string {
       return 'Exportul periodic (fișier ZIP) îți protejează datele la schimbare de telefon sau reinstalare.';
     case AI_STEP:
       return 'Complet opțional. Datele tale rămân pe dispozitiv — AI-ul e activat doar când îl folosești.';
+    case OCR_PRIVACY:
+      return 'Controlezi ce date sunt trimise la AI. Poți schimba oricând din Setări → Asistent AI.';
     case SUMMARY:
       return 'Verifică setările. Poți modifica totul din Setări oricând.';
     default:
@@ -789,6 +794,28 @@ export default function OnboardingWizard({ onComplete }: Props) {
           </View>
         )}
 
+        {step === OCR_PRIVACY && (
+          <View style={styles.stepContent}>
+            <View style={[styles.card, { backgroundColor: C.card }]}>
+              <View style={styles.cardRow}>
+                <Ionicons name="image-outline" size={20} color="#F57F17" />
+                <View style={{ flex: 1, marginLeft: spacing.gap }}>
+                  <Text style={[styles.cardTitle, { color: C.text }]}>
+                    Trimitere imagine/document la AI
+                  </Text>
+                  <Text style={[styles.cardSubtitle, { color: C.textSecondary }]}>
+                    Doar la apăsarea butonului „Trimite documentul la AI" din formularul documentului — niciodată automat
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            <Text style={[styles.infoText, { color: C.textSecondary, marginTop: spacing.screen }]}>
+              Textul OCR e trimis automat (dacă e activat). Imaginile se trimit doar la cerere explicită — apăsând butonul din formular.
+            </Text>
+          </View>
+        )}
+
         {step === SUMMARY && (
           <View style={[styles.summaryCard, { backgroundColor: C.card, borderColor: C.border }]}>
             <Text style={[styles.summaryLine, { color: C.text }]}>
@@ -1038,6 +1065,27 @@ const styles = StyleSheet.create({
   },
   summaryLine: { fontSize: 15, lineHeight: 22 },
   summaryKey: { fontWeight: '700' },
+
+  // OCR Privacy step
+  stepContent: { gap: 0 },
+  card: {
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: 'transparent',
+    padding: 16,
+    ...Platform.select({
+      ios: { shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4 },
+      android: { elevation: 1 },
+    }),
+  },
+  cardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  cardTitle: { fontSize: 15, fontWeight: '600', marginBottom: 4 },
+  cardSubtitle: { fontSize: 13, lineHeight: 18 },
+  infoText: { fontSize: 13, lineHeight: 18, fontStyle: 'italic' },
 
   // AI step
   aiBlock: { gap: 16 },

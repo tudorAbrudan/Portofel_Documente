@@ -27,7 +27,7 @@ import { Text, View } from '@/components/Themed';
 import { DocumentPhotoSection } from '@/components/DocumentPhotoSection';
 import type { PhotoPage } from '@/components/DocumentPhotoSection';
 import { BottomActionBar } from '@/components/BottomActionBar';
-import { primary } from '@/theme/colors';
+import { primary, sensitive, sensitiveBorder, sensitiveBg } from '@/theme/colors';
 import {
   getDocumentById,
   deleteDocument,
@@ -37,7 +37,9 @@ import {
   setDocumentOcrText,
   reorderAllDocumentFiles,
   getDocumentEntityLinks,
+  findDuplicatesOfDocument,
 } from '@/services/documents';
+import type { DocumentDuplicates } from '@/services/documents';
 import type { DocumentEntityLink, EntityType } from '@/types';
 import { scheduleExpirationReminders } from '@/services/notifications';
 import {
@@ -54,6 +56,7 @@ import {
 import { extractFieldsForType } from '@/services/ocrExtractors';
 import { toFileUri } from '@/services/fileUtils';
 import { isPdfFile, extractTextFromPdf } from '@/services/pdfExtractor';
+import { renderAllPdfPagesAsBase64 } from '@/services/pdfOcr';
 import { getDocumentLabel } from '@/types';
 import type { Document as DocType } from '@/types';
 import { useCustomTypes } from '@/hooks/useCustomTypes';
@@ -97,20 +100,23 @@ export default function DocumentDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [ocrLoading, setOcrLoading] = useState(false);
-  const [ocrExpanded, setOcrExpanded] = useState(false);
 
   // Rotire imagini (per pagina, cheie = file_path)
   const [rotatedUris, setRotatedUris] = useState<Record<string, string>>({});
 
   const [fullscreenUri, setFullscreenUri] = useState<string | null>(null);
   const [fullscreenPdfUri, setFullscreenPdfUri] = useState<string | null>(null);
-  const [fsKey, setFsKey] = useState(0);
 
   function handleFullscreen(uri: string) {
-    setFsKey(k => k + 1);
     setFullscreenUri(uri);
   }
   const [entityLinks, setEntityLinks] = useState<DocumentEntityLink[]>([]);
+  const [privateVisible, setPrivateVisible] = useState(false);
+  const [duplicates, setDuplicates] = useState<DocumentDuplicates>({
+    byHash: [],
+    byTypeAndEntity: [],
+  });
+  const [focusNonce, setFocusNonce] = useState(0);
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
 
   useEffect(() => {
@@ -128,12 +134,18 @@ export default function DocumentDetailScreen() {
         setEntityLinks(links);
       })
       .catch(() => {});
+    findDuplicatesOfDocument(id)
+      .then(setDuplicates)
+      .catch(() => {});
   }, [id]);
 
   // Reîncarcă documentul la revenirea din ecranul de editare
   useFocusEffect(
     useCallback(() => {
       if (!id) return;
+      // Forțează remount pentru Image (iOS uneori nu re-randează file:// URIs după ce
+      // view-ul a fost acoperit de un alt ecran în stack).
+      setFocusNonce(n => n + 1);
       getDocumentById(id)
         .then(updated => {
           if (updated) setDoc(updated);
@@ -141,6 +153,9 @@ export default function DocumentDetailScreen() {
         .catch(() => {});
       getDocumentEntityLinks(id)
         .then(links => setEntityLinks(links))
+        .catch(() => {});
+      findDuplicatesOfDocument(id)
+        .then(setDuplicates)
         .catch(() => {});
     }, [id])
   );
@@ -666,27 +681,32 @@ export default function DocumentDetailScreen() {
       const imgTags: string[] = [];
       for (const page of allPages) {
         const fileUri = toFileUri(page.file_path);
-        try {
-          // Comprimă imaginea la max 1400px și calitate 75% — reduce dimensiunea de ~10x
-          const compressed = await ImageManipulator.manipulateAsync(
-            fileUri,
-            [{ resize: { width: 1400 } }],
-            { compress: 0.75, format: ImageManipulator.SaveFormat.JPEG }
-          );
-          const base64 = await FileSystem.readAsStringAsync(compressed.uri, {
-            encoding: FileSystem.EncodingType.Base64,
-          });
-          imgTags.push(
-            `<div class="img-page"><img src="data:image/jpeg;base64,${base64}" /></div>`
-          );
-        } catch {
-          // imaginea nu a putut fi citită — continuăm cu restul paginilor
+        if (isPdfFile(page.file_path)) {
+          // Randează fiecare pagină PDF ca imagine
+          const pages = await renderAllPdfPagesAsBase64(fileUri);
+          for (const b64 of pages) {
+            imgTags.push(`<div class="img-page"><img src="data:image/jpeg;base64,${b64}" /></div>`);
+          }
+        } else {
+          try {
+            const compressed = await ImageManipulator.manipulateAsync(
+              fileUri,
+              [{ resize: { width: 1400 } }],
+              { compress: 0.75, format: ImageManipulator.SaveFormat.JPEG }
+            );
+            const base64 = await FileSystem.readAsStringAsync(compressed.uri, {
+              encoding: FileSystem.EncodingType.Base64,
+            });
+            imgTags.push(`<div class="img-page"><img src="data:image/jpeg;base64,${base64}" /></div>`);
+          } catch {
+            // imaginea nu a putut fi citită — continuăm
+          }
         }
       }
       if (imgTags.length === 0 && allPages.length > 0) {
         Alert.alert(
           'Atenție',
-          'Imaginile nu au putut fi incluse în PDF. Va conține doar textul documentului.'
+          'Paginile nu au putut fi incluse în PDF. Va conține doar datele documentului.'
         );
       }
 
@@ -789,19 +809,6 @@ export default function DocumentDetailScreen() {
   }
   .meta-footer-brand { color: #1a1a1a; font-weight: 700; }
 
-  /* Pagina OCR */
-  .ocr-page {
-    page-break-before: always;
-    padding: 12mm;
-  }
-  .ocr-title { font-size: 18px; font-weight: 700; margin-bottom: 5mm; color: #1e2318; }
-  .ocr-content {
-    font-size: 10.5px; line-height: 1.7; color: #333;
-    white-space: pre-wrap;
-    font-family: 'Courier New', Courier, monospace;
-    background: #f8faf4; border: 1px solid #e2ebd4;
-    border-radius: 6px; padding: 4mm;
-  }
 </style></head><body>
 
   ${imgTags.join('\n')}
@@ -821,24 +828,6 @@ export default function DocumentDetailScreen() {
     </div>
   </div>
 
-  ${
-    doc.ocr_text
-      ? `
-  <div class="ocr-page">
-    <div class="meta-header">
-      <div>
-        <div class="meta-brand">Dosar <span class="meta-brand-url">tudorabrudan.github.io/Dosar</span></div>
-      </div>
-    </div>
-    <div class="ocr-title">Text extras din document</div>
-    <div class="ocr-content">${escapeHtml(doc.ocr_text)}</div>
-    <div class="meta-footer" style="margin-top:6mm">
-      <span class="meta-footer-brand">Generat cu Dosar · tudorabrudan.github.io/Dosar · App Store: apps.apple.com/ro/app/dosar-documente-personale/id6760576986</span>
-      <span>Generat pe ${generatedDate}</span>
-    </div>
-  </div>`
-      : ''
-  }
 
 </body></html>`;
       const { uri } = await Print.printToFileAsync({ html, width: 595, height: 842 }); // A4 in points
@@ -946,6 +935,7 @@ export default function DocumentDetailScreen() {
           ocrLoading={ocrLoading}
           ocrText={doc.ocr_text ?? undefined}
           isEditing={false}
+          refreshKey={focusNonce}
           onAddPage={handleAddPage}
           onRotate={handleRotate}
           onDelete={handleDeletePage}
@@ -959,7 +949,10 @@ export default function DocumentDetailScreen() {
           .map((pdfPage, idx) => {
             const pdfUri = toFileUri(pdfPage.file_path);
             return (
-              <View key={pdfPage.id} style={[styles.pdfContainer, { borderColor: colors.border }]}>
+              <View
+                key={`${pdfPage.id}_${focusNonce}`}
+                style={[styles.pdfContainer, { borderColor: colors.border }]}
+              >
                 <View style={styles.pdfHeaderRow}>
                   <Text style={styles.pdfSectionLabel}>
                     PDF{' '}
@@ -982,6 +975,7 @@ export default function DocumentDetailScreen() {
                     allowFileAccess
                     allowFileAccessFromFileURLs
                     allowUniversalAccessFromFileURLs
+                    allowingReadAccessToURL={FileSystem.documentDirectory ?? undefined}
                     scrollEnabled
                   />
                 ) : (
@@ -995,6 +989,61 @@ export default function DocumentDetailScreen() {
               </View>
             );
           })}
+        {(duplicates.byHash.length > 0 || duplicates.byTypeAndEntity.length > 0) && (
+          <View style={styles.dupBox}>
+            <View style={styles.dupHeader}>
+              <Ionicons name="copy-outline" size={14} color="#8a6d2f" />
+              <Text style={styles.dupHeaderText}>Posibil duplicat</Text>
+            </View>
+            {duplicates.byHash.length > 0 && (
+              <View style={styles.dupSection}>
+                <Text style={styles.dupSectionLabel}>
+                  Fișier identic ({duplicates.byHash.length})
+                </Text>
+                {duplicates.byHash.map(d => (
+                  <Pressable
+                    key={d.id}
+                    style={styles.dupRow}
+                    onPress={() => router.push(`/(tabs)/documente/${d.id}`)}
+                  >
+                    <Text style={styles.dupRowText} numberOfLines={1}>
+                      {getDocumentLabel(d, customTypes)}
+                      {d.created_at
+                        ? ` · ${new Date(d.created_at).toLocaleDateString('ro-RO')}`
+                        : ''}
+                    </Text>
+                    <Ionicons name="chevron-forward" size={14} color="#8a6d2f" />
+                  </Pressable>
+                ))}
+              </View>
+            )}
+            {duplicates.byTypeAndEntity.length > 0 && (
+              <View style={styles.dupSection}>
+                <Text style={styles.dupSectionLabel}>
+                  Același tip și entitate ({duplicates.byTypeAndEntity.length})
+                </Text>
+                {duplicates.byTypeAndEntity.map(d => (
+                  <Pressable
+                    key={d.id}
+                    style={styles.dupRow}
+                    onPress={() => router.push(`/(tabs)/documente/${d.id}`)}
+                  >
+                    <Text style={styles.dupRowText} numberOfLines={1}>
+                      {getDocumentLabel(d, customTypes)}
+                      {d.expiry_date
+                        ? ` · expiră ${new Date(d.expiry_date).toLocaleDateString('ro-RO')}`
+                        : d.issue_date
+                          ? ` · emis ${new Date(d.issue_date).toLocaleDateString('ro-RO')}`
+                          : ''}
+                    </Text>
+                    <Ionicons name="chevron-forward" size={14} color="#8a6d2f" />
+                  </Pressable>
+                ))}
+              </View>
+            )}
+          </View>
+        )}
+
         <View style={styles.meta}>
           <Text style={styles.label}>Tip</Text>
           <Text style={styles.value}>{getDocumentLabel(doc, customTypes)}</Text>
@@ -1058,7 +1107,9 @@ export default function DocumentDetailScreen() {
           )}
           {doc.expiry_date && (
             <>
-              <Text style={styles.label}>Data expirare</Text>
+              <Text style={styles.label}>
+                {doc.type === 'factura' ? 'Scadență' : 'Data expirare'}
+              </Text>
               <Text style={styles.value}>{doc.expiry_date}</Text>
               <Pressable
                 style={[
@@ -1080,6 +1131,28 @@ export default function DocumentDetailScreen() {
               <Text style={styles.value}>{doc.note}</Text>
             </>
           )}
+          {doc.private_notes && (
+            <View style={styles.privateBox}>
+              <View style={styles.privateHeader}>
+                <Ionicons name="lock-closed" size={13} color={sensitive} />
+                <Text style={styles.privateLabel}>Notă privată · nu se trimite la AI</Text>
+                <Pressable
+                  onPress={() => setPrivateVisible(v => !v)}
+                  hitSlop={8}
+                  style={styles.privateToggle}
+                >
+                  <Text style={styles.privateToggleText}>
+                    {privateVisible ? 'Ascunde' : 'Arată'}
+                  </Text>
+                </Pressable>
+              </View>
+              <Text style={styles.privateValue}>
+                {privateVisible
+                  ? doc.private_notes
+                  : '•'.repeat(Math.min(doc.private_notes.length, 16))}
+              </Text>
+            </View>
+          )}
           {doc.auto_delete && (
             <>
               <Text style={styles.label}>Auto-ștergere</Text>
@@ -1095,21 +1168,6 @@ export default function DocumentDetailScreen() {
               </View>
             );
           })}
-          {doc.ocr_text && (
-            <View style={{ marginTop: 12 }}>
-              <Pressable onPress={() => setOcrExpanded(v => !v)} style={styles.ocrToggleRow}>
-                <Text style={styles.label}>Text complet extras (OCR)</Text>
-                <Text style={[styles.label, { color: primary }]}>
-                  {ocrExpanded ? '▲ Ascunde' : '▼ Arată'}
-                </Text>
-              </Pressable>
-              {ocrExpanded && (
-                <Text style={styles.ocrText} selectable>
-                  {doc.ocr_text}
-                </Text>
-              )}
-            </View>
-          )}
           {doc.type === 'bilet' && doc.metadata?.event_date && (
             <Pressable
               style={[
@@ -1176,6 +1234,7 @@ export default function DocumentDetailScreen() {
               allowFileAccess
               allowFileAccessFromFileURLs
               allowUniversalAccessFromFileURLs
+              allowingReadAccessToURL={FileSystem.documentDirectory ?? undefined}
               scrollEnabled
             />
           )}
@@ -1188,26 +1247,26 @@ export default function DocumentDetailScreen() {
       <Modal visible={!!fullscreenUri} transparent animationType="fade" statusBarTranslucent>
         <View style={styles.fsOverlay}>
           <StatusBar hidden />
-          <View key={fsKey} style={{ flex: 1 }}>
-            <ScrollView
-              style={{ flex: 1 }}
-              contentContainerStyle={styles.fsScrollContent}
-              maximumZoomScale={6}
-              minimumZoomScale={1}
-              showsHorizontalScrollIndicator={false}
-              showsVerticalScrollIndicator={false}
-              centerContent
-              bouncesZoom
-            >
-              {fullscreenUri && (
-                <Image
-                  source={{ uri: fullscreenUri }}
-                  style={{ width: screenWidth, height: screenHeight }}
-                  resizeMode="contain"
-                />
-              )}
-            </ScrollView>
-          </View>
+          <ScrollView
+            key={fullscreenUri}
+            style={{ flex: 1 }}
+            contentContainerStyle={styles.fsScrollContent}
+            maximumZoomScale={6}
+            minimumZoomScale={1}
+            showsHorizontalScrollIndicator={false}
+            showsVerticalScrollIndicator={false}
+            centerContent
+            bouncesZoom
+          >
+            {fullscreenUri && (
+              <Image
+                key={fullscreenUri}
+                source={{ uri: fullscreenUri }}
+                style={{ width: screenWidth, height: screenHeight }}
+                resizeMode="contain"
+              />
+            )}
+          </ScrollView>
           <Pressable style={styles.fsCloseBtn} onPress={() => setFullscreenUri(null)}>
             <Text style={styles.fsCloseBtnText}>✕</Text>
           </Pressable>
@@ -1273,6 +1332,40 @@ const styles = StyleSheet.create({
   meta: { marginBottom: 24 },
   label: { fontSize: 12, opacity: 0.7, marginTop: 12, marginBottom: 2 },
   value: { fontSize: 16 },
+  privateBox: {
+    marginTop: 16,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: sensitiveBorder,
+    borderRadius: 12,
+    backgroundColor: sensitiveBg,
+  },
+  dupBox: {
+    marginBottom: 16,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: sensitiveBorder,
+    borderRadius: 12,
+    backgroundColor: sensitiveBg,
+  },
+  dupHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
+  dupHeaderText: { fontSize: 12, color: sensitive, fontWeight: '700', letterSpacing: 0.3 },
+  dupSection: { marginTop: 4 },
+  dupSectionLabel: { fontSize: 11, color: sensitive, fontWeight: '600', marginBottom: 4 },
+  dupRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 6,
+    gap: 8,
+  },
+  dupRowText: { fontSize: 14, flex: 1 },
+  privateHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
+  privateLabel: { fontSize: 11, color: sensitive, flex: 1, fontWeight: '600' },
+  privateToggle: { paddingHorizontal: 8, paddingVertical: 2 },
+  privateToggleText: { fontSize: 12, color: sensitive, fontWeight: '600' },
+  privateValue: { fontSize: 16, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
+  entityRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   entityPlaceholder: { opacity: 0.4 },
   entityLinksRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4, marginBottom: 4 },
   entityChip: {
@@ -1287,7 +1380,6 @@ const styles = StyleSheet.create({
   },
   entityChipText: { fontSize: 13, fontWeight: '500' },
   emptyValue: { opacity: 0.3 },
-  ocrToggleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   ocrText: { fontSize: 13, opacity: 0.7, lineHeight: 20, marginTop: 6 },
   calendarBtn: {
     marginTop: 10,

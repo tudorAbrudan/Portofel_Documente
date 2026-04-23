@@ -248,7 +248,7 @@ try {
   // Migrare deja aplicată sau eroare neesențială
 }
 
-// Migrare: adaugă phone, email, iban la persons dacă nu există
+// Migrare: adaugă phone, email la persons dacă nu există
 try {
   db.execSync('ALTER TABLE persons ADD COLUMN phone TEXT');
 } catch {
@@ -259,8 +259,22 @@ try {
 } catch {
   // coloana există deja
 }
+
+// Migrare: adaugă file_hash la documents pentru detecție duplicate
 try {
-  db.execSync('ALTER TABLE persons ADD COLUMN iban TEXT');
+  db.execSync('ALTER TABLE documents ADD COLUMN file_hash TEXT');
+} catch {
+  // coloana există deja
+}
+try {
+  db.execSync('CREATE INDEX IF NOT EXISTS idx_docs_file_hash ON documents(file_hash)');
+} catch {
+  // indexul există deja
+}
+
+// Notă privată — NU se trimite niciodată la AI. Vezi .claude/rules/ai-privacy.md
+try {
+  db.execSync('ALTER TABLE documents ADD COLUMN private_notes TEXT');
 } catch {
   // coloana există deja
 }

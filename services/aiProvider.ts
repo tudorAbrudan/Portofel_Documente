@@ -153,6 +153,97 @@ interface OpenAiResponse {
   choices: Array<{ message: { content: string } }>;
 }
 
+// ─── Trimitere cerere AI cu imagine (vision) ──────────────────────────────────
+
+/**
+ * Trimite o cerere AI cu imagine (Mistral vision / OpenAI-compatible).
+ * Fallback automat la text-only pentru modele locale care nu suportă vision.
+ */
+export async function sendAiRequestWithImage(
+  systemPrompt: string,
+  userText: string,
+  imageBase64: string,
+  imageMimeType: 'image/jpeg' | 'image/png' = 'image/jpeg',
+  maxTokens = 600
+): Promise<string> {
+  const config = await getAiConfig();
+
+  if (config.type === 'none') {
+    throw new Error('Asistentul AI este dezactivat. Activează-l din Setări → Asistent AI.');
+  }
+
+  // Modele locale nu suportă vision — fallback la text-only
+  if (config.type === 'local') {
+    const { runLocalInference } = await import('./localModel');
+    return runLocalInference(
+      [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userText },
+      ],
+      maxTokens
+    );
+  }
+
+  const apiKey = config.type === 'builtin' ? BUILTIN_API_KEY : config.apiKey;
+  if (!apiKey) {
+    throw new Error(
+      'Nu este configurată nicio cheie API. Mergi la Setări → Asistent AI pentru a adăuga cheia.'
+    );
+  }
+
+  if (config.type === 'builtin') {
+    const used = await getAiUsageToday();
+    if (used >= DAILY_AI_LIMIT) {
+      throw new Error(
+        `Ai atins limita de ${DAILY_AI_LIMIT} interogări AI/zi cu cheia Dosar AI.\n\nPoți folosi nelimitat configurând propria cheie API din Setări → Asistent AI.`
+      );
+    }
+  }
+
+  const baseUrl = (config.type === 'builtin' ? BUILTIN_URL : config.url).replace(/\/$/, '');
+  const model = config.type === 'builtin' ? BUILTIN_MODEL : config.model;
+  const endpoint = `${baseUrl}/chat/completions`;
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'image_url',
+              image_url: { url: `data:${imageMimeType};base64,${imageBase64}` },
+            },
+            { type: 'text', text: userText },
+          ],
+        },
+      ],
+      max_tokens: maxTokens,
+      temperature: 0.2,
+    }),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text().catch(() => '');
+    throw new Error(`Eroare AI (${response.status}): ${errText || 'Răspuns invalid de la server'}`);
+  }
+
+  const data = (await response.json()) as OpenAiResponse;
+  const content = data.choices?.[0]?.message?.content;
+  if (!content) throw new Error('Răspuns gol de la asistentul AI.');
+
+  if (config.type === 'builtin') await incrementAiUsage();
+
+  return content;
+}
+
 // ─── Trimitere cerere AI (OpenAI-compatible) ──────────────────────────────────
 
 export async function sendAiRequest(messages: AiMessage[], maxTokens = 500): Promise<string> {

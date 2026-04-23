@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   StyleSheet,
   ScrollView,
@@ -14,13 +15,15 @@ import {
 } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@react-navigation/native';
+import { useHeaderHeight } from '@react-navigation/elements';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
+import { Ionicons } from '@expo/vector-icons';
 import { Text, View, ThemedTextInput } from '@/components/Themed';
 import { BottomActionBar } from '@/components/ui/BottomActionBar';
-import { primary, statusColors } from '@/theme/colors';
+import { primary, statusColors, sensitive, sensitiveBorder, sensitiveBg } from '@/theme/colors';
 import { DatePickerField } from '@/components/DatePickerField';
 import { DocumentPhotoSection } from '@/components/DocumentPhotoSection';
 import type { PhotoPage } from '@/components/DocumentPhotoSection';
@@ -47,6 +50,10 @@ import {
 import { extractFieldsForType } from '@/services/ocrExtractors';
 import { toFileUri } from '@/services/fileUtils';
 import { isPdfFile, extractTextFromPdf } from '@/services/pdfExtractor';
+import { renderPdfFirstPageForVision } from '@/services/pdfOcr';
+import { extractFieldsWithLlm } from '@/services/ocrLlmExtractor';
+import { AI_CONSENT_KEY } from '@/services/aiProvider';
+import * as ocrConsent from '@/services/ocrConsent';
 import { DOCUMENT_TYPE_LABELS, getDocumentLabel } from '@/types';
 import type { Document as DocType, DocumentType, DocumentEntityLink, EntityType } from '@/types';
 import { useCustomTypes } from '@/hooks/useCustomTypes';
@@ -55,9 +62,26 @@ import { useEntities } from '@/hooks/useEntities';
 import { DOCUMENT_FIELDS } from '@/types/documentFields';
 import type { FieldDef } from '@/types/documentFields';
 
+const DELETE_OPTIONS: { label: string; value: string | null }[] = [
+  { label: 'Niciodată', value: null },
+  { label: '30 zile', value: '30d' },
+  { label: '90 zile', value: '90d' },
+  { label: '180 zile', value: '180d' },
+  { label: '1 an', value: '365d' },
+  { label: '2 ani', value: '730d' },
+  { label: '3 ani', value: '1095d' },
+  { label: '4 ani', value: '1460d' },
+  { label: '5 ani', value: '1825d' },
+];
+
+function autoDeleteLabel(val: string | null): string {
+  return DELETE_OPTIONS.find(o => o.value === val)?.label ?? 'Niciodată';
+}
+
 export default function EditDocumentScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { colors } = useTheme();
+  const headerHeight = useHeaderHeight();
   const { customTypes } = useCustomTypes();
   const { docTypeOptions: standardTypes } = useFilteredDocTypes();
   const { companies, persons, properties, vehicles, cards, animals } = useEntities();
@@ -67,11 +91,13 @@ export default function EditDocumentScreen() {
   const [loadingDoc, setLoadingDoc] = useState(true);
   const [saving, setSaving] = useState(false);
   const [ocrLoading, setOcrLoading] = useState(false);
+  const [aiOcrLoading] = useState(false);
+  const [aiOcrApplied, setAiOcrApplied] = useState(false);
+  const [llmFieldLoading, setLlmFieldLoading] = useState(false);
+  const [textAiConsentAvailable, setTextAiConsentAvailable] = useState(false);
   const [fullscreenUri, setFullscreenUri] = useState<string | null>(null);
-  const [fsKey, setFsKey] = useState(0);
 
   function handleFullscreen(uri: string) {
-    setFsKey(k => k + 1);
     setFullscreenUri(uri);
   }
   const [linkEntityVisible, setLinkEntityVisible] = useState(false);
@@ -86,6 +112,7 @@ export default function EditDocumentScreen() {
   const [expiryDate, setExpiryDate] = useState('');
   const expiryDateRef = useRef('');
   const [note, setNote] = useState('');
+  const [privateNotes, setPrivateNotes] = useState('');
   const [metadata, setMetadata] = useState<Record<string, string>>({});
   const [autoDelete, setAutoDelete] = useState<string | null>(null);
 
@@ -116,6 +143,7 @@ export default function EditDocumentScreen() {
         setExpiryDate(d.expiry_date ?? '');
         expiryDateRef.current = d.expiry_date ?? '';
         setNote(d.note ?? '');
+        setPrivateNotes(d.private_notes ?? '');
         setMetadata(d.metadata ?? {});
         setAutoDelete(d.auto_delete ?? null);
       })
@@ -125,6 +153,10 @@ export default function EditDocumentScreen() {
       .then(links => setEntityLinks(links))
       .catch(() => {});
   }, [id]);
+
+  useEffect(() => {
+    AsyncStorage.getItem(AI_CONSENT_KEY).then(v => setTextAiConsentAvailable(v === 'true'));
+  }, []);
 
   const allPages = useMemo(() => {
     if (!doc) return [];
@@ -220,6 +252,52 @@ export default function EditDocumentScreen() {
     await setDocumentOcrText(doc.id, text);
     const updated = await getDocumentById(doc.id);
     setDoc(updated);
+  }
+
+  async function runAiImageAnalysis() {
+    if (allPages.length === 0) {
+      Alert.alert('Fără imagini', 'Nu există imagini atașate documentului.');
+      return;
+    }
+    if (ocrConsent.getDocTypeSensitivity(type) === 'medical') {
+      const confirmed = await new Promise<boolean>(resolve => {
+        Alert.alert(
+          'Date medicale (GDPR Art. 9)',
+          `Imaginea documentului „${DOCUMENT_TYPE_LABELS[type]}" va fi trimisă la AI.\n\nPreferința nu se salvează.\n\nEști de acord?`,
+          [
+            { text: 'Anulează', style: 'cancel', onPress: () => resolve(false) },
+            { text: 'De acord', onPress: () => resolve(true) },
+          ]
+        );
+      });
+      if (!confirmed) return;
+    }
+    setLlmFieldLoading(true);
+    try {
+      const firstPage = allPages[0];
+      const pageUri = rotatedUris[firstPage.file_path] ?? toFileUri(firstPage.file_path);
+      let imageBase64: string | undefined;
+      if (isPdfFile(firstPage.file_path)) {
+        imageBase64 = (await renderPdfFirstPageForVision(pageUri)) ?? undefined;
+      } else {
+        imageBase64 = await FileSystem.readAsStringAsync(pageUri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+      }
+      const ocrText = doc?.ocr_text ?? '';
+      const extracted = await extractFieldsWithLlm(type, ocrText, imageBase64);
+      if (Object.keys(extracted.metadata).length > 0) setMetadata(prev => ({ ...extracted.metadata, ...prev }));
+      if (extracted.expiry_date) { setExpiryDate(extracted.expiry_date); expiryDateRef.current = extracted.expiry_date; }
+      if (extracted.issue_date) setIssueDate(extracted.issue_date);
+      if (extracted.note) setNote(extracted.note);
+      setAiOcrApplied(true);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : '';
+      if (msg.includes('limita')) Alert.alert('Limită AI atinsă', msg);
+      // alte erori (JSON parse, rețea temporară) sunt silențioase
+    } finally {
+      setLlmFieldLoading(false);
+    }
   }
 
   async function saveAndAddPage(uri: string) {
@@ -541,6 +619,7 @@ export default function EditDocumentScreen() {
         file_path: doc.file_path,
         metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
         auto_delete: autoDelete ?? undefined,
+        private_notes: privateNotes.trim() || undefined,
       });
       scheduleExpirationReminders().catch(() => {});
 
@@ -619,6 +698,7 @@ export default function EditDocumentScreen() {
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? headerHeight : 0}
       >
         <ScrollView
           style={styles.flex}
@@ -631,7 +711,7 @@ export default function EditDocumentScreen() {
           <Text style={styles.sectionLabel}>Poze / scan</Text>
           <DocumentPhotoSection
             pages={photoPages}
-            ocrLoading={ocrLoading}
+            ocrLoading={ocrLoading || aiOcrLoading}
             ocrText={doc.ocr_text ?? undefined}
             onAddPage={handleAddPage}
             onRotate={handleRotate}
@@ -641,6 +721,38 @@ export default function EditDocumentScreen() {
             onReorderPage={handleReorderPage}
             onOcrTextSave={handleOcrSave}
           />
+          {aiOcrApplied && (
+            <View style={[styles.aiBadge, { backgroundColor: '#f0f5e8' }]}>
+              <Text style={[styles.aiBadgeText, { color: primary }]}>
+                ✦ Câmpuri completate cu AI · Verifică înainte de salvare
+              </Text>
+            </View>
+          )}
+          {(aiOcrLoading || llmFieldLoading) && (
+            <View style={styles.aiLoadingRow}>
+              <ActivityIndicator size="small" color={primary} style={{ marginRight: 6 }} />
+              <Text style={styles.aiLoadingText}>
+                {llmFieldLoading ? 'Analizez documentul cu AI...' : 'Analizez cu AI...'}
+              </Text>
+            </View>
+          )}
+          {textAiConsentAvailable && allPages.length > 0 && !llmFieldLoading && (
+            <View>
+              <View style={styles.aiActionsRow}>
+                <Pressable
+                  style={({ pressed }) => [styles.aiActionBtn, { borderColor: '#F57F17', opacity: pressed ? 0.75 : 1 }]}
+                  onPress={runAiImageAnalysis}
+                >
+                  <Text style={[styles.aiActionBtnText, { color: '#F57F17' }]}>
+                    Trimite documentul la AI
+                  </Text>
+                </Pressable>
+              </View>
+              <Text style={styles.aiActionInfo}>
+                Se trimite imaginea/PDF-ul documentului la AI pentru extragerea datelor. Acțiune manuală explicită.
+              </Text>
+            </View>
+          )}
 
           {/* 2. TIP DOCUMENT */}
           <Text style={styles.label}>Tip document</Text>
@@ -803,7 +915,10 @@ export default function EditDocumentScreen() {
           />
 
           {/* 6. AUTO-ȘTERGERE */}
-          <Text style={styles.label}>Auto-ștergere (opțional)</Text>
+          <Text style={styles.label}>
+            {'Auto-ștergere (opțional)'}
+            {autoDelete !== null ? `: ${autoDeleteLabel(autoDelete)}` : ''}
+          </Text>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -813,11 +928,7 @@ export default function EditDocumentScreen() {
             {(
               [
                 ...(expiryDate ? [{ label: 'La expirare', value: 'expiry' }] : []),
-                { label: 'Niciodată', value: null },
-                { label: '30 zile', value: '30d' },
-                { label: '90 zile', value: '90d' },
-                { label: '180 zile', value: '180d' },
-                { label: '1 an', value: '365d' },
+                ...DELETE_OPTIONS,
               ] as { label: string; value: string | null }[]
             ).map(opt => {
               const active = autoDelete === opt.value;
@@ -849,6 +960,28 @@ export default function EditDocumentScreen() {
             multiline
             editable={!saving}
           />
+
+          {/* 7b. NOTĂ PRIVATĂ — nu se trimite la AI */}
+          <View style={styles.privateLabelRow}>
+            <Ionicons name="lock-closed" size={14} color={sensitive} />
+            <Text style={[styles.label, { color: sensitive, opacity: 1 }]}>
+              Notă privată (opțional)
+            </Text>
+          </View>
+          <Text style={[styles.privateHint, { color: colors.text }]}>
+            Rămâne pe acest telefon. Nu se trimite niciodată la asistentul AI. Potrivită pentru CVV, PIN, parole, coduri de acces.
+          </Text>
+          <ThemedTextInput
+            style={[styles.input, styles.inputMultiline, styles.privateInput]}
+            placeholder="Ex. CVV 123 · PIN 4821"
+            placeholderTextColor="#999"
+            value={privateNotes}
+            onChangeText={setPrivateNotes}
+            multiline
+            editable={!saving}
+            autoCorrect={false}
+            autoCapitalize="none"
+          />
         </ScrollView>
         <BottomActionBar label="Salvează" onPress={handleSave} loading={saving} safeArea />
       </KeyboardAvoidingView>
@@ -857,26 +990,26 @@ export default function EditDocumentScreen() {
       <Modal visible={!!fullscreenUri} transparent animationType="fade" statusBarTranslucent>
         <View style={styles.fsOverlay}>
           <StatusBar hidden />
-          <View key={fsKey} style={{ flex: 1 }}>
-            <ScrollView
-              style={{ flex: 1 }}
-              contentContainerStyle={styles.fsScrollContent}
-              maximumZoomScale={6}
-              minimumZoomScale={1}
-              showsHorizontalScrollIndicator={false}
-              showsVerticalScrollIndicator={false}
-              centerContent
-              bouncesZoom
-            >
-              {fullscreenUri && (
-                <Image
-                  source={{ uri: fullscreenUri }}
-                  style={{ width: screenWidth, height: screenHeight }}
-                  resizeMode="contain"
-                />
-              )}
-            </ScrollView>
-          </View>
+          <ScrollView
+            key={fullscreenUri}
+            style={{ flex: 1 }}
+            contentContainerStyle={styles.fsScrollContent}
+            maximumZoomScale={6}
+            minimumZoomScale={1}
+            showsHorizontalScrollIndicator={false}
+            showsVerticalScrollIndicator={false}
+            centerContent
+            bouncesZoom
+          >
+            {fullscreenUri && (
+              <Image
+                key={fullscreenUri}
+                source={{ uri: fullscreenUri }}
+                style={{ width: screenWidth, height: screenHeight }}
+                resizeMode="contain"
+              />
+            )}
+          </ScrollView>
           <Pressable style={styles.fsCloseBtn} onPress={() => setFullscreenUri(null)}>
             <Text style={styles.fsCloseBtnText}>✕</Text>
           </Pressable>
@@ -1050,6 +1183,9 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   inputMultiline: { minHeight: 80 },
+  privateLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 },
+  privateHint: { fontSize: 12, marginBottom: 8, lineHeight: 16, opacity: 0.6 },
+  privateInput: { borderColor: sensitiveBorder, backgroundColor: sensitiveBg },
   typeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 },
   typeChip: {
     paddingVertical: 8,
@@ -1099,6 +1235,14 @@ const styles = StyleSheet.create({
   entityValue: { fontSize: 15, flex: 1 },
   entityPlaceholder: { opacity: 0.4 },
   actionRow: { flexDirection: 'row', gap: 12, marginTop: 8 },
+  aiBadge: { borderRadius: 8, paddingVertical: 8, paddingHorizontal: 12, marginTop: 8 },
+  aiBadgeText: { fontSize: 13, fontWeight: '600' },
+  aiLoadingRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
+  aiLoadingText: { fontSize: 12, fontStyle: 'italic', color: '#666' },
+  aiActionsRow: { flexDirection: 'row', gap: 8, marginTop: 8, flexWrap: 'wrap' },
+  aiActionBtn: { paddingVertical: 7, paddingHorizontal: 14, borderRadius: 8, borderWidth: 1 },
+  aiActionBtnText: { fontSize: 13, fontWeight: '600' },
+  aiActionInfo: { fontSize: 11, marginTop: 4, lineHeight: 15, color: '#888' },
   btnOutline: {
     flex: 1,
     paddingVertical: 15,

@@ -1,5 +1,6 @@
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Alert,
   StyleSheet,
   ScrollView,
   Pressable,
@@ -23,6 +24,8 @@ import { useCustomTypes } from '@/hooks/useCustomTypes';
 import { DOCUMENT_TYPE_LABELS, getDocumentLabel, DOC_PRIMARY_ENTITY } from '@/types';
 import type { Document, DocumentType, EntityType } from '@/types';
 import { useVisibilitySettings } from '@/hooks/useVisibilitySettings';
+import { findFileDuplicates, backfillFileHashes, deleteDocument } from '@/services/documents';
+import { isStaleExpired } from '@/services/expiry';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -276,16 +279,27 @@ export default function HomeScreen() {
   } = useEntities();
   const { customTypes } = useCustomTypes();
   const { visibleDocTypes } = useVisibilitySettings();
+  const [duplicateGroups, setDuplicateGroups] = useState<Document[][]>([]);
+  const backfillDoneRef = useRef(false);
+
+  useEffect(() => {
+    if (backfillDoneRef.current) return;
+    backfillDoneRef.current = true;
+    backfillFileHashes().catch(() => {});
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
       scrollRef.current?.scrollTo({ y: 0, animated: false });
       refresh();
       refreshEntities();
+      findFileDuplicates().then(setDuplicateGroups).catch(() => {});
     }, [])
   );
 
   // ── Stats ────────────────────────────────────────────────────────────────────
+  // Expirate vechi (>30 zile) sunt excluse — rămân pe pagina entității și în RAG,
+  // dar nu mai apar pe Home ca atenționare.
   const stats = useMemo(() => {
     const now = Date.now();
     const limit30 = now + EXPIRING_DAYS * 24 * 60 * 60 * 1000;
@@ -293,6 +307,7 @@ export default function HomeScreen() {
       expiringSoon = 0;
     for (const d of documents) {
       if (!d.expiry_date) continue;
+      if (isStaleExpired(d.expiry_date)) continue;
       const t = new Date(d.expiry_date).getTime();
       if (t < now) expired++;
       else if (t <= limit30) expiringSoon++;
@@ -307,6 +322,7 @@ export default function HomeScreen() {
     return documents
       .filter(d => {
         if (!d.expiry_date) return false;
+        if (isStaleExpired(d.expiry_date)) return false;
         const t = new Date(d.expiry_date).getTime();
         return t <= limit;
       })
@@ -384,6 +400,19 @@ export default function HomeScreen() {
     cards.length +
     animals.length +
     companies.length;
+
+  async function handleDeleteDuplicate(docId: string) {
+    // Elimină imediat din UI (optimistic), apoi confirmă cu DB
+    setDuplicateGroups(prev =>
+      prev
+        .map(g => g.filter(d => d.id !== docId))
+        .filter(g => g.length >= 2)
+    );
+    await deleteDocument(docId);
+    const updated = await findFileDuplicates();
+    setDuplicateGroups(updated);
+    void refresh();
+  }
 
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
@@ -603,6 +632,81 @@ export default function HomeScreen() {
           </RNView>
         )}
 
+        {/* ── Fișiere duplicate ── */}
+        {duplicateGroups.length > 0 && (
+          <RNView style={styles.section}>
+            <RNView style={styles.sectionHeader}>
+              <RNText style={[styles.sectionLabel, { color: C.textSecondary }]}>
+                FIȘIERE DUPLICATE
+              </RNText>
+              <RNView style={[styles.dupBadge, { backgroundColor: '#FFF3E0' }]}>
+                <RNText style={[styles.dupBadgeText, { color: '#E65100' }]}>
+                  {duplicateGroups.length}
+                </RNText>
+              </RNView>
+            </RNView>
+            {duplicateGroups.map((group, gi) => (
+              <RNView
+                key={gi}
+                style={[styles.dupCard, { backgroundColor: C.card, shadowColor: C.cardShadow }]}
+              >
+                {group.map((doc, di) => (
+                  <RNView
+                    key={doc.id}
+                    style={[
+                      styles.dupRow,
+                      di < group.length - 1 && { borderBottomWidth: 1, borderBottomColor: C.border },
+                    ]}
+                  >
+                    <Pressable
+                      style={styles.dupDocInfo}
+                      onPress={() => router.push(`/(tabs)/documente/${doc.id}?from=home`)}
+                    >
+                      <RNView
+                        style={[styles.docIcon, { backgroundColor: DOC_ICON_BG[doc.type] ?? '#F5F5F5' }]}
+                      >
+                        <Ionicons
+                          name={DOC_ICON[doc.type] ?? 'document-outline'}
+                          size={18}
+                          color={DOC_ICON_COLOR[doc.type] ?? '#757575'}
+                        />
+                      </RNView>
+                      <RNView style={styles.docContent}>
+                        <RNText style={[styles.docTitle, { color: C.text }]} numberOfLines={1}>
+                          {getDocumentLabel(doc, customTypes)}
+                        </RNText>
+                        <RNText style={[styles.docSub, { color: C.textSecondary }]} numberOfLines={1}>
+                          {doc.created_at.slice(0, 10)}
+                          {(() => { const en = resolveEntityName(doc); return en ? ` · ${en}` : ''; })()}
+                        </RNText>
+                      </RNView>
+                    </Pressable>
+                    <Pressable
+                      style={styles.dupDeleteBtn}
+                      onPress={() => {
+                        Alert.alert(
+                          'Șterge document',
+                          `Ștergi „${getDocumentLabel(doc, customTypes)}"?\nAcțiunea nu poate fi anulată.`,
+                          [
+                            { text: 'Anulează', style: 'cancel' },
+                            {
+                              text: 'Șterge',
+                              style: 'destructive',
+                              onPress: () => void handleDeleteDuplicate(doc.id),
+                            },
+                          ]
+                        );
+                      }}
+                    >
+                      <Ionicons name="trash-outline" size={16} color="#E53935" />
+                    </Pressable>
+                  </RNView>
+                ))}
+              </RNView>
+            ))}
+          </RNView>
+        )}
+
         {/* ── Empty state ── */}
         {documents.length === 0 && !loading && (
           <RNView style={styles.emptyWrap}>
@@ -760,4 +864,24 @@ const styles = StyleSheet.create({
   emptyBtn: { alignSelf: 'center', minWidth: 220, marginTop: 4 },
 
   bottomPad: { height: 20 },
+
+  dupBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
+  dupBadgeText: { fontSize: 12, fontWeight: '700' },
+  dupCard: {
+    borderRadius: 12,
+    marginBottom: 10,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
+    overflow: 'hidden',
+  },
+  dupRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  dupDocInfo: { flex: 1, flexDirection: 'row', alignItems: 'center' },
+  dupDeleteBtn: { padding: 8 },
 });

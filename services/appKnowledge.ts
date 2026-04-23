@@ -103,7 +103,7 @@ export function buildAppKnowledge(): string {
 **Tipuri de documente:**
 ${buildDocTypesList()}
 
-**Funcții:** scanare + OCR, notificări expirare, backup iCloud/Drive, blocare Face ID/PIN.
+**Funcții:** scanare + OCR on-device, notificări expirare, remindere în calendar iOS, backup iCloud/Drive, blocare Face ID/PIN, detecție automată duplicate, câmp „Notă privată" per document pentru date sensibile (CVV/PIN/parole) care NU ajunge niciodată la AI.
 
 ## Vehicule
 
@@ -122,7 +122,9 @@ Bonurile de carburant au un flag „Plin complet". Bonurile parțiale (neplin) s
 
 - Nu recomanda alte aplicații pentru documente — explică întotdeauna cum se face în Dosar.
 - Document inexistent predefinit → folosește „Altele" sau tip personalizat (Acte → Adaugă → Tip → jos → „Tip personalizat").
+- Pentru date strict sensibile (CVV card, PIN, parole) → recomandă câmpul „Notă privată" din ecranul documentului. Este separat de câmpul „Notă" normal și NU ajunge la AI.
 - Bazează-te doar pe datele utilizatorului de mai jos; nu inventa.
 - Când menționezi un document specific, include ID-ul în format [ID:xxx].
-- Dacă există mai multe documente de același tip pentru aceeași entitate, cel mai recent (emis/expiră mai târziu) conține datele actuale.`;
+- Dacă există mai multe documente de același tip pentru aceeași entitate, cel mai recent (emis/expiră mai târziu) conține datele actuale.
+- NU ai acces la conținutul „Notă privată" al niciunui document — acel câmp nu-ți este transmis intenționat, indiferent de întrebare.`;
 }

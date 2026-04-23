@@ -19,6 +19,15 @@ function valueToDisplay(value: string): string {
   return `${d}.${m}.${y}`;
 }
 
+/** Returnează data curentă locală în format YYYY-MM-DD */
+function todayIso(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 /** Auto-formatează input numeric → ZZ.LL.AAAA, returnează YYYY-MM-DD sau '' */
 function formatInput(raw: string): { display: string; value: string } {
   const digits = raw.replace(/\D/g, '').slice(0, 8);
@@ -75,7 +84,15 @@ export function DatePickerField({
     onChange('');
   }
 
+  function handleToday() {
+    const iso = todayIso();
+    latestValue.current = iso;
+    setDisplay(valueToDisplay(iso));
+    onChange(iso);
+  }
+
   const hasValue = display.length > 0;
+  const showToday = !disabled && (!hasValue || focused);
 
   return (
     <View style={styles.wrapper}>
@@ -104,6 +121,11 @@ export function DatePickerField({
           </Pressable>
         )}
       </View>
+      {showToday && (
+        <Pressable onPress={handleToday} style={styles.todayBtn} hitSlop={8}>
+          <Text style={[styles.todayText, { color: C.primary }]}>Azi</Text>
+        </Pressable>
+      )}
     </View>
   );
 }
@@ -135,5 +157,14 @@ const styles = StyleSheet.create({
   },
   clearText: {
     fontSize: 16,
+  },
+  todayBtn: {
+    alignSelf: 'flex-start',
+    paddingVertical: 4,
+    paddingTop: 6,
+  },
+  todayText: {
+    fontSize: 13,
+    fontWeight: '500',
   },
 });

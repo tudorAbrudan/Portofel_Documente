@@ -47,8 +47,8 @@ export const DOCUMENT_FIELDS: Partial<Record<DocumentType, FieldDef[]>> = {
   ],
 
   carte_auto: [
-    // CIV nu expiră niciodată. Marca/model/an sunt deja pe talon pentru același vehicul.
-    { key: 'plate', label: 'Nr. înmatriculare', placeholder: 'B 123 ABC' },
+    // CIV nu expiră niciodată. Placa nu apare pe CIV — e doar pe talon.
+    // Marca/model/an sunt deja pe talon pentru același vehicul.
     { key: 'vin', label: 'Serie șasiu (VIN)', placeholder: 'WVWZZZ1JZ3W386752' },
   ],
 
@@ -121,7 +121,6 @@ export const DOCUMENT_FIELDS: Partial<Record<DocumentType, FieldDef[]>> = {
     { key: 'invoice_number', label: 'Nr. factură', placeholder: 'FAC-2024-001234' },
     { key: 'supplier', label: 'Furnizor', placeholder: 'E.ON / Engie / Digi...' },
     { key: 'amount', label: 'Total (RON)', placeholder: '225.06', keyboardType: 'decimal-pad' },
-    { key: 'due_date', label: 'Scadență', placeholder: '15.04.2024' },
     { key: 'period', label: 'Perioadă facturare', placeholder: '01.03.2024 - 31.03.2024' },
   ],
 
@@ -179,7 +178,7 @@ export const DOCUMENT_FIELDS: Partial<Record<DocumentType, FieldDef[]>> = {
 
   analize_medicale: [
     { key: 'lab', label: 'Laborator', placeholder: 'Synevo / MedLife / Regina Maria' },
-    // report_number: omis — disponibil în OCR text
+    { key: 'doctor', label: 'Medic solicitant', placeholder: 'Dr. Ionescu Maria' },
   ],
 
   // ─── ANIMALE ─────────────────────────────────────────────────────────────

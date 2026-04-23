@@ -8,7 +8,7 @@
  * - Sugestii entitate asociată (persoană, vehicul, etc.)
  */
 
-import { sendAiRequest } from './aiProvider';
+import { sendAiRequest, sendAiRequestWithImage } from './aiProvider';
 import { extractPlateNumber } from './ocr';
 import type { DocumentType, EntityType } from '@/types';
 import { DOCUMENT_TYPE_LABELS } from '@/types';
@@ -35,7 +35,7 @@ export interface AiOcrResult {
 
 export interface AvailableEntities {
   persons: Array<{ id: string; name: string }>;
-  vehicles: Array<{ id: string; name: string; plate?: string }>;
+  vehicles: Array<{ id: string; name: string; plate?: string; vin?: string }>;
   properties: Array<{ id: string; name: string }>;
   cards: Array<{ id: string; nickname: string; last4: string }>;
   animals: Array<{ id: string; name: string; species: string }>;
@@ -70,7 +70,8 @@ function sanitizeOcrText(text: string): string {
 
 export async function mapOcrWithAi(
   ocrText: string,
-  entities: AvailableEntities
+  entities: AvailableEntities,
+  imageBase64?: string
 ): Promise<AiOcrResult> {
   // Folosim indecși numerici în loc de ID-uri reale — previne exfiltrarea ID-urilor
   const { entityContext, indexToId } = buildEntityContext(entities);
@@ -81,21 +82,30 @@ export async function mapOcrWithAi(
 
   const prompt = `Analizează textul OCR și returnează un JSON structurat.
 
-TEXT OCR (poate conține mai multe pagini separate prin "---"):
+TEXT OCR (poate conține mai multe fișiere separate prin "---"):
 """
 ${sanitizedOcr}
 """
 
-IMPORTANT: Dacă există mai multe pagini, analizează TOATE și identifică documentul principal (ex: polița RCA, nu scrisoarea de informare sau coperta). Ignoră paginile de tip "scrisoare de însoțire", "informații produs", "adresă de înaintare".
+IMPORTANT: Dacă există mai multe fișiere/pagini:
+- Pentru "documentType" și "fields": identifică documentul PRINCIPAL (ex: polița RCA, nu scrisoarea de informare). Ignoră paginile de tip "scrisoare de însoțire", "informații produs", "adresă de înaintare".
+- Pentru "structuredNote": include conținut din TOATE fișierele, nu doar cel principal.
 
 ENTITĂȚI EXISTENTE ÎN APLICAȚIE (folosește indexul e0, e1, ... în entityId):
 ${entityContext}
+
+━━━ REGULI MATCHING ENTITĂȚI ━━━
+
+Pentru a lega documentul de o entitate existentă, compară cu DATELE entității (nu doar cu numele):
+- Vehicule: caută în textul OCR orice placă ("B 123 ABC") sau VIN (17 caractere, fără I/O/Q) care apare în lista de mai sus la un vehicul. Dacă placa sau VIN-ul se potrivește → confidence="high" (chiar dacă numele vehiculului nu apare în text). CIV conține de obicei doar VIN; talonul conține placa și VIN; facturi service/amenzi conțin placa.
+- Persoane, Proprietăți, Animale, Firme: matching după nume (exact sau parțial semnificativ).
+- Nu inventa legături — dacă niciun identificator nu corespunde, nu returna entitySuggestions pentru acel tip.
 
 ━━━ REGULI IDENTIFICARE TIP DOCUMENT ━━━
 
 VEHICULE — distincție critică:
 - "talon" = Certificat de Înmatriculare (CR). Conține: "CERTIFICAT DE ÎNMATRICULARE", marcă/model/culoare/proprietar, ștampilă RAR cu data ITP. NU are "CARTE DE IDENTITATE". NU expiră ca document.
-- "carte_auto" = Carte de Identitate a Vehiculului (CIV). Conține: "CARTE DE IDENTITATE A VEHICULULUI" sau "CERTIFICATUL DE ÎNMATRICULARE AL VEHICULULUI" cu booklet mic. NU expiră.
+- "carte_auto" = Carte de Identitate a Vehiculului (CIV). Conține: "CARTE DE IDENTITATE A VEHICULULUI" sau "CERTIFICATUL DE ÎNMATRICULARE AL VEHICULULUI" cu booklet mic. NU expiră. NU conține placa (placa e doar pe talon). VIN-ul e etichetat "NUMĂRUL DE IDENTIFICARE AL VEHICULULUI" sau "NIV" sau ca punct "E." (câmpul E din formatul EU) — NU ca "VIN". Caută după aceste etichete. VIN-ul poate apărea fragmentat în OCR (ex: "WVW ZZZ1JZ3W 386752") — concatenează-l la 17 caractere fără spații.
 - "itp" = Inspecție Tehnică Periodică. Conține: "INSPECȚIE TEHNICĂ PERIODICĂ", nr. stație ITP, rezultat ADMIS/RESPINS.
 - "rca" = Poliță RCA (Răspundere Civilă Auto). Conține: "ASIGURARE OBLIGATORIE" sau "RCA", nr. poliță (format RO/XX/... sau ROXXV...), asigurator, interval de valabilitate, primă de asigurare.
   - Asiguratori români: Allianz, Groupama (prefix RO32V), Generali, Omniasig, Uniqa, Asirom, Grawe, Signal Iduna, Euroins, Axeria, Certasig, Metropolitan.
@@ -110,7 +120,10 @@ IDENTITATE:
 - "permis_auto" = permis de conducere, conține categorii (A, B, C...), nr. permis.
 
 MEDICAL:
-- "analize_medicale" = buletin analize laborator: hemogramă, biochimie etc. NU are dată de expirare.
+- "analize_medicale" = buletin analize laborator: hemogramă, biochimie, urină etc. NU are dată de expirare.
+  - lab: numele laboratorului (Synevo, MedLife, Regina Maria, Medicover, Bioclinica etc.)
+  - doctor: medicul solicitant/prescriptor (poate apărea ca "Medic prescriptor", "Dr.", "Solicitat de")
+  - pacient: numele pacientului (poate apărea ca "Pacient", "Numele pacientului", "Nume:")
 - "reteta_medicala" = rețetă medicală cu medicamente prescrise. Are dată expirare (valabilitate rețetă).
 
 FACTURI (utilități și servicii):
@@ -124,15 +137,15 @@ FACTURI (utilități și servicii):
 ━━━ CÂMPURI EXACTE PER TIP (folosește EXACT aceste chei în "fields") ━━━
 
 talon: plate="B 123 ABC", marca="VW", model="Golf", vin="VIN17CARACTERE", itp_expiry_date="ZZ.LL.AAAA" (data din ștampila ITP/RAR sau din "Data urmatoarei inspectii tehnice")
-carte_auto: plate="B 123 ABC", vin="VIN17CARACTERE"
+carte_auto: vin="VIN17CARACTERE" (CIV NU conține nr. de înmatriculare — nu-l include chiar dacă apare)
 itp: plate="B 123 ABC"
 rca: policy_number="RO32V32LM1100745021", insurer="Groupama", plate="B 123 ABC", prima="850.00", valid_from="01.04.2024", marca_model="Dacia Logan"
 casco: policy_number="...", insurer="...", plate="B 123 ABC"
 vigneta: plate="B 123 ABC"
-buletin: series="RX 123456", cnp="1234567890123"
+buletin: series="RX 123456", cnp="1234567890123", birth_date="28.09.1985" (derivă din CNP: cifra 1=sex/secol, pozițiile 2-3=an, 4-5=lună, 6-7=zi; S∈{1,2}→1900+AA, S∈{5,6}→2000+AA), address="Str. Exemplu nr. 1, Cluj-Napoca" (doar dacă apare în text)
 pasaport: series="05123456"
 permis_auto: series="12345678", categories="B"
-analize_medicale: lab="Synevo"
+analize_medicale: lab="Synevo", doctor="Dr. Ionescu Maria", pacient="Popescu Ion"
 reteta_medicala: doctor="Dr. Ionescu", medication_1="Amoxicilina 500mg"
 factura: invoice_number="FAC-001", supplier="E.ON Energie România", amount="225.06", due_date="15.04.2024", period="01.03.2024 - 31.03.2024"
 garantie: product_name="iPhone 15", serie_produs="SN123"
@@ -148,7 +161,7 @@ bilet: categorie="Avion", venue="OTP→LHR", eveniment_artist="RO123"
 
 ━━━ REGULI DATE ━━━
 
-- issueDate: data emiterii/eliberării documentului (YYYY-MM-DD). null dacă nu există.
+- issueDate: data emiterii/eliberării documentului (YYYY-MM-DD). null dacă nu există. NU folosi date de încetare contract, date de valabilitate perpetuă (ex: 31.12.2999) sau alte date administrative — doar data efectivă a documentului.
 - expiryDate: data expirării documentului (YYYY-MM-DD). EXCEPȚII — pune null pentru: carte_auto, analize_medicale, buletin (expiryDate e separat), cadastru, act_proprietate.
 - Pentru "talon": expiryDate = data ITP din ștampila RAR sau din "Data urmatoarei inspectii tehnice" (YYYY-MM-DD). Pune și în fields.itp_expiry_date (ZZ.LL.AAAA). NU pune data emiterii talonului în expiryDate.
 - Pentru "factura": expiryDate = data scadenței/limita de plată (YYYY-MM-DD). Pune și în fields.due_date (ZZ.LL.AAAA). NU pune data emiterii facturii în expiryDate.
@@ -168,16 +181,23 @@ Returnează EXCLUSIV JSON valid:
   "entitySuggestions": [
     { "entityType": "person|vehicle|property|card|animal|company", "entityId": "<id exact>", "entityName": "<nume>", "confidence": "high|medium|low" }
   ],
-  "structuredNote": "<listă completă cu toate informațiile cheie extrase din document, inclusiv cele mapate în alte câmpuri. Datele vor fi citite de un chatbot, nu de utilizator direct — prioritizează date brute utile: numere, date, sume, coduri. Format:\nCâmp: Valoare\nCâmp: Valoare\n...\nMaxim 15 rânduri, concis. null dacă OCR-ul nu conține nimic util.>"
+  "structuredNote": "<rezumat structurat al TUTUROR fișierelor din textul OCR (separate prin '---'):\n- Dacă există mai multe fișiere diferite: secțiune separată pentru FIECARE cu header clar (ex: 'RCA:', 'Factură:')\n- analize_medicale: toate analizele format 'Nume: Valoare Unitate (ref: Min-Max)'; Pacient, Laborator, Medic, Data recoltare\n- reteta_medicala: medicamente cu doze și durată; Medic, Data, Diagnostic, Unitate medicală\n- factura: Furnizor, Nr. factură, Sumă totală, Scadență, Perioadă facturare, Adresă livrare/consum, Nr. client/contract, detalii consum (kWh, m³, Gcal etc. dacă apar). Include toate valorile și identificatorii găsiți.\n- rca/casco: Nr. poliță, Asigurator, Vehicul, Perioadă valabilitate, Primă\n- contract: Tip, Valoare, Toate părțile (nume, CNP/CUI), Durată, Obiect\n- garantie: Produs, Serie, Perioadă garanție, Vânzător, Data cumpărare\n- alte tipuri: câmpurile cheie — identificatori, date, sume, părți implicate — format 'Câmp: Valoare'. Omite texte administrative și informații redundante.\nMax 40 rânduri pentru analize, 20 pentru restul. null dacă OCR-ul nu conține nimic util.>"
 }
 
 Răspunde DOAR cu JSON, fără text suplimentar.`;
 
-  const messages = [
-    { role: 'system' as const, content: systemMessage },
-    { role: 'user' as const, content: prompt },
-  ];
-  const rawResponse = await sendAiRequest(messages, 600);
+  let rawResponse: string;
+  if (imageBase64) {
+    rawResponse = await sendAiRequestWithImage(systemMessage, prompt, imageBase64, 'image/jpeg', 1400);
+  } else {
+    rawResponse = await sendAiRequest(
+      [
+        { role: 'system' as const, content: systemMessage },
+        { role: 'user' as const, content: prompt },
+      ],
+      1200
+    );
+  }
 
   const parsed = parseAiResponse(rawResponse, entities, indexToId);
   return augmentWithPlateMatch(parsed, ocrText, entities);
@@ -262,10 +282,13 @@ function buildEntityContext(entities: AvailableEntities): {
   );
   addGroup(
     'Vehicule',
-    entities.vehicles.map(v => ({
-      id: v.id,
-      display: v.plate ? `${v.name} (${v.plate})` : v.name,
-    }))
+    entities.vehicles.map(v => {
+      const extras: string[] = [];
+      if (v.plate) extras.push(`placă: ${v.plate}`);
+      if (v.vin) extras.push(`VIN: ${v.vin}`);
+      const suffix = extras.length > 0 ? ` (${extras.join(', ')})` : '';
+      return { id: v.id, display: `${v.name}${suffix}` };
+    })
   );
   addGroup(
     'Proprietăți',
@@ -304,7 +327,7 @@ interface RawAiJson {
   structuredNote?: string;
 }
 
-const AI_NOTES_MAX_LENGTH = 1000;
+const AI_NOTES_MAX_LENGTH = 3000;
 
 function parseAiResponse(
   raw: string,
@@ -354,7 +377,7 @@ function parseAiResponse(
   let structuredNote: string | undefined;
   if (typeof parsed.structuredNote === 'string' && parsed.structuredNote.trim()) {
     structuredNote = parsed.structuredNote
-      .replace(/[\x00-\x1F\x7F]/g, ' ')
+      .replace(/[\x00-\x08\x0B-\x1F\x7F]/g, ' ') // păstrează \x09=tab, \x0A=newline
       .trim()
       .slice(0, AI_NOTES_MAX_LENGTH);
     if (!structuredNote) structuredNote = undefined;
@@ -378,11 +401,17 @@ function validateDocumentType(raw: unknown): DocumentType | undefined {
 
 function validateDate(raw: unknown): string | undefined {
   if (typeof raw !== 'string') return undefined;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
-  // Încearcă și formatul ZZ.LL.AAAA
-  const m = raw.match(/^(\d{2})[.\/-](\d{2})[.\/-](\d{4})$/);
-  if (m) return `${m[3]}-${m[2]}-${m[1]}`;
-  return undefined;
+  let result: string | undefined;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) result = raw;
+  else {
+    const m = raw.match(/^(\d{2})[.\/-](\d{2})[.\/-](\d{4})$/);
+    if (m) result = `${m[3]}-${m[2]}-${m[1]}`;
+  }
+  if (!result) return undefined;
+  // Respinge ani absurzi (ex: 2999 din dată de încetare contract)
+  const year = parseInt(result.slice(0, 4), 10);
+  if (year < 1900 || year > 2099) return undefined;
+  return result;
 }
 
 const VALID_ENTITY_TYPES = new Set<string>([

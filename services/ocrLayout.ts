@@ -136,7 +136,7 @@ export function reconstructLayout(blocks: TextBlock[]): string {
   return rows
     .map(row => {
       const cols = detectColumns(row);
-      return isTabular && cols.length > 1 ? cols.join('  |  ') : cols.join(' ');
+      return isTabular && cols.length > 1 ? cols.join('\t') : cols.join(' ');
     })
     .join('\n');
 }

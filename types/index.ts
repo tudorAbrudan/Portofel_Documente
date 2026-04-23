@@ -50,7 +50,6 @@ export interface Person {
   name: string;
   phone?: string;
   email?: string;
-  iban?: string;
   createdAt: string;
 }
 
@@ -126,6 +125,15 @@ export interface Document {
   company_id?: string;
   auto_delete?: string;
   ocr_text?: string;
+  file_hash?: string;
+  /**
+   * Notă privată — rămâne STRICT pe device. Nu se trimite niciodată la AI
+   * (chatbot, OCR LLM, sumarizare, etc.). Conține date sensibile alese de
+   * utilizator: CVV carduri, PIN-uri, parole, coduri. Vezi
+   * `sanitizeDocumentForAI` din `services/documents.ts` și
+   * `.claude/rules/ai-privacy.md`.
+   */
+  private_notes?: string;
   created_at: string;
   // Multi-entity links (din document_entities junction table)
   entity_links?: DocumentEntityLink[];
