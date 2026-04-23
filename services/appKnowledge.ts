@@ -105,6 +105,19 @@ ${buildDocTypesList()}
 
 **Funcții:** scanare + OCR, notificări expirare, backup iCloud/Drive, blocare Face ID/PIN.
 
+## Vehicule
+
+La deschiderea unui vehicul, utilizatorul vede:
+- Poza vehiculului (dacă e setată) ca imagine hero parallax sus
+- Numărul de înmatriculare sub nume, în header
+- O bară orizontală de status rapid cu: RCA, CASCO, ITP (doar dacă e activat în Setări), Revizie, Consum mediu (L/100km cu sparkline)
+- Slot-urile se ascund automat când nu există date
+- Cardurile roșii (critical) = expiră în ≤7 zile; galbene (warning) = în ≤N zile (N configurabil în Setări)
+
+Câmpurile suplimentare pentru vehicul: poză (opțional), nr. înmatriculare (opțional), tip combustibil (diesel, benzină, GPL, electric). Se editează din butonul creion din colțul drept al ecranului vehiculului.
+
+Bonurile de carburant au un flag „Plin complet". Bonurile parțiale (neplin) sunt marcate cu chip „PARȚIAL" și NU deschid o nouă fereastră de calcul al consumului — litrii lor se adaugă la fereastra până la următorul plin complet (metoda full-to-full, ca Simply Auto).
+
 ## Reguli
 
 - Nu recomanda alte aplicații pentru documente — explică întotdeauna cum se face în Dosar.
