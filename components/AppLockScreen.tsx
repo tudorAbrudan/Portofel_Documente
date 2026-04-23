@@ -11,7 +11,7 @@ import {
   AppState,
 } from 'react-native';
 import { SymbolView } from 'expo-symbols';
-import { primary } from '@/theme/colors';
+import { primary, dark, statusColors } from '@/theme/colors';
 
 interface AppLockScreenProps {
   biometricAvailable: boolean;
@@ -92,7 +92,7 @@ export default function AppLockScreen({
           <Pressable style={styles.bioBtn} onPress={handleBiometric} disabled={loading}>
             <SymbolView
               name={{ ios: 'faceid', android: 'fingerprint', web: 'lock' }}
-              tintColor="#fff"
+              tintColor={dark.text}
               size={48}
             />
             <Text style={styles.bioBtnText}>Deschide cu Face ID / Touch ID</Text>
@@ -108,7 +108,7 @@ export default function AppLockScreen({
               setError('');
             }}
             placeholder="PIN"
-            placeholderTextColor="#999"
+            placeholderTextColor={dark.textSecondary}
             keyboardType="number-pad"
             secureTextEntry
             maxLength={8}
@@ -136,12 +136,12 @@ const styles = StyleSheet.create({
     right: 0,
     top: 0,
     bottom: 0,
-    backgroundColor: '#1a1a1a',
+    backgroundColor: dark.background,
     justifyContent: 'center',
     zIndex: 9999,
   },
   inner: { padding: 32, alignItems: 'center' },
-  title: { fontSize: 20, fontWeight: '600', color: '#fff', marginBottom: 32 },
+  title: { fontSize: 20, fontWeight: '600', color: dark.text, marginBottom: 32 },
   bioBtn: {
     backgroundColor: primary,
     paddingVertical: 20,
@@ -150,17 +150,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 28,
   },
-  bioBtnText: { color: '#fff', fontSize: 16, marginTop: 12 },
+  bioBtnText: { color: dark.text, fontSize: 16, marginTop: 12 },
   pinSection: { width: '100%', maxWidth: 280 },
-  pinLabel: { color: '#999', fontSize: 14, marginBottom: 8 },
+  pinLabel: { color: dark.textSecondary, fontSize: 14, marginBottom: 8 },
   pinInput: {
     borderWidth: 1,
-    borderColor: '#444',
+    borderColor: dark.border,
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 14,
     fontSize: 18,
-    color: '#fff',
+    color: dark.text,
     textAlign: 'center',
     marginBottom: 12,
   },
@@ -171,6 +171,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   pinBtnDisabled: { opacity: 0.6 },
-  pinBtnText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  error: { color: '#f66', marginTop: 16, fontSize: 14 },
+  pinBtnText: { color: dark.text, fontSize: 16, fontWeight: '600' },
+  error: { color: statusColors.critical, marginTop: 16, fontSize: 14 },
 });

@@ -35,7 +35,7 @@ import {
   requestNotificationPermission,
   scheduleExpirationReminders,
 } from '@/services/notifications';
-import { primary } from '@/theme/colors';
+import { primary, statusColors } from '@/theme/colors';
 import { radius, spacing } from '@/theme/layout';
 import { useThemePreference } from '@/hooks/useThemeScheme';
 
@@ -246,12 +246,19 @@ export default function OnboardingWizard({ onComplete }: Props) {
     await scheduleExpirationReminders();
     const isRemote = aiProviderChoice === 'builtin' || aiProviderChoice === 'external';
     // Local: fără transmitere externă, acord implicit; none: fără AI
-    const consentValue = (isRemote && aiConsentChecked) || aiProviderChoice === 'local' ? 'true' : 'false';
+    const consentValue =
+      (isRemote && aiConsentChecked) || aiProviderChoice === 'local' ? 'true' : 'false';
     await AsyncStorage.setItem(AI_CONSENT_KEY, consentValue);
     await aiProvider.saveAiConfig({
       type: aiProviderChoice,
-      url: aiProviderChoice === 'external' ? aiExternalUrl : aiProvider.PROVIDER_DEFAULTS[aiProviderChoice]?.url ?? '',
-      model: aiProviderChoice === 'external' ? aiExternalModel : aiProvider.PROVIDER_DEFAULTS[aiProviderChoice]?.model ?? '',
+      url:
+        aiProviderChoice === 'external'
+          ? aiExternalUrl
+          : (aiProvider.PROVIDER_DEFAULTS[aiProviderChoice]?.url ?? ''),
+      model:
+        aiProviderChoice === 'external'
+          ? aiExternalModel
+          : (aiProvider.PROVIDER_DEFAULTS[aiProviderChoice]?.model ?? ''),
     });
     if (aiProviderChoice === 'external') {
       await aiProvider.saveAiApiKey(aiExternalApiKey);
@@ -264,7 +271,11 @@ export default function OnboardingWizard({ onComplete }: Props) {
     if (step !== AI_STEP) return true;
     const isRemote = aiProviderChoice === 'builtin' || aiProviderChoice === 'external';
     if (isRemote && !aiConsentChecked) return false;
-    if (aiProviderChoice === 'external' && (!aiExternalUrl.trim() || !aiExternalApiKey.trim() || !aiExternalModel.trim())) return false;
+    if (
+      aiProviderChoice === 'external' &&
+      (!aiExternalUrl.trim() || !aiExternalApiKey.trim() || !aiExternalModel.trim())
+    )
+      return false;
     return true;
   };
 
@@ -483,7 +494,13 @@ export default function OnboardingWizard({ onComplete }: Props) {
                     {ENTITY_DESCRIPTIONS[entityType]}
                   </Text>
                 </View>
-                <View style={[styles.checkbox, isSelected && styles.checkboxActive]}>
+                <View
+                  style={[
+                    styles.checkbox,
+                    { borderColor: C.border },
+                    isSelected && styles.checkboxActive,
+                  ]}
+                >
                   {isSelected && <Text style={styles.checkmark}>✓</Text>}
                 </View>
               </Pressable>
@@ -554,12 +571,12 @@ export default function OnboardingWizard({ onComplete }: Props) {
               <Switch
                 value={pushEnabled}
                 onValueChange={handlePushSwitchToggle}
-                trackColor={{ false: '#ccc', true: primary }}
+                trackColor={{ false: C.border, true: primary }}
               />
             </View>
             {notifPermStatus === 'denied' && (
               <View style={styles.permDeniedRow}>
-                <Text style={styles.permDeniedText}>
+                <Text style={[styles.permDeniedText, { color: statusColors.warning }]}>
                   Notificările sunt blocate. Activează-le din Setări sistem.
                 </Text>
                 <Pressable onPress={() => Linking.openSettings()}>
@@ -655,7 +672,9 @@ export default function OnboardingWizard({ onComplete }: Props) {
               >
                 <View style={styles.aiToggleText}>
                   <Text style={[styles.aiToggleLabel, { color: C.text }]}>{option.title}</Text>
-                  <Text style={[styles.aiToggleSub, { color: C.textSecondary }]}>{option.desc}</Text>
+                  <Text style={[styles.aiToggleSub, { color: C.textSecondary }]}>
+                    {option.desc}
+                  </Text>
                 </View>
                 <View
                   style={[
@@ -674,7 +693,10 @@ export default function OnboardingWizard({ onComplete }: Props) {
             {aiProviderChoice === 'external' && (
               <View style={{ gap: 8, marginTop: 4 }}>
                 <TextInput
-                  style={[styles.aiInput, { color: C.text, borderColor: C.border, backgroundColor: C.card }]}
+                  style={[
+                    styles.aiInput,
+                    { color: C.text, borderColor: C.border, backgroundColor: C.card },
+                  ]}
                   value={aiExternalUrl}
                   onChangeText={setAiExternalUrl}
                   placeholder="URL API (ex: https://api.mistral.ai/v1)"
@@ -684,7 +706,10 @@ export default function OnboardingWizard({ onComplete }: Props) {
                   keyboardType="url"
                 />
                 <TextInput
-                  style={[styles.aiInput, { color: C.text, borderColor: C.border, backgroundColor: C.card }]}
+                  style={[
+                    styles.aiInput,
+                    { color: C.text, borderColor: C.border, backgroundColor: C.card },
+                  ]}
                   value={aiExternalApiKey}
                   onChangeText={setAiExternalApiKey}
                   placeholder="Cheie API"
@@ -694,7 +719,10 @@ export default function OnboardingWizard({ onComplete }: Props) {
                   autoCorrect={false}
                 />
                 <TextInput
-                  style={[styles.aiInput, { color: C.text, borderColor: C.border, backgroundColor: C.card }]}
+                  style={[
+                    styles.aiInput,
+                    { color: C.text, borderColor: C.border, backgroundColor: C.card },
+                  ]}
                   value={aiExternalModel}
                   onChangeText={setAiExternalModel}
                   placeholder="Model (ex: mistral-small-latest)"
@@ -734,9 +762,7 @@ export default function OnboardingWizard({ onComplete }: Props) {
                     flexShrink: 0,
                   }}
                 >
-                  {aiConsentChecked && (
-                    <Ionicons name="checkmark" size={14} color="#fff" />
-                  )}
+                  {aiConsentChecked && <Ionicons name="checkmark" size={14} color="#fff" />}
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.aiToggleLabel, { color: C.text, fontSize: 14 }]}>
@@ -745,7 +771,8 @@ export default function OnboardingWizard({ onComplete }: Props) {
                       : 'Sunt de acord cu trimiterea datelor la serviciul AI configurat'}
                   </Text>
                   <Text style={[styles.aiToggleSub, { color: C.textSecondary }]}>
-                    Textul extras, numele entităților și detaliile documentelor sunt trimise pentru procesare. Fotografiile și PIN-ul NU sunt trimise.
+                    Textul extras, numele entităților și detaliile documentelor sunt trimise pentru
+                    procesare. Fotografiile și PIN-ul NU sunt trimise.
                   </Text>
                 </View>
               </Pressable>
@@ -944,7 +971,6 @@ const styles = StyleSheet.create({
     height: 24,
     borderRadius: 12,
     borderWidth: 2,
-    borderColor: '#ccc',
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 8,
@@ -998,7 +1024,7 @@ const styles = StyleSheet.create({
   notifSub: { fontSize: 13, marginTop: 4, lineHeight: 18 },
   notifDaysLabel: { fontSize: 13, marginTop: 16, marginBottom: 10, fontWeight: '500' },
   permDeniedRow: { marginTop: 12, gap: 6 },
-  permDeniedText: { fontSize: 13, lineHeight: 18, color: '#E65100' },
+  permDeniedText: { fontSize: 13, lineHeight: 18 },
   permDeniedLink: { fontSize: 13, fontWeight: '600', textDecorationLine: 'underline' },
 
   backupBody: { fontSize: 15, lineHeight: 22 },

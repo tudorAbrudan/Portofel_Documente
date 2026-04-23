@@ -12,7 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useColorScheme } from '@/components/useColorScheme';
 import { WebView } from 'react-native-webview';
 import { Text, View } from '@/components/Themed';
-import { primary } from '@/theme/colors';
+import { primary, statusColors } from '@/theme/colors';
 import Colors from '@/constants/Colors';
 import { isPdfFile } from '@/services/pdfExtractor';
 
@@ -99,12 +99,18 @@ export function DocumentPhotoSection({
                   <View
                     style={[
                       styles.pdfPlaceholder,
-                      { width: screenWidth - 40, backgroundColor: C.surface },
+                      {
+                        width: screenWidth - 40,
+                        backgroundColor: C.surface,
+                        borderColor: C.border,
+                      },
                     ]}
                   >
                     <Text style={styles.pdfIcon}>📄</Text>
-                    <Text style={styles.pdfLabel}>Document PDF</Text>
-                    <Text style={styles.pdfSubLabel}>Vizualizare disponibilă după salvare</Text>
+                    <Text style={[styles.pdfLabel, { color: C.text }]}>Document PDF</Text>
+                    <Text style={[styles.pdfSubLabel, { color: C.textSecondary }]}>
+                      Vizualizare disponibilă după salvare
+                    </Text>
                   </View>
                 )
               ) : (
@@ -122,7 +128,7 @@ export function DocumentPhotoSection({
             </View>
             {/* Rotate / reorder / delete bar — doar în modul editare */}
             {isEditing && (
-              <View style={styles.rotateBar}>
+              <View style={[styles.rotateBar, { borderTopColor: C.border }]}>
                 {canReorder && (
                   <>
                     <Pressable
@@ -130,6 +136,7 @@ export function DocumentPhotoSection({
                         styles.rotateBtn,
                         styles.rotateBtnReorder,
                         styles.rotateBtnBorderRight,
+                        { borderRightColor: C.border },
                         isFirst && styles.btnDisabled,
                       ]}
                       onPress={() => !isFirst && onReorderPage!(idx, idx - 1)}
@@ -142,6 +149,7 @@ export function DocumentPhotoSection({
                         styles.rotateBtn,
                         styles.rotateBtnReorder,
                         styles.rotateBtnBorderRight,
+                        { borderRightColor: C.border },
                         isLast && styles.btnDisabled,
                       ]}
                       onPress={() => !isLast && onReorderPage!(idx, idx + 1)}
@@ -154,13 +162,21 @@ export function DocumentPhotoSection({
                 {!pageIsPdf && (
                   <>
                     <Pressable
-                      style={[styles.rotateBtn, styles.rotateBtnBorderRight]}
+                      style={[
+                        styles.rotateBtn,
+                        styles.rotateBtnBorderRight,
+                        { borderRightColor: C.border },
+                      ]}
                       onPress={() => onRotate(page.id, -90)}
                     >
                       <Text style={styles.rotateBtnText}>↺ Rotește</Text>
                     </Pressable>
                     <Pressable
-                      style={[styles.rotateBtn, styles.rotateBtnBorderRight]}
+                      style={[
+                        styles.rotateBtn,
+                        styles.rotateBtnBorderRight,
+                        { borderRightColor: C.border },
+                      ]}
                       onPress={() => onRotate(page.id, 90)}
                     >
                       <Text style={styles.rotateBtnText}>↻ Rotește</Text>
@@ -314,12 +330,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
     borderWidth: 1,
-    borderColor: '#e2ebd4',
     borderStyle: 'dashed',
   },
   pdfIcon: { fontSize: 40 },
-  pdfLabel: { fontSize: 16, fontWeight: '600', color: '#333' },
-  pdfSubLabel: { fontSize: 12, color: '#888', textAlign: 'center', paddingHorizontal: 16 },
+  pdfLabel: { fontSize: 16, fontWeight: '600' },
+  pdfSubLabel: { fontSize: 12, textAlign: 'center', paddingHorizontal: 16 },
   fullscreenBtn: {
     position: 'absolute',
     top: 8,
@@ -337,7 +352,6 @@ const styles = StyleSheet.create({
   rotateBar: {
     flexDirection: 'row',
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#ccc',
   },
   rotateBtn: {
     flex: 1,
@@ -351,10 +365,9 @@ const styles = StyleSheet.create({
   },
   rotateBtnBorderRight: {
     borderRightWidth: StyleSheet.hairlineWidth,
-    borderRightColor: '#ccc',
   },
   rotateBtnText: { color: primary, fontSize: 13, fontWeight: '500' },
-  deleteText: { color: '#E53935' },
+  deleteText: { color: statusColors.critical },
   disabledText: { opacity: 0.3 },
 
   // Add page + OCR side by side
