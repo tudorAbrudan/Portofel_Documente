@@ -149,9 +149,8 @@ export default function EntityDetailScreen() {
       refreshEntities();
       if (id && entityName) {
         loadDocs(entityKind, id);
-        vehicleStatus.refresh();
       }
-    }, [id, entityKind, entityName, vehicleStatus])
+    }, [id, entityKind, entityName])
   );
 
   const refresh = () => {
