@@ -959,7 +959,7 @@ export default function DocumentDetailScreen() {
           .map((pdfPage, idx) => {
             const pdfUri = toFileUri(pdfPage.file_path);
             return (
-              <View key={pdfPage.id} style={styles.pdfContainer}>
+              <View key={pdfPage.id} style={[styles.pdfContainer, { borderColor: colors.border }]}>
                 <View style={styles.pdfHeaderRow}>
                   <Text style={styles.pdfSectionLabel}>
                     PDF{' '}
@@ -985,7 +985,10 @@ export default function DocumentDetailScreen() {
                     scrollEnabled
                   />
                 ) : (
-                  <Pressable style={styles.pdfOpenBtn} onPress={() => Linking.openURL(pdfUri)}>
+                  <Pressable
+                    style={[styles.pdfOpenBtn, { backgroundColor: colors.card }]}
+                    onPress={() => Linking.openURL(pdfUri)}
+                  >
                     <Text style={styles.pdfOpenBtnText}>📄 Deschide PDF extern</Text>
                   </Pressable>
                 )}
@@ -1220,26 +1223,6 @@ const styles = StyleSheet.create({
   content: { padding: 20, paddingBottom: 40 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
   muted: { opacity: 0.7 },
-  imageWrap: {
-    marginBottom: 20,
-    borderRadius: 12,
-    backgroundColor: '#f0f0f0',
-  },
-  imageContainer: { position: 'relative' },
-  image: { width: '100%', height: 280, borderTopLeftRadius: 12, borderTopRightRadius: 12 },
-  fullscreenBtn: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    borderRadius: 8,
-    width: 34,
-    height: 34,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  fullscreenBtnText: { color: '#fff', fontSize: 18, lineHeight: 22 },
-  // Fullscreen modal
   fsOverlay: { flex: 1, backgroundColor: '#000' },
   fsScrollContent: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   fsCloseBtn: {
@@ -1254,52 +1237,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   fsCloseBtnText: { color: '#fff', fontSize: 20, fontWeight: '600' },
-  rotateBar: {
-    backgroundColor: '#f8f8f8',
-    borderBottomLeftRadius: 12,
-    borderBottomRightRadius: 12,
-  },
-  rotateBarContent: {
-    flexDirection: 'row',
-    paddingVertical: 6,
-    paddingHorizontal: 8,
-    gap: 4,
-  },
-  rotateBtn: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 6,
-    backgroundColor: '#eee',
-  },
-  rotateBtnText: {
-    fontSize: 13,
-    color: primary,
-    fontWeight: '500',
-  },
-  pageLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    opacity: 0.6,
-    paddingHorizontal: 8,
-    paddingTop: 8,
-    textAlign: 'center',
-  },
-  addPageBtn: {
-    borderWidth: 1,
-    borderColor: primary,
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  addPageBtnText: { color: primary, fontSize: 15, fontWeight: '500' },
-  // PDF viewer
   pdfContainer: {
     marginBottom: 16,
     borderRadius: 12,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: '#e2ebd4',
   },
   pdfSectionLabel: {
     fontSize: 12,
@@ -1322,7 +1264,6 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   pdfOpenBtn: {
-    backgroundColor: '#f8faf4',
     borderRadius: 8,
     paddingVertical: 16,
     alignItems: 'center',
@@ -1332,7 +1273,6 @@ const styles = StyleSheet.create({
   meta: { marginBottom: 24 },
   label: { fontSize: 12, opacity: 0.7, marginTop: 12, marginBottom: 2 },
   value: { fontSize: 16 },
-  entityRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   entityPlaceholder: { opacity: 0.4 },
   entityLinksRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4, marginBottom: 4 },
   entityChip: {
@@ -1346,30 +1286,9 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   entityChipText: { fontSize: 13, fontWeight: '500' },
-  entityChipRemove: { padding: 2 },
-  entityAddBtn: {
-    borderRadius: 20,
-    borderWidth: 1.5,
-    borderStyle: 'dashed',
-    paddingVertical: 5,
-    paddingHorizontal: 12,
-  },
-  entityAddBtnText: { fontSize: 13, fontWeight: '600' },
   emptyValue: { opacity: 0.3 },
   ocrToggleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   ocrText: { fontSize: 13, opacity: 0.7, lineHeight: 20, marginTop: 6 },
-  entityEditHint: { fontSize: 13, color: primary, fontWeight: '500' },
-  entityGroupLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    opacity: 0.5,
-    marginTop: 14,
-    marginBottom: 2,
-    textTransform: 'uppercase',
-  },
-  entityPickerRow: { paddingVertical: 13, borderBottomWidth: StyleSheet.hairlineWidth },
-  entityPickerRowDanger: { paddingVertical: 14, marginTop: 8 },
-  entityPickerDangerText: { color: '#E53935', fontSize: 15 },
   calendarBtn: {
     marginTop: 10,
     paddingVertical: 14,
@@ -1382,27 +1301,6 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   calendarBtnLabel: { fontSize: 13, fontWeight: '600' },
-  typeToggleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    marginBottom: 12,
-  },
-  typeToggleCurrent: {
-    fontSize: 15,
-    fontWeight: '500',
-    flex: 1,
-  },
-  typeToggleChevron: {
-    fontSize: 13,
-    color: primary,
-    fontWeight: '500',
-  },
   asigraBtn: {
     borderRadius: 12,
     paddingVertical: 12,
@@ -1412,78 +1310,4 @@ const styles = StyleSheet.create({
     borderColor: primary,
   },
   asigaBtnText: { color: primary, fontSize: 14, fontWeight: '600' },
-  // Edit overlay
-  overlay: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 16,
-  },
-  overlayBox: {
-    borderRadius: 16,
-    padding: 16,
-    width: '100%',
-    maxHeight: '92%',
-  },
-  overlayTitle: { fontSize: 18, fontWeight: '600', marginBottom: 16 },
-  fieldLabel: { fontSize: 14, marginBottom: 6, opacity: 0.9 },
-  typeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
-  typeChip: {
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#ccc',
-  },
-  typeChipActive: { backgroundColor: primary, borderColor: primary },
-  typeChipText: { fontSize: 14 },
-  typeChipTextActive: { color: '#fff', fontWeight: '500' },
-  input: {
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 16,
-    marginBottom: 16,
-  },
-  inputMultiline: { minHeight: 80 },
-  editImageWrap: { marginBottom: 16 },
-  editImagePreview: {
-    width: '100%',
-    height: 160,
-    borderRadius: 12,
-    backgroundColor: '#f0f0f0',
-  },
-  removePhotoBtn: { marginTop: 6 },
-  removePhotoBtnText: { color: '#c00', fontSize: 14 },
-  pickPhotoBtn: { marginBottom: 16 },
-  overlayBtns: { flexDirection: 'row', gap: 8, marginTop: 8 },
-  overlayBtn: {
-    flex: 1,
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  overlayBtnOutline: {
-    borderWidth: 1,
-    borderColor: primary,
-  },
-  overlayBtnOutlineText: { color: primary, fontSize: 16, fontWeight: '500' },
-  overlayBtnPrimary: { backgroundColor: primary },
-  overlayBtnPrimaryText: { color: '#fff', fontSize: 16, fontWeight: '500' },
-  ocrBtn: {
-    borderWidth: 1,
-    borderColor: primary,
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  ocrBtnText: { color: primary, fontSize: 16, fontWeight: '500' },
 });

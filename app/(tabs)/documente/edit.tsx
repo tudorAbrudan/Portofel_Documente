@@ -20,7 +20,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Text, View, ThemedTextInput } from '@/components/Themed';
 import { BottomActionBar } from '@/components/ui/BottomActionBar';
-import { primary } from '@/theme/colors';
+import { primary, statusColors } from '@/theme/colors';
 import { DatePickerField } from '@/components/DatePickerField';
 import { DocumentPhotoSection } from '@/components/DocumentPhotoSection';
 import type { PhotoPage } from '@/components/DocumentPhotoSection';
@@ -644,7 +644,10 @@ export default function EditDocumentScreen() {
 
           {/* 2. TIP DOCUMENT */}
           <Text style={styles.label}>Tip document</Text>
-          <Pressable style={styles.typeToggleRow} onPress={() => setTypePickerVisible(v => !v)}>
+          <Pressable
+            style={[styles.typeToggleRow, { borderColor: colors.border }]}
+            onPress={() => setTypePickerVisible(v => !v)}
+          >
             <Text style={styles.typeToggleCurrent}>
               {type === 'custom'
                 ? (customTypes.find(c => c.id === customTypeId)?.name ?? 'Tip personalizat')
@@ -654,44 +657,50 @@ export default function EditDocumentScreen() {
           </Pressable>
           {typePickerVisible && (
             <View style={styles.typeRow}>
-              {standardTypes.map(({ value, label }) => (
-                <Pressable
-                  key={value}
-                  style={[styles.typeChip, type === value && styles.typeChipActive]}
-                  onPress={() => {
-                    setType(value);
-                    setCustomTypeId(null);
-                    setTypePickerVisible(false);
-                  }}
-                >
-                  <Text style={[styles.typeChipText, type === value && styles.typeChipTextActive]}>
-                    {label}
-                  </Text>
-                </Pressable>
-              ))}
-              {customTypes.map(ct => (
-                <Pressable
-                  key={ct.id}
-                  style={[
-                    styles.typeChip,
-                    type === 'custom' && customTypeId === ct.id && styles.typeChipActive,
-                  ]}
-                  onPress={() => {
-                    setType('custom');
-                    setCustomTypeId(ct.id);
-                    setTypePickerVisible(false);
-                  }}
-                >
-                  <Text
+              {standardTypes.map(({ value, label }) => {
+                const active = type === value;
+                return (
+                  <Pressable
+                    key={value}
                     style={[
-                      styles.typeChipText,
-                      type === 'custom' && customTypeId === ct.id && styles.typeChipTextActive,
+                      styles.typeChip,
+                      { borderColor: colors.border },
+                      active && styles.typeChipActive,
                     ]}
+                    onPress={() => {
+                      setType(value);
+                      setCustomTypeId(null);
+                      setTypePickerVisible(false);
+                    }}
                   >
-                    {ct.name}
-                  </Text>
-                </Pressable>
-              ))}
+                    <Text style={[styles.typeChipText, active && styles.typeChipTextActive]}>
+                      {label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+              {customTypes.map(ct => {
+                const active = type === 'custom' && customTypeId === ct.id;
+                return (
+                  <Pressable
+                    key={ct.id}
+                    style={[
+                      styles.typeChip,
+                      { borderColor: colors.border },
+                      active && styles.typeChipActive,
+                    ]}
+                    onPress={() => {
+                      setType('custom');
+                      setCustomTypeId(ct.id);
+                      setTypePickerVisible(false);
+                    }}
+                  >
+                    <Text style={[styles.typeChipText, active && styles.typeChipTextActive]}>
+                      {ct.name}
+                    </Text>
+                  </Pressable>
+                );
+              })}
             </View>
           )}
 
@@ -745,7 +754,9 @@ export default function EditDocumentScreen() {
                       hitSlop={8}
                       style={styles.entityChipRemove}
                     >
-                      <Text style={{ color: '#E53935', fontSize: 14, fontWeight: '700' }}>✕</Text>
+                      <Text style={{ color: statusColors.critical, fontSize: 14, fontWeight: '700' }}>
+                        ✕
+                      </Text>
                     </Pressable>
                   </View>
                 ))}
@@ -766,7 +777,6 @@ export default function EditDocumentScreen() {
               <ThemedTextInput
                 style={styles.input}
                 placeholder={field.placeholder ?? ''}
-                placeholderTextColor="#999"
                 value={metadata[field.key] ?? ''}
                 onChangeText={v => setMetadata(prev => ({ ...prev, [field.key]: v }))}
                 keyboardType={field.keyboardType ?? 'default'}
@@ -809,22 +819,24 @@ export default function EditDocumentScreen() {
                 { label: '180 zile', value: '180d' },
                 { label: '1 an', value: '365d' },
               ] as { label: string; value: string | null }[]
-            ).map(opt => (
-              <Pressable
-                key={opt.value ?? 'never'}
-                style={[styles.typeChip, autoDelete === opt.value && styles.typeChipActive]}
-                onPress={() => setAutoDelete(opt.value)}
-              >
-                <Text
+            ).map(opt => {
+              const active = autoDelete === opt.value;
+              return (
+                <Pressable
+                  key={opt.value ?? 'never'}
                   style={[
-                    styles.typeChipText,
-                    autoDelete === opt.value && styles.typeChipTextActive,
+                    styles.typeChip,
+                    { borderColor: colors.border },
+                    active && styles.typeChipActive,
                   ]}
+                  onPress={() => setAutoDelete(opt.value)}
                 >
-                  {opt.label}
-                </Text>
-              </Pressable>
-            ))}
+                  <Text style={[styles.typeChipText, active && styles.typeChipTextActive]}>
+                    {opt.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
           </ScrollView>
 
           {/* 7. NOTĂ */}
@@ -832,7 +844,6 @@ export default function EditDocumentScreen() {
           <ThemedTextInput
             style={[styles.input, styles.inputMultiline]}
             placeholder="Notă"
-            placeholderTextColor="#999"
             value={note}
             onChangeText={setNote}
             multiline
@@ -1032,7 +1043,6 @@ const styles = StyleSheet.create({
   label: { fontSize: 14, marginBottom: 6, opacity: 0.9 },
   input: {
     borderWidth: 1,
-    borderColor: '#e0e0e0',
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 14,
@@ -1046,7 +1056,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#ccc',
   },
   typeChipActive: { backgroundColor: primary, borderColor: primary },
   typeChipText: { fontSize: 14 },
@@ -1056,7 +1065,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     borderWidth: 1,
-    borderColor: '#e0e0e0',
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 12,
@@ -1161,5 +1169,5 @@ const styles = StyleSheet.create({
   },
   entityPickerText: { fontSize: 15 },
   entityPickerRowDanger: { paddingVertical: 14, marginTop: 8 },
-  entityPickerDangerText: { color: '#c00', fontSize: 15 },
+  entityPickerDangerText: { color: statusColors.critical, fontSize: 15 },
 });

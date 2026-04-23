@@ -17,7 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
 import { BottomActionBar } from '@/components/ui/BottomActionBar';
-import { primary, primaryTint } from '@/theme/colors';
+import { primary, primaryTint, statusColors } from '@/theme/colors';
 import { useDocuments } from '@/hooks/useDocuments';
 import { useEntities } from '@/hooks/useEntities';
 import { DOCUMENT_TYPE_LABELS, getDocumentLabel } from '@/types';
@@ -190,10 +190,10 @@ function getExpiryInfo(doc: Document): {
   const daysLeft = Math.ceil((exp - now) / (24 * 60 * 60 * 1000));
 
   if (daysLeft < 0) {
-    return { label: 'Expirat', bg: '#E53935', fg: '#fff' };
+    return { label: 'Expirat', bg: statusColors.critical, fg: '#fff' };
   }
   if (daysLeft <= 30) {
-    return { label: `${daysLeft}z`, bg: '#F57C00', fg: '#fff' };
+    return { label: `${daysLeft}z`, bg: statusColors.warning, fg: '#fff' };
   }
   const date = new Date(doc.expiry_date);
   const label = date.toLocaleDateString('ro-RO', { month: 'short', year: 'numeric' });
@@ -739,9 +739,18 @@ export default function DocumenteListScreen() {
 
       {/* ── Error banner ── */}
       {error ? (
-        <RNView style={styles.errorBanner}>
-          <Ionicons name="alert-circle-outline" size={16} color="#E53935" />
-          <RNText style={styles.errorText}>{error}</RNText>
+        <RNView
+          style={[
+            styles.errorBanner,
+            {
+              backgroundColor: scheme === 'dark' ? 'rgba(216,76,76,0.18)' : '#FFEBEE',
+              borderColor: statusColors.critical,
+              borderWidth: StyleSheet.hairlineWidth,
+            },
+          ]}
+        >
+          <Ionicons name="alert-circle-outline" size={16} color={statusColors.critical} />
+          <RNText style={[styles.errorText, { color: statusColors.critical }]}>{error}</RNText>
         </RNView>
       ) : null}
 
@@ -876,11 +885,9 @@ const styles = StyleSheet.create({
     marginHorizontal: 12,
     marginTop: 4,
     padding: 10,
-    backgroundColor: '#FFEBEE',
     borderRadius: 8,
   },
   errorText: {
-    color: '#E53935',
     fontSize: 13,
     flex: 1,
   },

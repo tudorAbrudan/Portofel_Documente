@@ -22,7 +22,7 @@ import { Text, View, ThemedTextInput } from '@/components/Themed';
 import { BottomActionBar } from '@/components/ui/BottomActionBar';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
-import { primary } from '@/theme/colors';
+import { primary, statusColors } from '@/theme/colors';
 import { useDocuments } from '@/hooks/useDocuments';
 import { useEntities } from '@/hooks/useEntities';
 import { scheduleExpirationReminders } from '@/services/notifications';
@@ -909,23 +909,37 @@ export default function AddDocumentScreen() {
           {/* DUPLICAT */}
           {duplicateDoc && (
             <Pressable
-              style={styles.duplicateBanner}
+              style={[
+                styles.duplicateBanner,
+                {
+                  backgroundColor:
+                    scheme === 'dark' ? 'rgba(232,165,58,0.18)' : 'rgba(232,165,58,0.12)',
+                  borderColor: statusColors.warning,
+                },
+              ]}
               onPress={() => router.push(`/(tabs)/documente/${duplicateDoc.id}`)}
             >
-              <Text style={styles.duplicateBannerTitle}>Document similar găsit</Text>
-              <Text style={styles.duplicateBannerBody}>
+              <Text style={[styles.duplicateBannerTitle, { color: statusColors.warning }]}>
+                Document similar găsit
+              </Text>
+              <Text style={[styles.duplicateBannerBody, { color: C.text }]}>
                 Există deja un document de tip „
                 {DOCUMENT_TYPE_LABELS[duplicateDoc.type] ?? duplicateDoc.type}" pentru această
                 entitate.
               </Text>
-              <Text style={styles.duplicateBannerLink}>Deschide documentul existent →</Text>
+              <Text style={[styles.duplicateBannerLink, { color: statusColors.warning }]}>
+                Deschide documentul existent →
+              </Text>
             </Pressable>
           )}
 
           {/* 2. TIP DOCUMENT */}
           <Text style={styles.label}>Tip document</Text>
-          <Pressable style={styles.typeToggleRow} onPress={() => setTypePickerVisible(v => !v)}>
-            <Text style={styles.typeToggleCurrent}>
+          <Pressable
+            style={[styles.typeToggleRow, { borderColor: C.border }]}
+            onPress={() => setTypePickerVisible(v => !v)}
+          >
+            <Text style={[styles.typeToggleCurrent, { color: C.text }]}>
               {type === 'custom'
                 ? (customTypes.find(c => c.id === customTypeId)?.name ?? 'Tip personalizat')
                 : (DOCUMENT_TYPE_LABELS[type] ?? type)}
@@ -936,63 +950,79 @@ export default function AddDocumentScreen() {
             <>
               {hasHiddenTypes && (
                 <Pressable onPress={() => router.push('/(tabs)/setari')} style={styles.showAllBtn}>
-                  <Text style={[styles.showAllBtnText, { color: '#888' }]}>
+                  <Text style={[styles.showAllBtnText, { color: C.textSecondary }]}>
                     Alte tipuri (dezactivate în Setări) →
                   </Text>
                 </Pressable>
               )}
               <View style={styles.typeRow}>
-                {visibleStandardTypes.map(({ value, label }) => (
-                  <Pressable
-                    key={value}
-                    style={[styles.typeChip, type === value && styles.typeChipActive]}
-                    onPress={() => {
-                      const combinedText = Array.from(ocrTextsRef.current.values()).join(
-                        '\n\n---\n\n'
-                      );
-                      setType(value);
-                      setCustomTypeId(null);
-                      setMetadata({});
-                      if (combinedText.trim().length > 0) {
-                        const extracted = extractFieldsForType(value, combinedText);
-                        if (Object.keys(extracted.metadata).length > 0) {
-                          setMetadata(extracted.metadata);
-                        }
-                      }
-                      setTypePickerVisible(false);
-                    }}
-                  >
-                    <Text
-                      style={[styles.typeChipText, type === value && styles.typeChipTextActive]}
-                    >
-                      {label}
-                    </Text>
-                  </Pressable>
-                ))}
-                {customTypes.map(ct => (
-                  <Pressable
-                    key={ct.id}
-                    style={[
-                      styles.typeChip,
-                      type === 'custom' && customTypeId === ct.id && styles.typeChipActive,
-                    ]}
-                    onPress={() => {
-                      setType('custom');
-                      setCustomTypeId(ct.id);
-                      setMetadata({});
-                      setTypePickerVisible(false);
-                    }}
-                  >
-                    <Text
+                {visibleStandardTypes.map(({ value, label }) => {
+                  const active = type === value;
+                  return (
+                    <Pressable
+                      key={value}
                       style={[
-                        styles.typeChipText,
-                        type === 'custom' && customTypeId === ct.id && styles.typeChipTextActive,
+                        styles.typeChip,
+                        { borderColor: C.border },
+                        active && styles.typeChipActive,
                       ]}
+                      onPress={() => {
+                        const combinedText = Array.from(ocrTextsRef.current.values()).join(
+                          '\n\n---\n\n'
+                        );
+                        setType(value);
+                        setCustomTypeId(null);
+                        setMetadata({});
+                        if (combinedText.trim().length > 0) {
+                          const extracted = extractFieldsForType(value, combinedText);
+                          if (Object.keys(extracted.metadata).length > 0) {
+                            setMetadata(extracted.metadata);
+                          }
+                        }
+                        setTypePickerVisible(false);
+                      }}
                     >
-                      {ct.name}
-                    </Text>
-                  </Pressable>
-                ))}
+                      <Text
+                        style={[
+                          styles.typeChipText,
+                          { color: C.text },
+                          active && styles.typeChipTextActive,
+                        ]}
+                      >
+                        {label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+                {customTypes.map(ct => {
+                  const active = type === 'custom' && customTypeId === ct.id;
+                  return (
+                    <Pressable
+                      key={ct.id}
+                      style={[
+                        styles.typeChip,
+                        { borderColor: C.border },
+                        active && styles.typeChipActive,
+                      ]}
+                      onPress={() => {
+                        setType('custom');
+                        setCustomTypeId(ct.id);
+                        setMetadata({});
+                        setTypePickerVisible(false);
+                      }}
+                    >
+                      <Text
+                        style={[
+                          styles.typeChipText,
+                          { color: C.text },
+                          active && styles.typeChipTextActive,
+                        ]}
+                      >
+                        {ct.name}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
               </View>
             </>
           )}
@@ -1004,7 +1034,6 @@ export default function AddDocumentScreen() {
               <ThemedTextInput
                 style={styles.input}
                 placeholder={field.placeholder ?? ''}
-                placeholderTextColor="#999"
                 value={metadata[field.key] ?? ''}
                 onChangeText={v => setMetadata(prev => ({ ...prev, [field.key]: v }))}
                 keyboardType={field.keyboardType ?? 'default'}
@@ -1077,22 +1106,30 @@ export default function AddDocumentScreen() {
                 { label: '180 zile', value: '180d' },
                 { label: '1 an', value: '365d' },
               ] as { label: string; value: string | null }[]
-            ).map(opt => (
-              <Pressable
-                key={opt.value ?? 'never'}
-                style={[styles.typeChip, autoDelete === opt.value && styles.typeChipActive]}
-                onPress={() => setAutoDelete(opt.value)}
-              >
-                <Text
+            ).map(opt => {
+              const active = autoDelete === opt.value;
+              return (
+                <Pressable
+                  key={opt.value ?? 'never'}
                   style={[
-                    styles.typeChipText,
-                    autoDelete === opt.value && styles.typeChipTextActive,
+                    styles.typeChip,
+                    { borderColor: C.border },
+                    active && styles.typeChipActive,
                   ]}
+                  onPress={() => setAutoDelete(opt.value)}
                 >
-                  {opt.label}
-                </Text>
-              </Pressable>
-            ))}
+                  <Text
+                    style={[
+                      styles.typeChipText,
+                      { color: C.text },
+                      active && styles.typeChipTextActive,
+                    ]}
+                  >
+                    {opt.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
           </ScrollView>
 
           {/* 6. NOTĂ */}
@@ -1100,7 +1137,6 @@ export default function AddDocumentScreen() {
           <ThemedTextInput
             style={[styles.input, styles.inputMultiline]}
             placeholder="Notă"
-            placeholderTextColor="#999"
             value={note}
             onChangeText={setNote}
             multiline
@@ -1138,19 +1174,22 @@ export default function AddDocumentScreen() {
               {ENTITY_CATEGORIES.filter(cat => visibleEntityTypes.includes(cat.key)).map(
                 ({ key, label }) => {
                   const countInCat = entityLinks.filter(l => l.entityType === key).length;
+                  const active = pickerCategory === key;
                   return (
                     <Pressable
                       key={key}
                       style={[
                         styles.categoryTab,
-                        pickerCategory === key && styles.categoryTabActive,
+                        { borderColor: C.border },
+                        active && styles.categoryTabActive,
                       ]}
                       onPress={() => setPickerCategory(key)}
                     >
                       <Text
                         style={[
                           styles.categoryTabText,
-                          pickerCategory === key && styles.categoryTabTextActive,
+                          { color: C.text },
+                          active && styles.categoryTabTextActive,
                         ]}
                       >
                         {label}
@@ -1174,11 +1213,19 @@ export default function AddDocumentScreen() {
                   return (
                     <Pressable
                       key={e.id}
-                      style={[styles.entityChipItem, isSelected && styles.entityChipItemActive]}
+                      style={[
+                        styles.entityChipItem,
+                        { borderColor: C.border },
+                        isSelected && styles.entityChipItemActive,
+                      ]}
                       onPress={() => toggleEntityLink(e.id)}
                     >
                       <Text
-                        style={[styles.entityChipLabel, isSelected && styles.entityChipLabelActive]}
+                        style={[
+                          styles.entityChipLabel,
+                          { color: C.text },
+                          isSelected && styles.entityChipLabelActive,
+                        ]}
                       >
                         {isSelected ? `✓ ${e.label}` : e.label}
                       </Text>
@@ -1259,14 +1306,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#ccc',
   },
   typeChipActive: { backgroundColor: primary, borderColor: primary },
   typeChipText: { fontSize: 14 },
   typeChipTextActive: { color: '#fff', fontWeight: '500' },
   input: {
     borderWidth: 1,
-    borderColor: '#e0e0e0',
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 14,
@@ -1282,7 +1327,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#ccc',
     alignItems: 'center',
   },
   categoryTabActive: { backgroundColor: primary, borderColor: primary },
@@ -1295,7 +1339,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#ccc',
   },
   entityChipItemActive: { backgroundColor: primary, borderColor: primary },
   entityChipLabel: { fontSize: 14 },
@@ -1334,7 +1377,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     borderWidth: 1,
-    borderColor: '#e0e0e0',
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 12,
@@ -1347,7 +1389,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   showAllBtnText: {
-    color: primary,
     fontSize: 13,
     fontWeight: '500',
   },
@@ -1366,8 +1407,6 @@ const styles = StyleSheet.create({
   },
   fsCloseBtnText: { color: '#fff', fontSize: 20, fontWeight: '600' },
   duplicateBanner: {
-    backgroundColor: '#fff8e1',
-    borderColor: '#f59e0b',
     borderWidth: 1,
     borderRadius: 10,
     padding: 14,
@@ -1376,17 +1415,14 @@ const styles = StyleSheet.create({
   duplicateBannerTitle: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#92400e',
     marginBottom: 4,
   },
   duplicateBannerBody: {
     fontSize: 13,
-    color: '#78350f',
     marginBottom: 6,
   },
   duplicateBannerLink: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#b45309',
   },
 });
