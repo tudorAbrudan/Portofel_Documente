@@ -9,6 +9,7 @@
  */
 
 import { sendAiRequest } from './aiProvider';
+import { extractPlateNumber } from './ocr';
 import type { DocumentType, EntityType } from '@/types';
 import { DOCUMENT_TYPE_LABELS } from '@/types';
 
@@ -34,7 +35,7 @@ export interface AiOcrResult {
 
 export interface AvailableEntities {
   persons: Array<{ id: string; name: string }>;
-  vehicles: Array<{ id: string; name: string }>;
+  vehicles: Array<{ id: string; name: string; plate?: string }>;
   properties: Array<{ id: string; name: string }>;
   cards: Array<{ id: string; nickname: string; last4: string }>;
   animals: Array<{ id: string; name: string; species: string }>;
@@ -154,6 +155,7 @@ bilet: categorie="Avion", venue="OTP→LHR", eveniment_artist="RO123"
 - Pentru "rca" și "casco": expiryDate = data expirării poliței (YYYY-MM-DD). issueDate = data emiterii poliței. Pune data intrării în vigoare în fields.valid_from (ZZ.LL.AAAA) — poate fi diferită de issueDate.
 - Nr. înmatriculare românesc: format "B 123 ABC" sau "CJ 01 XYZ" etc.
 - VIN: 17 caractere alfanumerice (niciodată litere I, O, Q).
+- Pentru vehicule: dacă entitatea are numărul de înmatriculare între paranteze (ex. "Dacia Logan (B 123 ABC)") și acel număr apare în textul OCR, sugereaz-o cu confidence "high".
 
 ━━━ FORMAT RĂSPUNS ━━━
 
@@ -177,7 +179,56 @@ Răspunde DOAR cu JSON, fără text suplimentar.`;
   ];
   const rawResponse = await sendAiRequest(messages, 600);
 
-  return parseAiResponse(rawResponse, entities, indexToId);
+  const parsed = parseAiResponse(rawResponse, entities, indexToId);
+  return augmentWithPlateMatch(parsed, ocrText, entities);
+}
+
+/**
+ * Normalizează numărul de înmatriculare pentru comparație: uppercase,
+ * elimină tot ce nu e alfanumeric (spații, cratime, puncte).
+ * Ex: "B 123 ABC" / "B-123-ABC" / "b123abc" → "B123ABC"
+ */
+function normalizePlate(plate: string): string {
+  return plate.toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+/**
+ * Match determinist: dacă OCR-ul conține un număr de înmatriculare care
+ * se potrivește exact cu `plate_number` al unei mașini salvate, injectează
+ * acea sugestie cu confidence "high" pe prima poziție. Overrides orice
+ * sugestie de vehicul venită de la AI (plate matching e mai sigur decât
+ * potrivirea textuală pe marcă/model).
+ */
+function augmentWithPlateMatch(
+  result: AiOcrResult,
+  ocrText: string,
+  entities: AvailableEntities
+): AiOcrResult {
+  const extractedPlate = extractPlateNumber(ocrText);
+  if (!extractedPlate) return result;
+
+  const target = normalizePlate(extractedPlate);
+  if (!target) return result;
+
+  const matched = entities.vehicles.find(
+    v => v.plate && normalizePlate(v.plate) === target
+  );
+  if (!matched) return result;
+
+  const highMatch: AiEntitySuggestion = {
+    entityType: 'vehicle',
+    entityId: matched.id,
+    entityName: matched.name,
+    confidence: 'high',
+  };
+
+  // Elimină orice altă sugestie de vehicul (plate-ul e autoritatea) și
+  // prepend-ează match-ul determinist.
+  const filtered = result.entitySuggestions.filter(s => s.entityType !== 'vehicle');
+  return {
+    ...result,
+    entitySuggestions: [highMatch, ...filtered],
+  };
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -211,7 +262,10 @@ function buildEntityContext(entities: AvailableEntities): {
   );
   addGroup(
     'Vehicule',
-    entities.vehicles.map(v => ({ id: v.id, display: v.name }))
+    entities.vehicles.map(v => ({
+      id: v.id,
+      display: v.plate ? `${v.name} (${v.plate})` : v.name,
+    }))
   );
   addGroup(
     'Proprietăți',

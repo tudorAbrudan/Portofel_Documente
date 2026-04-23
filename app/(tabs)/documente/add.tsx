@@ -324,7 +324,11 @@ export default function AddDocumentScreen() {
     try {
       const availableEntities: AvailableEntities = {
         persons: persons.map(p => ({ id: p.id, name: p.name })),
-        vehicles: vehicles.map(v => ({ id: v.id, name: v.name })),
+        vehicles: vehicles.map(v => ({
+          id: v.id,
+          name: v.name,
+          plate: v.plate_number,
+        })),
         properties: properties.map(p => ({ id: p.id, name: p.name })),
         cards: cards.map(c => ({ id: c.id, nickname: c.nickname, last4: c.last4 })),
         animals: animals.map(a => ({ id: a.id, name: a.name, species: a.species })),
