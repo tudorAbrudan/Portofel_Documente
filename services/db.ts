@@ -264,3 +264,40 @@ try {
 } catch {
   // coloana există deja
 }
+
+// Migrare: adaugă photo_uri la vehicles
+try {
+  db.execSync('ALTER TABLE vehicles ADD COLUMN photo_uri TEXT');
+} catch {
+  // coloana există deja
+}
+
+// Migrare: adaugă plate_number la vehicles
+try {
+  db.execSync('ALTER TABLE vehicles ADD COLUMN plate_number TEXT');
+} catch {
+  // coloana există deja
+}
+
+// Migrare: adaugă fuel_type la vehicles
+try {
+  db.execSync("ALTER TABLE vehicles ADD COLUMN fuel_type TEXT DEFAULT 'diesel'");
+} catch {
+  // coloana există deja
+}
+
+// Migrare: adaugă is_full la fuel_records (default 1 = plin complet — datele existente rămân tratate ca pline)
+try {
+  db.execSync('ALTER TABLE fuel_records ADD COLUMN is_full INTEGER NOT NULL DEFAULT 1');
+} catch {
+  // coloana există deja
+}
+
+// Index pentru algoritm full-to-full
+try {
+  db.execSync(
+    'CREATE INDEX IF NOT EXISTS idx_fuel_records_vehicle_full ON fuel_records(vehicle_id, is_full)'
+  );
+} catch {
+  // indexul există deja
+}
