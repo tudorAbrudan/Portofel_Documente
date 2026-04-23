@@ -60,9 +60,14 @@ export interface Property {
   createdAt: string;
 }
 
+export type VehicleFuelType = 'diesel' | 'benzina' | 'gpl' | 'electric';
+
 export interface Vehicle {
   id: string;
   name: string;
+  photo_uri?: string;
+  plate_number?: string;
+  fuel_type?: VehicleFuelType;
   createdAt: string;
 }
 
