@@ -29,8 +29,8 @@ function iconForKey(key: VehicleStatusItem['key']): keyof typeof Ionicons.glyphM
 }
 
 function Sparkline({ values }: { values: number[] }) {
-  const width = 108;
-  const height = 14;
+  const width = 128;
+  const height = 16;
   if (values.length < 2) {
     return <View style={{ width, height }} />;
   }
@@ -82,7 +82,7 @@ const StatusCard = memo(function StatusCard({
         {
           backgroundColor: cardBg,
           shadowColor: cardShadow,
-          width: isFuel ? 148 : 124,
+          width: isFuel ? 156 : 132,
         },
         isCritical && { borderLeftWidth: 3, borderLeftColor: statusColors.critical },
         pressed && styles.cardPressed,
@@ -145,10 +145,11 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   card: {
-    height: 80,
+    height: 112,
     borderRadius: 12,
-    padding: 10,
-    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    gap: 4,
     ...Platform.select({
       ios: { shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8 },
       android: { elevation: 2 },
@@ -162,6 +163,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 2,
   },
   dot: {
     width: 8,
@@ -169,21 +171,24 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   label: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
     letterSpacing: 0.4,
     textTransform: 'uppercase',
+    lineHeight: 14,
   },
   value: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '700',
+    lineHeight: 24,
   },
   unit: {
     fontSize: 11,
     fontWeight: '400',
   },
   subValue: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '400',
+    lineHeight: 15,
   },
 });
