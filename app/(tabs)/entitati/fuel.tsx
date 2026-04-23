@@ -9,6 +9,7 @@ import {
   Platform,
   ActivityIndicator,
   TextInput,
+  Switch,
 } from 'react-native';
 import { useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { useTheme } from '@react-navigation/native';
@@ -54,6 +55,7 @@ export default function FuelScreen() {
   const [mKm, setMKm] = useState('');
   const [mPrice, setMPrice] = useState('');
   const [mLoading, setMLoading] = useState(false);
+  const [mIsFull, setMIsFull] = useState(true);
 
   const load = useCallback(async () => {
     if (!vehicleId) return;
@@ -118,6 +120,7 @@ export default function FuelScreen() {
     setMLiters('');
     setMKm('');
     setMPrice('');
+    setMIsFull(true);
     setModalVisible(true);
   }
 
@@ -160,7 +163,13 @@ export default function FuelScreen() {
       const liters = mLiters.trim() ? parseFloat(mLiters) : undefined;
       const km = mKm.trim() ? parseInt(mKm, 10) : undefined;
       const price = mPrice.trim() ? parseFloat(mPrice) : undefined;
-      await addFuelRecord(vehicleId, { date: mDate.trim(), liters, km_total: km, price });
+      await addFuelRecord(vehicleId, {
+        date: mDate.trim(),
+        liters,
+        km_total: km,
+        price,
+        is_full: mIsFull,
+      });
       setModalVisible(false);
       await load();
     } catch {
@@ -373,6 +382,21 @@ export default function FuelScreen() {
               keyboardType="number-pad"
               editable={!mLoading}
             />
+
+            <View style={styles.isFullRow}>
+              <Text style={styles.modalLabel}>Plin complet</Text>
+              <Switch
+                value={mIsFull}
+                onValueChange={setMIsFull}
+                trackColor={{ false: '#ccc', true: primary }}
+                disabled={mLoading}
+              />
+            </View>
+            {!mIsFull && (
+              <Text style={styles.isFullHint}>
+                Litrii nu vor fi contați în consum până la următorul plin complet.
+              </Text>
+            )}
 
             <Text style={styles.modalLabel}>Preț total (RON)</Text>
             <TextInput
@@ -588,4 +612,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalSaveText: { color: '#fff', fontSize: 15, fontWeight: '600' },
+
+  isFullRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+    marginBottom: 8,
+  },
+  isFullHint: {
+    fontSize: 11,
+    fontStyle: 'italic',
+    opacity: 0.7,
+    marginBottom: 14,
+  },
 });
