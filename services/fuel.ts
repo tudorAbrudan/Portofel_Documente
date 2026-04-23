@@ -7,6 +7,7 @@ export interface FuelRecord {
   liters?: number;
   km_total?: number;
   price?: number;
+  is_full: boolean;
   created_at: string;
 }
 
@@ -34,6 +35,7 @@ type FuelRow = {
   liters: number | null;
   km_total: number | null;
   price: number | null;
+  is_full: number; // SQLite boolean = 0 sau 1
   created_at: string;
 };
 
@@ -52,6 +54,7 @@ function mapRecord(r: FuelRow): FuelRecord {
     liters: r.liters ?? undefined,
     km_total: r.km_total ?? undefined,
     price: r.price ?? undefined,
+    is_full: r.is_full === 1,
     created_at: r.created_at,
   };
 }
@@ -66,12 +69,19 @@ export async function getFuelRecords(vehicleId: string): Promise<FuelRecord[]> {
 
 export async function addFuelRecord(
   vehicleId: string,
-  record: { date: string; liters?: number; km_total?: number; price?: number }
+  record: {
+    date: string;
+    liters?: number;
+    km_total?: number;
+    price?: number;
+    is_full?: boolean; // default true
+  }
 ): Promise<FuelRecord> {
   const id = generateId();
   const created_at = new Date().toISOString();
+  const isFull = record.is_full ?? true;
   await db.runAsync(
-    'INSERT INTO fuel_records (id, vehicle_id, date, liters, km_total, price, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO fuel_records (id, vehicle_id, date, liters, km_total, price, is_full, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
     [
       id,
       vehicleId,
@@ -79,10 +89,20 @@ export async function addFuelRecord(
       record.liters ?? null,
       record.km_total ?? null,
       record.price ?? null,
+      isFull ? 1 : 0,
       created_at,
     ]
   );
-  return { id, vehicle_id: vehicleId, ...record, created_at };
+  return {
+    id,
+    vehicle_id: vehicleId,
+    date: record.date,
+    liters: record.liters,
+    km_total: record.km_total,
+    price: record.price,
+    is_full: isFull,
+    created_at,
+  };
 }
 
 export async function deleteFuelRecord(id: string): Promise<void> {
