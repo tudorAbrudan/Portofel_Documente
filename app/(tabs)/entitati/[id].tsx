@@ -11,7 +11,10 @@ import {
   View as RNView,
   Text as RNText,
   FlatList,
+  Image,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import { router, useLocalSearchParams, useFocusEffect, Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { ThemedTextInput } from '@/components/Themed';
@@ -74,6 +77,9 @@ export default function EntityDetailScreen() {
   const [editPhone, setEditPhone] = useState('');
   const [editEmail, setEditEmail] = useState('');
   const [editIban, setEditIban] = useState('');
+  const [editPhotoUri, setEditPhotoUri] = useState<string | undefined>(undefined);
+  const [editPlate, setEditPlate] = useState('');
+  const [editFuelType, setEditFuelType] = useState<'diesel' | 'benzina' | 'gpl' | 'electric'>('diesel');
   const [linkDocVisible, setLinkDocVisible] = useState(false);
   const [unlinkedDocs, setUnlinkedDocs] = useState<DocType[]>([]);
 
@@ -206,8 +212,47 @@ export default function EntityDetailScreen() {
         setEditIban(person.iban ?? '');
       }
     }
+    if (entityKind === 'vehicle_id') {
+      const vehicle = vehicles.find(v => v.id === id);
+      setEditPhotoUri(vehicle?.photo_uri);
+      setEditPlate(vehicle?.plate_number ?? '');
+      setEditFuelType(vehicle?.fuel_type ?? 'diesel');
+    }
     setEditVisible(true);
   };
+
+  async function handlePickPhoto() {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permisiune refuzată', 'Aplicația nu are acces la galerie.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      quality: 0.7,
+    });
+    if (result.canceled || !result.assets || result.assets.length === 0) return;
+    const asset = result.assets[0];
+    const dir = `${FileSystem.documentDirectory}vehicles/`;
+    try {
+      await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+    } catch {
+      // directorul există deja
+    }
+    const dest = `${dir}${id}.jpg`;
+    try {
+      await FileSystem.deleteAsync(dest, { idempotent: true });
+    } catch {
+      // nu există
+    }
+    await FileSystem.copyAsync({ from: asset.uri, to: dest });
+    setEditPhotoUri(dest);
+  }
+
+  function handleRemovePhoto() {
+    setEditPhotoUri(undefined);
+  }
 
   const handleSaveEdit = async () => {
     if (entityKind === 'card_id') {
@@ -232,7 +277,14 @@ export default function EntityDetailScreen() {
           editIban.trim() || undefined
         );
       else if (entityKind === 'property_id') await updateProperty(id!, editName.trim());
-      else if (entityKind === 'vehicle_id') await updateVehicle(id!, editName.trim());
+      else if (entityKind === 'vehicle_id')
+        await updateVehicle(
+          id!,
+          editName.trim(),
+          editPhotoUri ?? null,
+          editPlate.trim() || null,
+          editFuelType
+        );
       else if (entityKind === 'animal_id')
         await updateAnimal(id!, editName.trim(), editSpecies.trim() || 'câine');
       else if (entityKind === 'company_id')
@@ -551,6 +603,67 @@ export default function EntityDetailScreen() {
               </>
             )}
 
+            {isVehicle && (
+              <>
+                <RNText style={[styles.modalLabel, { color: C.textSecondary }]}>Poză vehicul</RNText>
+                <RNView style={styles.photoRow}>
+                  {editPhotoUri ? (
+                    <RNView style={styles.photoPreviewWrap}>
+                      <Image source={{ uri: editPhotoUri }} style={styles.photoPreview} />
+                      <Pressable style={styles.photoActionBtn} onPress={handlePickPhoto}>
+                        <RNText style={styles.photoActionText}>Schimbă</RNText>
+                      </Pressable>
+                      <Pressable style={[styles.photoActionBtn, { marginLeft: 8 }]} onPress={handleRemovePhoto}>
+                        <RNText style={[styles.photoActionText, { color: '#D84C4C' }]}>Elimină</RNText>
+                      </Pressable>
+                    </RNView>
+                  ) : (
+                    <Pressable style={styles.photoAddBtn} onPress={handlePickPhoto}>
+                      <Ionicons name="camera-outline" size={18} color={primary} />
+                      <RNText style={[styles.photoAddText, { color: primary }]}>Adaugă poză</RNText>
+                    </Pressable>
+                  )}
+                </RNView>
+
+                <RNText style={[styles.modalLabel, { color: C.textSecondary }]}>
+                  Nr. înmatriculare (opțional)
+                </RNText>
+                <ThemedTextInput
+                  style={styles.modalInput}
+                  placeholder="B 12 ABC"
+                  value={editPlate}
+                  onChangeText={t => setEditPlate(t.toUpperCase())}
+                  autoCapitalize="characters"
+                  editable={!editLoading}
+                />
+
+                <RNText style={[styles.modalLabel, { color: C.textSecondary }]}>Tip combustibil</RNText>
+                <RNView style={styles.fuelTypeRow}>
+                  {(['diesel', 'benzina', 'gpl', 'electric'] as const).map(t => {
+                    const label =
+                      t === 'diesel' ? 'Diesel' : t === 'benzina' ? 'Benzină' : t === 'gpl' ? 'GPL' : 'Electric';
+                    const active = editFuelType === t;
+                    return (
+                      <Pressable
+                        key={t}
+                        style={[
+                          styles.fuelTypeChip,
+                          active
+                            ? { backgroundColor: primary, borderColor: primary }
+                            : { backgroundColor: C.card, borderColor: C.border },
+                        ]}
+                        onPress={() => setEditFuelType(t)}
+                      >
+                        <RNText style={[styles.fuelTypeChipText, { color: active ? '#fff' : C.text }]}>
+                          {label}
+                        </RNText>
+                      </Pressable>
+                    );
+                  })}
+                </RNView>
+              </>
+            )}
+
             {isPerson && (
               <>
                 <RNText style={[styles.modalLabel, { color: C.textSecondary }]}>
@@ -779,4 +892,59 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalSaveText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  photoRow: {
+    marginBottom: 16,
+  },
+  photoAddBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: primary,
+    borderRadius: 12,
+    paddingVertical: 16,
+    gap: 8,
+  },
+  photoAddText: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  photoPreviewWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  photoPreview: {
+    width: 60,
+    height: 60,
+    borderRadius: 8,
+    backgroundColor: '#eee',
+  },
+  photoActionBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: 'rgba(0,0,0,0.04)',
+  },
+  photoActionText: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  fuelTypeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 16,
+  },
+  fuelTypeChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  fuelTypeChipText: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
 });
