@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   StyleSheet,
   ScrollView,
@@ -35,7 +35,10 @@ import type { Document as DocType, DocumentType, Company } from '@/types';
 import Animated, { useSharedValue, useAnimatedScrollHandler } from 'react-native-reanimated';
 import { EntityStatusBar } from '@/components/EntityStatusBar';
 import { VehicleParallaxHero, MAX_HERO_HEIGHT } from '@/components/VehicleParallaxHero';
-import { VehicleMaintenanceSection } from '@/components/VehicleMaintenanceSection';
+import {
+  VehicleMaintenanceSection,
+  type VehicleMaintenanceSectionHandle,
+} from '@/components/VehicleMaintenanceSection';
 import { useVehicleStatus } from '@/hooks/useVehicleStatus';
 
 export default function EntityDetailScreen() {
@@ -95,6 +98,7 @@ export default function EntityDetailScreen() {
   const [unlinkedDocs, setUnlinkedDocs] = useState<DocType[]>([]);
 
   const vehicle = vehicles.find(v => v.id === id);
+  const maintenanceRef = useRef<VehicleMaintenanceSectionHandle>(null);
   const scrollY = useSharedValue(0);
   const scrollHandler = useAnimatedScrollHandler(e => {
     scrollY.value = e.contentOffset.y;
@@ -259,18 +263,42 @@ export default function EntityDetailScreen() {
     } catch {
       // directorul există deja
     }
-    const dest = `${dir}${id}.jpg`;
-    try {
-      await FileSystem.deleteAsync(dest, { idempotent: true });
-    } catch {
-      // nu există
-    }
+    // Filename unic per upload: forțează URI diferit → RN Image reîncarcă (fără cache vechi)
+    const dest = `${dir}${id}-${Date.now()}.jpg`;
     await FileSystem.copyAsync({ from: asset.uri, to: dest });
+
+    // Dacă există deja un fișier ales în aceeași sesiune de editare (neservit încă în DB),
+    // șterge-l ca să nu lăsăm orfani pe disc.
+    const savedUri = vehicle?.photo_uri;
+    const prev = editPhotoUri;
+    if (prev && prev !== savedUri) {
+      try {
+        await FileSystem.deleteAsync(toFileUri(prev), { idempotent: true });
+      } catch {
+        // best-effort
+      }
+    }
     setEditPhotoUri(toRelativePath(dest));
   }
 
   function handleRemovePhoto() {
     setEditPhotoUri(undefined);
+  }
+
+  async function handleCancelEdit() {
+    // Curăță fișierul temporar dacă userul a ales o poză nouă dar nu a salvat
+    if (isVehicle) {
+      const savedUri = vehicle?.photo_uri;
+      const prev = editPhotoUri;
+      if (prev && prev !== savedUri) {
+        try {
+          await FileSystem.deleteAsync(toFileUri(prev), { idempotent: true });
+        } catch {
+          // best-effort
+        }
+      }
+    }
+    setEditVisible(false);
   }
 
   const handleSaveEdit = async () => {
@@ -295,7 +323,8 @@ export default function EntityDetailScreen() {
           editEmail.trim() || undefined
         );
       else if (entityKind === 'property_id') await updateProperty(id!, editName.trim());
-      else if (entityKind === 'vehicle_id')
+      else if (entityKind === 'vehicle_id') {
+        const previousPhoto = vehicle?.photo_uri;
         await updateVehicle(
           id!,
           editName.trim(),
@@ -303,7 +332,15 @@ export default function EntityDetailScreen() {
           editPlate.trim() || null,
           editFuelType
         );
-      else if (entityKind === 'animal_id')
+        // Șterge fișierul vechi dacă poza s-a schimbat sau a fost ștearsă
+        if (previousPhoto && previousPhoto !== editPhotoUri) {
+          try {
+            await FileSystem.deleteAsync(toFileUri(previousPhoto), { idempotent: true });
+          } catch {
+            // best-effort
+          }
+        }
+      } else if (entityKind === 'animal_id')
         await updateAnimal(id!, editName.trim(), editSpecies.trim() || 'câine');
       else if (entityKind === 'company_id')
         await updateCompany(
@@ -507,6 +544,7 @@ export default function EntityDetailScreen() {
 
         {isVehicle && (
           <VehicleMaintenanceSection
+            ref={maintenanceRef}
             vehicleId={id as string}
             vehicleName={vehicle?.name ?? entityName}
           />
@@ -600,13 +638,9 @@ export default function EntityDetailScreen() {
                     ),
                 },
                 {
-                  icon: 'globe-outline',
-                  label: 'Vignetă',
-                  onPress: () =>
-                    router.push({
-                      pathname: '/(tabs)/entitati/vigneta',
-                      params: { vehicleId: id },
-                    }),
+                  icon: 'construct-outline',
+                  label: 'Mentenanță',
+                  onPress: () => maintenanceRef.current?.openAddModal(),
                 },
               ] as BottomAction[])
             : undefined
@@ -693,7 +727,7 @@ export default function EntityDetailScreen() {
         visible={editVisible}
         animationType="slide"
         transparent
-        onRequestClose={() => setEditVisible(false)}
+        onRequestClose={handleCancelEdit}
       >
         <KeyboardAvoidingView
           style={styles.modalOverlay}
@@ -905,7 +939,7 @@ export default function EntityDetailScreen() {
             <RNView style={styles.modalButtons}>
               <Pressable
                 style={[styles.modalCancelBtn, { borderColor: C.border }]}
-                onPress={() => setEditVisible(false)}
+                onPress={handleCancelEdit}
                 disabled={editLoading}
               >
                 <RNText style={[styles.modalCancelText, { color: C.text }]}>Anulare</RNText>

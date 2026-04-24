@@ -3,11 +3,9 @@ import type { FuelStats } from './fuel';
 import type { StatusSeverity } from '@/theme/colors';
 
 const CRITICAL_DAYS = 7;
-const CRITICAL_SERVICE_KM = 500;
-const WARNING_SERVICE_KM = 1500;
 
 export type StatusItemRaw = {
-  key: 'rca' | 'casco' | 'itp' | 'service' | 'fuel';
+  key: 'rca' | 'casco' | 'itp' | 'fuel';
   label: string;
   value: string;
   unit?: string;
@@ -40,10 +38,6 @@ function formatDaysRemaining(days: number): string {
   if (days < 30) return `${days} ${days === 1 ? 'zi' : 'zile'}`;
   const months = Math.round(days / 30);
   return `${months} ${months === 1 ? 'lună' : 'luni'}`;
-}
-
-function formatKm(km: number): string {
-  return `${km.toLocaleString('ro-RO').replace(/,/g, ' ')} km`;
 }
 
 function formatIsoDateRo(iso: string): string {
@@ -97,33 +91,6 @@ export function buildVehicleStatusItems(args: BuildArgs): StatusItemRaw[] {
   if (itpEnabled) {
     const itp = pickLatestDocWithExpiry(documents, 'itp');
     if (itp) items.push(buildDocItem(itp, 'itp', 'ITP', notificationDays, today));
-  }
-
-  if (fuelStats.kmUntilService !== undefined && fuelStats.latestKm !== undefined) {
-    const km = fuelStats.kmUntilService;
-    let severity: StatusSeverity;
-    let value: string;
-    if (fuelStats.needsService || km <= 0) {
-      severity = 'critical';
-      value = 'Depășit';
-    } else if (km <= CRITICAL_SERVICE_KM) {
-      severity = 'critical';
-      value = formatKm(km);
-    } else if (km <= WARNING_SERVICE_KM) {
-      severity = 'warning';
-      value = formatKm(km);
-    } else {
-      severity = 'ok';
-      value = formatKm(km);
-    }
-    items.push({
-      key: 'service',
-      label: 'REVIZIE',
-      value,
-      subValue:
-        fuelStats.latestKm !== undefined ? `la ${formatKm(fuelStats.latestKm)}` : undefined,
-      severity,
-    });
   }
 
   if (fuelStats.avgConsumptionL100 !== undefined) {

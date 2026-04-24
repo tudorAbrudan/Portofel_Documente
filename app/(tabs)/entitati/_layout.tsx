@@ -8,7 +8,6 @@ export default function EntitatiLayout() {
       <Stack.Screen name="[id]" options={{ title: 'Detaliu' }} />
       <Stack.Screen name="wizard-masina" options={{ title: 'Adaugă mașină' }} />
       <Stack.Screen name="wizard-proprietate" options={{ title: 'Adaugă proprietate' }} />
-      <Stack.Screen name="vigneta" options={{ title: 'Vignetă la graniță' }} />
       <Stack.Screen name="fuel" options={{ title: 'Carburant & Revizii' }} />
     </Stack>
   );

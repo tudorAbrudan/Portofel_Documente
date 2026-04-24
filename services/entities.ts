@@ -2,6 +2,12 @@ import { db, generateId } from './db';
 import type { Person, Property, Vehicle, Card, Animal, Company } from '@/types';
 import * as FileSystem from 'expo-file-system/legacy';
 import { toFileUri } from './fileUtils';
+import { assignNextOrder, removeOrder } from './entityOrder';
+
+// Fallback sort pentru entități care nu au rând în entity_order (edge case:
+// migrarea nu a rulat sau entitatea a fost creată în afara căii standard).
+// Valoarea mare le împinge la coada listei, tie-break pe created_at DESC.
+const ORDER_FALLBACK = 1e18;
 
 export async function getPersons(): Promise<Person[]> {
   const rows = await db.getAllAsync<{
@@ -10,7 +16,13 @@ export async function getPersons(): Promise<Person[]> {
     phone: string | null;
     email: string | null;
     created_at: string;
-  }>('SELECT id, name, phone, email, created_at FROM persons ORDER BY created_at DESC');
+  }>(
+    `SELECT p.id, p.name, p.phone, p.email, p.created_at
+     FROM persons p
+     LEFT JOIN entity_order eo ON eo.entity_type = 'person' AND eo.entity_id = p.id
+     ORDER BY COALESCE(eo.sort_order, ?) ASC, p.created_at DESC`,
+    [ORDER_FALLBACK]
+  );
   return rows.map(r => ({
     id: r.id,
     name: r.name,
@@ -22,7 +34,11 @@ export async function getPersons(): Promise<Person[]> {
 
 export async function getProperties(): Promise<Property[]> {
   const rows = await db.getAllAsync<{ id: string; name: string; created_at: string }>(
-    'SELECT id, name, created_at FROM properties ORDER BY created_at DESC'
+    `SELECT p.id, p.name, p.created_at
+     FROM properties p
+     LEFT JOIN entity_order eo ON eo.entity_type = 'property' AND eo.entity_id = p.id
+     ORDER BY COALESCE(eo.sort_order, ?) ASC, p.created_at DESC`,
+    [ORDER_FALLBACK]
   );
   return rows.map(r => ({ id: r.id, name: r.name, createdAt: r.created_at }));
 }
@@ -36,7 +52,11 @@ export async function getVehicles(): Promise<Vehicle[]> {
     fuel_type: string | null;
     created_at: string;
   }>(
-    'SELECT id, name, photo_uri, plate_number, fuel_type, created_at FROM vehicles ORDER BY created_at DESC'
+    `SELECT v.id, v.name, v.photo_uri, v.plate_number, v.fuel_type, v.created_at
+     FROM vehicles v
+     LEFT JOIN entity_order eo ON eo.entity_type = 'vehicle' AND eo.entity_id = v.id
+     ORDER BY COALESCE(eo.sort_order, ?) ASC, v.created_at DESC`,
+    [ORDER_FALLBACK]
   );
   return rows.map(r => ({
     id: r.id,
@@ -55,7 +75,13 @@ export async function getCards(): Promise<Card[]> {
     last4: string;
     expiry: string | null;
     created_at: string;
-  }>('SELECT id, nickname, last4, expiry, created_at FROM cards ORDER BY created_at DESC');
+  }>(
+    `SELECT c.id, c.nickname, c.last4, c.expiry, c.created_at
+     FROM cards c
+     LEFT JOIN entity_order eo ON eo.entity_type = 'card' AND eo.entity_id = c.id
+     ORDER BY COALESCE(eo.sort_order, ?) ASC, c.created_at DESC`,
+    [ORDER_FALLBACK]
+  );
   return rows.map(r => ({
     id: r.id,
     nickname: r.nickname,
@@ -72,6 +98,7 @@ export async function createPerson(name: string, phone?: string, email?: string)
     'INSERT INTO persons (id, name, phone, email, created_at) VALUES (?, ?, ?, ?, ?)',
     [id, name, phone ?? null, email ?? null, created_at]
   );
+  await assignNextOrder('person', id);
   return { id, name, phone, email, createdAt: created_at };
 }
 
@@ -83,6 +110,7 @@ export async function createProperty(name: string): Promise<Property> {
     name,
     created_at,
   ]);
+  await assignNextOrder('property', id);
   return { id, name, createdAt: created_at };
 }
 
@@ -94,6 +122,7 @@ export async function createVehicle(name: string): Promise<Vehicle> {
     name,
     created_at,
   ]);
+  await assignNextOrder('vehicle', id);
   return { id, name, createdAt: created_at };
 }
 
@@ -104,6 +133,7 @@ export async function createCard(nickname: string, last4: string, expiry?: strin
     'INSERT INTO cards (id, nickname, last4, expiry, created_at) VALUES (?, ?, ?, ?, ?)',
     [id, nickname, last4, expiry ?? null, created_at]
   );
+  await assignNextOrder('card', id);
   return { id, nickname, last4, expiry, createdAt: created_at };
 }
 
@@ -154,10 +184,12 @@ export async function updateCard(
 
 export async function deletePerson(id: string): Promise<void> {
   await db.runAsync('DELETE FROM persons WHERE id = ?', [id]);
+  await removeOrder('person', id);
 }
 
 export async function deleteProperty(id: string): Promise<void> {
   await db.runAsync('DELETE FROM properties WHERE id = ?', [id]);
+  await removeOrder('property', id);
 }
 
 export async function deleteVehicle(id: string): Promise<void> {
@@ -178,10 +210,12 @@ export async function deleteVehicle(id: string): Promise<void> {
     // Nu blocăm ștergerea entității dacă ștergerea fișierului eșuează
   }
   await db.runAsync('DELETE FROM vehicles WHERE id = ?', [id]);
+  await removeOrder('vehicle', id);
 }
 
 export async function deleteCard(id: string): Promise<void> {
   await db.runAsync('DELETE FROM cards WHERE id = ?', [id]);
+  await removeOrder('card', id);
 }
 
 export async function getAnimals(): Promise<Animal[]> {
@@ -190,7 +224,13 @@ export async function getAnimals(): Promise<Animal[]> {
     name: string;
     species: string;
     created_at: string;
-  }>('SELECT id, name, species, created_at FROM animals ORDER BY created_at DESC');
+  }>(
+    `SELECT a.id, a.name, a.species, a.created_at
+     FROM animals a
+     LEFT JOIN entity_order eo ON eo.entity_type = 'animal' AND eo.entity_id = a.id
+     ORDER BY COALESCE(eo.sort_order, ?) ASC, a.created_at DESC`,
+    [ORDER_FALLBACK]
+  );
   return rows.map(r => ({ id: r.id, name: r.name, species: r.species, createdAt: r.created_at }));
 }
 
@@ -203,6 +243,7 @@ export async function createAnimal(name: string, species: string): Promise<Anima
     species,
     created_at,
   ]);
+  await assignNextOrder('animal', id);
   return { id, name, species, createdAt: created_at };
 }
 
@@ -212,6 +253,7 @@ export async function updateAnimal(id: string, name: string, species: string): P
 
 export async function deleteAnimal(id: string): Promise<void> {
   await db.runAsync('DELETE FROM animals WHERE id = ?', [id]);
+  await removeOrder('animal', id);
 }
 
 export async function getCompanies(): Promise<Company[]> {
@@ -221,7 +263,13 @@ export async function getCompanies(): Promise<Company[]> {
     cui: string | null;
     reg_com: string | null;
     created_at: string;
-  }>('SELECT id, name, cui, reg_com, created_at FROM companies ORDER BY created_at DESC');
+  }>(
+    `SELECT c.id, c.name, c.cui, c.reg_com, c.created_at
+     FROM companies c
+     LEFT JOIN entity_order eo ON eo.entity_type = 'company' AND eo.entity_id = c.id
+     ORDER BY COALESCE(eo.sort_order, ?) ASC, c.created_at DESC`,
+    [ORDER_FALLBACK]
+  );
   return rows.map(r => ({
     id: r.id,
     name: r.name,
@@ -242,6 +290,7 @@ export async function createCompany(
     'INSERT INTO companies (id, name, cui, reg_com, created_at) VALUES (?, ?, ?, ?, ?)',
     [id, name, cui ?? null, reg_com ?? null, created_at]
   );
+  await assignNextOrder('company', id);
   return { id, name, cui, reg_com, createdAt: created_at };
 }
 
@@ -261,4 +310,5 @@ export async function updateCompany(
 
 export async function deleteCompany(id: string): Promise<void> {
   await db.runAsync('DELETE FROM companies WHERE id = ?', [id]);
+  await removeOrder('company', id);
 }

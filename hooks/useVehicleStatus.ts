@@ -50,7 +50,7 @@ export function useVehicleStatus(vehicle: Vehicle | undefined): UseVehicleStatus
       const vehicleName = vehicle.name;
 
       const withPress: VehicleStatusItem[] = rawItems.map(raw => {
-        if (raw.key === 'service' || raw.key === 'fuel') {
+        if (raw.key === 'fuel') {
           return {
             ...raw,
             onPress: () =>

@@ -4,7 +4,6 @@ import {
   ScrollView,
   Pressable,
   RefreshControl,
-  Alert,
   View as RNView,
   Text as RNText,
   TextInput,
@@ -22,6 +21,8 @@ import { primary, statusColors } from '@/theme/colors';
 import { useEntities } from '@/hooks/useEntities';
 import { useVisibilitySettings } from '@/hooks/useVisibilitySettings';
 import { toFileUri } from '@/services/fileUtils';
+import { DraggableEntityList, LONG_PRESS_DELAY_MS } from '@/components/DraggableEntityList';
+import type { EntityRef } from '@/services/entityOrder';
 import type { EntityType, Person, Property, Vehicle, Card, Animal, Company } from '@/types';
 
 type AnyEntity = Person | Property | Vehicle | Card | Animal | Company;
@@ -85,15 +86,11 @@ export default function EntitatiListScreen() {
     cards,
     animals,
     companies,
+    globalOrderMap,
     loading,
     error,
     refresh,
-    deletePerson,
-    deleteProperty,
-    deleteVehicle,
-    deleteCard,
-    deleteAnimal,
-    deleteCompany,
+    reorder,
   } = useEntities();
 
   useFocusEffect(
@@ -103,17 +100,34 @@ export default function EntitatiListScreen() {
     }, [])
   );
 
-  const allTyped: TypedEntity[] = useMemo(
-    () => [
+  const allTyped: TypedEntity[] = useMemo(() => {
+    const TYPE_RANK: Record<EntityType, number> = {
+      person: 0,
+      property: 1,
+      vehicle: 2,
+      card: 3,
+      animal: 4,
+      company: 5,
+    };
+    const combined: TypedEntity[] = [
       ...persons.map(e => ({ item: e as AnyEntity, entityType: 'person' as EntityType })),
       ...properties.map(e => ({ item: e as AnyEntity, entityType: 'property' as EntityType })),
       ...vehicles.map(e => ({ item: e as AnyEntity, entityType: 'vehicle' as EntityType })),
       ...cards.map(e => ({ item: e as AnyEntity, entityType: 'card' as EntityType })),
       ...animals.map(e => ({ item: e as AnyEntity, entityType: 'animal' as EntityType })),
       ...companies.map(e => ({ item: e as AnyEntity, entityType: 'company' as EntityType })),
-    ],
-    [persons, properties, vehicles, cards, animals, companies]
-  );
+    ];
+    // Sortăm după sort_order-ul global; fallback la rangul pe tip pentru entități
+    // nou create care încă nu au fost salvate prin flow-ul obișnuit.
+    return combined.sort((a, b) => {
+      const sa = globalOrderMap.get(`${a.entityType}:${a.item.id}`);
+      const sb = globalOrderMap.get(`${b.entityType}:${b.item.id}`);
+      if (sa !== undefined && sb !== undefined) return sa - sb;
+      if (sa !== undefined) return -1;
+      if (sb !== undefined) return 1;
+      return TYPE_RANK[a.entityType] - TYPE_RANK[b.entityType];
+    });
+  }, [persons, properties, vehicles, cards, animals, companies, globalOrderMap]);
 
   const rawTyped: TypedEntity[] = useMemo(
     () => (tab === 'all' ? allTyped : allTyped.filter(e => e.entityType === tab)),
@@ -131,29 +145,6 @@ export default function EntitatiListScreen() {
           item.nickname.toLowerCase().includes(q))
     );
   }, [rawTyped, searchQuery]);
-
-  const deleteEntity = (id: string, name: string, entityType: EntityType) => {
-    Alert.alert('Ștergere', `Ștergi „${name}"?`, [
-      { text: 'Anulare', style: 'cancel' },
-      {
-        text: 'Șterge',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            if (entityType === 'person') await deletePerson(id);
-            else if (entityType === 'property') await deleteProperty(id);
-            else if (entityType === 'vehicle') await deleteVehicle(id);
-            else if (entityType === 'animal') await deleteAnimal(id);
-            else if (entityType === 'company') await deleteCompany(id);
-            else await deleteCard(id);
-            refresh();
-          } catch (e) {
-            Alert.alert('Eroare', e instanceof Error ? e.message : 'Nu s-a putut șterge');
-          }
-        },
-      },
-    ]);
-  };
 
   const getTitle = (item: AnyEntity): string => {
     if ('name' in item && item.name) return item.name as string;
@@ -188,6 +179,113 @@ export default function EntitatiListScreen() {
 
   const emptyIconName: IoniconName =
     tab === 'all' ? 'people-outline' : ENTITY_ICON[tab as EntityType];
+
+  // Drag & drop reorder: lista vizibilă poate fi filtrată pe tab. Merge-uim noua
+  // ordine vizibilă înapoi în ordinea globală (allTyped), apoi apelăm reorder().
+  const handleReorder = useCallback(
+    (newVisibleOrder: TypedEntity[]) => {
+      let newGlobalOrder: TypedEntity[];
+      if (tab === 'all') {
+        newGlobalOrder = newVisibleOrder;
+      } else {
+        const matchingSlots: number[] = [];
+        allTyped.forEach((e, i) => {
+          if (e.entityType === tab) matchingSlots.push(i);
+        });
+        const merged = [...allTyped];
+        newVisibleOrder.forEach((item, idx) => {
+          const slot = matchingSlots[idx];
+          if (slot !== undefined) merged[slot] = item;
+        });
+        newGlobalOrder = merged;
+      }
+      const refs: EntityRef[] = newGlobalOrder.map(e => ({
+        entity_type: e.entityType,
+        entity_id: e.item.id,
+      }));
+      reorder(refs);
+    },
+    [tab, allTyped, reorder]
+  );
+
+  const isSearching = !!searchQuery.trim();
+
+  const renderCard = (typed: TypedEntity, info: { isActive: boolean; onLongPress: () => void }) => {
+    const { item, entityType } = typed;
+    const title = getTitle(item);
+    const subtitle = getSubtitle(item, entityType);
+    const iconBg = ENTITY_ICON_BG[entityType];
+    const iconColor = ENTITY_ICON_COLOR[entityType];
+    const iconName = ENTITY_ICON[entityType];
+    const vehiclePhoto = entityType === 'vehicle' ? (item as Vehicle).photo_uri : undefined;
+
+    if (vehiclePhoto) {
+      const v = item as Vehicle;
+      return (
+        <Pressable
+          onPress={() => router.push(`/(tabs)/entitati/${item.id}`)}
+          onLongPress={info.onLongPress}
+          delayLongPress={LONG_PRESS_DELAY_MS}
+          android_ripple={{ color: 'rgba(0,0,0,0.05)', borderless: false }}
+          style={({ pressed }) => [
+            styles.vehicleCard,
+            pressed && styles.cardPressed,
+            info.isActive && styles.cardActive,
+          ]}
+        >
+          <Image
+            source={{ uri: toFileUri(vehiclePhoto) }}
+            style={StyleSheet.absoluteFill}
+            resizeMode="cover"
+          />
+          <LinearGradient
+            colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.55)']}
+            style={StyleSheet.absoluteFill}
+          />
+          <RNView style={styles.vehicleCardText}>
+            <RNText style={styles.vehicleName} numberOfLines={1}>
+              {v.name}
+            </RNText>
+            {v.plate_number ? (
+              <RNText style={styles.vehiclePlate} numberOfLines={1}>
+                {v.plate_number}
+              </RNText>
+            ) : null}
+          </RNView>
+        </Pressable>
+      );
+    }
+
+    return (
+      <Pressable
+        style={({ pressed }) => [
+          styles.card,
+          { backgroundColor: C.card, shadowColor: C.cardShadow },
+          pressed && styles.cardPressed,
+          info.isActive && styles.cardActive,
+        ]}
+        onPress={() => router.push(`/(tabs)/entitati/${item.id}`)}
+        onLongPress={info.onLongPress}
+        delayLongPress={LONG_PRESS_DELAY_MS}
+        android_ripple={{ color: 'rgba(0,0,0,0.05)', borderless: false }}
+      >
+        <RNView style={[styles.iconWrap, { backgroundColor: iconBg }]}>
+          <Ionicons name={iconName} size={22} color={iconColor} />
+        </RNView>
+        <RNView style={styles.cardContent}>
+          <RNText style={[styles.cardTitle, { color: C.text }]} numberOfLines={1}>
+            {title}
+          </RNText>
+          {subtitle && (
+            <RNText style={[styles.cardSub, { color: C.textSecondary }]} numberOfLines={1}>
+              {subtitle}
+            </RNText>
+          )}
+        </RNView>
+        <Ionicons name="chevron-forward" size={16} color={C.textSecondary} />
+      </Pressable>
+    );
+  };
 
   return (
     <RNView style={[styles.container, { backgroundColor: C.background }]}>
@@ -272,110 +370,44 @@ export default function EntitatiListScreen() {
       ) : null}
 
       {/* ── Entity list ── */}
-      <ScrollView
-        ref={scrollRef}
-        style={styles.scroll}
-        contentContainerStyle={[
-          styles.scrollContent,
-          typedList.length === 0 && styles.scrollContentEmpty,
-        ]}
+      <DraggableEntityList<TypedEntity>
+        data={typedList}
+        keyExtractor={t => t.item.id}
+        renderItem={renderCard}
+        onReorder={handleReorder}
+        scrollRef={scrollRef}
+        disabled={isSearching}
         refreshControl={
           <RefreshControl refreshing={loading} onRefresh={refresh} tintColor={C.primary} />
         }
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
-      >
-        {!error && typedList.length === 0 && !loading ? (
-          <RNView style={styles.emptyWrap}>
-            <Ionicons
-              name={emptyIconName}
-              size={64}
-              color={C.textSecondary}
-              style={styles.emptyIcon}
-            />
-            <RNText style={[styles.emptyTitle, { color: C.text }]}>
-              {searchQuery.trim() ? 'Niciun rezultat' : 'Nicio entitate'}
-            </RNText>
-            <RNText style={[styles.emptySub, { color: C.textSecondary }]}>
-              {searchQuery.trim()
-                ? 'Încearcă alte cuvinte cheie.'
-                : 'Apasă + Adaugă pentru a crea prima entitate.'}
-            </RNText>
-          </RNView>
-        ) : (
-          typedList.map(({ item, entityType }) => {
-            const title = getTitle(item);
-            const subtitle = getSubtitle(item, entityType);
-            const iconBg = ENTITY_ICON_BG[entityType];
-            const iconColor = ENTITY_ICON_COLOR[entityType];
-            const iconName = ENTITY_ICON[entityType];
-            const vehiclePhoto = entityType === 'vehicle' ? (item as Vehicle).photo_uri : undefined;
-
-            if (vehiclePhoto) {
-              const v = item as Vehicle;
-              return (
-                <Pressable
-                  key={item.id}
-                  onPress={() => router.push(`/(tabs)/entitati/${item.id}`)}
-                  onLongPress={() => deleteEntity(item.id, title, entityType)}
-                  android_ripple={{ color: 'rgba(0,0,0,0.05)', borderless: false }}
-                  style={({ pressed }) => [styles.vehicleCard, pressed && styles.cardPressed]}
-                >
-                  <Image
-                    source={{ uri: toFileUri(vehiclePhoto) }}
-                    style={StyleSheet.absoluteFill}
-                    resizeMode="cover"
-                  />
-                  <LinearGradient
-                    colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.55)']}
-                    style={StyleSheet.absoluteFill}
-                  />
-                  <RNView style={styles.vehicleCardText}>
-                    <RNText style={styles.vehicleName} numberOfLines={1}>
-                      {v.name}
-                    </RNText>
-                    {v.plate_number ? (
-                      <RNText style={styles.vehiclePlate} numberOfLines={1}>
-                        {v.plate_number}
-                      </RNText>
-                    ) : null}
-                  </RNView>
-                </Pressable>
-              );
-            }
-
-            return (
-              <Pressable
-                key={item.id}
-                style={({ pressed }) => [
-                  styles.card,
-                  { backgroundColor: C.card, shadowColor: C.cardShadow },
-                  pressed && styles.cardPressed,
-                ]}
-                onPress={() => router.push(`/(tabs)/entitati/${item.id}`)}
-                onLongPress={() => deleteEntity(item.id, title, entityType)}
-                android_ripple={{ color: 'rgba(0,0,0,0.05)', borderless: false }}
-              >
-                <RNView style={[styles.iconWrap, { backgroundColor: iconBg }]}>
-                  <Ionicons name={iconName} size={22} color={iconColor} />
-                </RNView>
-                <RNView style={styles.cardContent}>
-                  <RNText style={[styles.cardTitle, { color: C.text }]} numberOfLines={1}>
-                    {title}
-                  </RNText>
-                  {subtitle && (
-                    <RNText style={[styles.cardSub, { color: C.textSecondary }]} numberOfLines={1}>
-                      {subtitle}
-                    </RNText>
-                  )}
-                </RNView>
-                <Ionicons name="chevron-forward" size={16} color={C.textSecondary} />
-              </Pressable>
-            );
-          })
-        )}
-      </ScrollView>
+        contentContainerStyle={[
+          styles.scrollContent,
+          typedList.length === 0 && styles.scrollContentEmpty,
+        ]}
+        emptyComponent={
+          !error && !loading ? (
+            <RNView style={styles.emptyWrap}>
+              <Ionicons
+                name={emptyIconName}
+                size={64}
+                color={C.textSecondary}
+                style={styles.emptyIcon}
+              />
+              <RNText style={[styles.emptyTitle, { color: C.text }]}>
+                {isSearching ? 'Niciun rezultat' : 'Nicio entitate'}
+              </RNText>
+              <RNText style={[styles.emptySub, { color: C.textSecondary }]}>
+                {isSearching
+                  ? 'Încearcă alte cuvinte cheie.'
+                  : 'Apasă + Adaugă pentru a crea prima entitate.'}
+              </RNText>
+            </RNView>
+          ) : null
+        }
+      />
 
       <BottomActionBar
         label="Adaugă entitate"
@@ -526,6 +558,9 @@ const styles = StyleSheet.create({
   cardPressed: {
     opacity: 0.85,
     transform: [{ scale: 0.99 }],
+  },
+  cardActive: {
+    opacity: 0.95,
   },
   iconWrap: {
     width: 44,

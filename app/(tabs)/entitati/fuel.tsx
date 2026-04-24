@@ -16,17 +16,16 @@ import { useTheme } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { Text, View } from '@/components/Themed';
 import { useColorScheme } from '@/components/useColorScheme';
-import { primary, light, dark, statusColors } from '@/theme/colors';
+import { primary, light, dark } from '@/theme/colors';
 import {
   getFuelRecords,
   addFuelRecord,
+  updateFuelRecord,
   deleteFuelRecord,
-  getFuelSettings,
-  saveFuelSettings,
   computeFuelStats,
 } from '@/services/fuel';
 import { extractText, extractFuelInfo } from '@/services/ocr';
-import type { FuelRecord, VehicleFuelSettings, FuelStats } from '@/services/fuel';
+import type { FuelRecord, FuelStats } from '@/services/fuel';
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -43,16 +42,11 @@ export default function FuelScreen() {
 
   const [records, setRecords] = useState<FuelRecord[]>([]);
   const [stats, setStats] = useState<FuelStats | null>(null);
-  const [settings, setSettings] = useState<VehicleFuelSettings | null>(null);
   const [loading, setLoading] = useState(true);
-
-  // settings edit state
-  const [settingsInterval, setSettingsInterval] = useState('');
-  const [settingsLastKm, setSettingsLastKm] = useState('');
-  const [settingsSaving, setSettingsSaving] = useState(false);
 
   // modal state
   const [modalVisible, setModalVisible] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [mDate, setMDate] = useState('');
   const [mLiters, setMLiters] = useState('');
   const [mKm, setMKm] = useState('');
@@ -64,16 +58,12 @@ export default function FuelScreen() {
     if (!vehicleId) return;
     setLoading(true);
     try {
-      const [recs, stts, setts] = await Promise.all([
+      const [recs, stts] = await Promise.all([
         getFuelRecords(vehicleId),
         computeFuelStats(vehicleId),
-        getFuelSettings(vehicleId),
       ]);
       setRecords(recs);
       setStats(stts);
-      setSettings(setts);
-      setSettingsInterval(String(setts.service_km_interval || ''));
-      setSettingsLastKm(setts.last_service_km !== undefined ? String(setts.last_service_km) : '');
     } catch {
       Alert.alert('Eroare', 'Nu s-au putut încărca datele de carburant.');
     } finally {
@@ -95,35 +85,26 @@ export default function FuelScreen() {
     );
   }
 
-  async function handleSaveSettings() {
-    if (!vehicleId) return;
-    const interval = parseInt(settingsInterval, 10);
-    if (isNaN(interval) || interval <= 0) {
-      Alert.alert('Eroare', 'Intervalul de revizie trebuie să fie un număr pozitiv.');
-      return;
-    }
-    setSettingsSaving(true);
-    try {
-      const update: Partial<VehicleFuelSettings> = { service_km_interval: interval };
-      const lastKmNum = parseInt(settingsLastKm, 10);
-      if (!isNaN(lastKmNum) && lastKmNum > 0) {
-        update.last_service_km = lastKmNum;
-      }
-      await saveFuelSettings(vehicleId, update);
-      await load();
-    } catch {
-      Alert.alert('Eroare', 'Nu s-au putut salva setările.');
-    } finally {
-      setSettingsSaving(false);
-    }
-  }
+  // Cel mai recent km înregistrat (după dată DESC, primul cu km_total).
+  const lastKm = records.find(r => r.km_total !== undefined)?.km_total;
 
   function openModal() {
+    setEditingId(null);
     setMDate(todayIso());
     setMLiters('');
     setMKm('');
     setMPrice('');
     setMIsFull(true);
+    setModalVisible(true);
+  }
+
+  function openEditModal(record: FuelRecord) {
+    setEditingId(record.id);
+    setMDate(record.date);
+    setMLiters(record.liters !== undefined ? String(record.liters) : '');
+    setMKm(record.km_total !== undefined ? String(record.km_total) : '');
+    setMPrice(record.price !== undefined ? String(record.price) : '');
+    setMIsFull(record.is_full);
     setModalVisible(true);
   }
 
@@ -155,31 +136,82 @@ export default function FuelScreen() {
     }
   }
 
-  async function handleSaveRecord() {
+  async function persistRecord(date: string, liters?: number, km?: number, price?: number) {
     if (!vehicleId) return;
-    if (!mDate.trim()) {
-      Alert.alert('Eroare', 'Data este obligatorie.');
-      return;
-    }
     setMLoading(true);
     try {
-      const liters = mLiters.trim() ? parseFloat(mLiters) : undefined;
-      const km = mKm.trim() ? parseInt(mKm, 10) : undefined;
-      const price = mPrice.trim() ? parseFloat(mPrice) : undefined;
-      await addFuelRecord(vehicleId, {
-        date: mDate.trim(),
-        liters,
-        km_total: km,
-        price,
-        is_full: mIsFull,
-      });
+      if (editingId) {
+        await updateFuelRecord(editingId, {
+          date,
+          liters,
+          km_total: km,
+          price,
+          is_full: mIsFull,
+        });
+      } else {
+        await addFuelRecord(vehicleId, {
+          date,
+          liters,
+          km_total: km,
+          price,
+          is_full: mIsFull,
+        });
+      }
       setModalVisible(false);
+      setEditingId(null);
       await load();
     } catch {
       Alert.alert('Eroare', 'Nu s-a putut salva înregistrarea.');
     } finally {
       setMLoading(false);
     }
+  }
+
+  async function handleSaveRecord() {
+    if (!vehicleId) return;
+    const date = mDate.trim();
+    if (!date) {
+      Alert.alert('Eroare', 'Data este obligatorie.');
+      return;
+    }
+    const liters = mLiters.trim() ? parseFloat(mLiters) : undefined;
+    const km = mKm.trim() ? parseInt(mKm, 10) : undefined;
+    const price = mPrice.trim() ? parseFloat(mPrice) : undefined;
+
+    // Validare ordine cronologică: km trebuie să fie monoton crescător
+    // raportat la vecinii sortați după dată (excluzând bonul editat).
+    if (km !== undefined) {
+      const others = records
+        .filter(r => r.id !== editingId && r.km_total !== undefined)
+        .sort((a, b) => (a.date === b.date ? 0 : a.date < b.date ? -1 : 1));
+      const prev = [...others].reverse().find(r => r.date <= date);
+      const next = others.find(r => r.date > date);
+
+      const issues: string[] = [];
+      if (prev && prev.km_total !== undefined && km <= prev.km_total) {
+        issues.push(`• bonul din ${prev.date} are ${prev.km_total.toLocaleString('ro-RO')} km`);
+      }
+      if (next && next.km_total !== undefined && km >= next.km_total) {
+        issues.push(`• bonul din ${next.date} are ${next.km_total.toLocaleString('ro-RO')} km`);
+      }
+
+      if (issues.length > 0) {
+        Alert.alert(
+          'KM neobișnuit',
+          `KM-ul ${km.toLocaleString('ro-RO')} nu respectă ordinea cronologică:\n\n${issues.join('\n')}\n\nSalvezi oricum? Consumul mediu va fi recalculat.`,
+          [
+            { text: 'Anulează', style: 'cancel' },
+            {
+              text: 'Salvează oricum',
+              onPress: () => persistRecord(date, liters, km, price),
+            },
+          ]
+        );
+        return;
+      }
+    }
+
+    await persistRecord(date, liters, km, price);
   }
 
   function handleDeleteRecord(record: FuelRecord) {
@@ -228,83 +260,11 @@ export default function FuelScreen() {
         </View>
       )}
 
-      {stats?.needsService && (
-        <View
-          style={[
-            styles.serviceBanner,
-            {
-              backgroundColor: scheme === 'dark' ? 'rgba(216,76,76,0.18)' : '#fff0f0',
-              borderColor: statusColors.critical,
-            },
-          ]}
-        >
-          <Text style={[styles.serviceBannerText, { color: statusColors.critical }]}>
-            ⚠️ Revizie depășită!
-            {stats.kmUntilService !== undefined
-              ? ` (${Math.abs(stats.kmUntilService)} km depășit)`
-              : ''}
-          </Text>
-        </View>
-      )}
-
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Setări revizie */}
-        <View style={[styles.settingsSection, { backgroundColor: colors.card }]}>
-          <Text style={styles.sectionTitle}>Setări revizie</Text>
-
-          <View style={styles.settingsRow}>
-            <Text style={styles.settingsLabel}>Interval revizie (km):</Text>
-            <TextInput
-              style={[
-                styles.settingsInput,
-                {
-                  borderColor: palette.border,
-                  color: colors.text,
-                  backgroundColor: palette.background,
-                },
-              ]}
-              value={settingsInterval}
-              onChangeText={setSettingsInterval}
-              keyboardType="number-pad"
-              placeholder="Ex: 10000"
-              placeholderTextColor={palette.textSecondary}
-            />
-          </View>
-
-          <View style={styles.settingsRow}>
-            <Text style={styles.settingsLabel}>Ultima revizie la km:</Text>
-            <TextInput
-              style={[
-                styles.settingsInput,
-                {
-                  borderColor: palette.border,
-                  color: colors.text,
-                  backgroundColor: palette.background,
-                },
-              ]}
-              value={settingsLastKm}
-              onChangeText={setSettingsLastKm}
-              keyboardType="number-pad"
-              placeholder="Ex: 120000"
-              placeholderTextColor={palette.textSecondary}
-            />
-          </View>
-
-          <Pressable
-            style={({ pressed }) => [styles.saveSettingsBtn, pressed && styles.btnPressed]}
-            onPress={handleSaveSettings}
-            disabled={settingsSaving}
-          >
-            <Text style={styles.saveSettingsBtnText}>
-              {settingsSaving ? 'Se salvează...' : 'Salvează setări'}
-            </Text>
-          </Pressable>
-        </View>
-
         {/* Lista înregistrări */}
         <Text style={styles.sectionTitle}>Istoric bonuri</Text>
 
@@ -314,40 +274,74 @@ export default function FuelScreen() {
           <Text style={styles.empty}>Nicio înregistrare. Adaugă primul bon.</Text>
         )}
 
-        {records.map(record => (
-          <Pressable
-            key={record.id}
-            style={({ pressed }) => [
-              styles.recordCard,
-              { backgroundColor: colors.card },
-              pressed && styles.btnPressed,
-            ]}
-            onLongPress={() => handleDeleteRecord(record)}
-          >
-            <View style={styles.recordHeader}>
-              <View style={styles.recordHeaderLeft}>
-                <Text style={styles.recordDate}>{record.date}</Text>
-                {!record.is_full && (
-                  <View style={styles.partialChip}>
-                    <Text style={styles.partialChipText}>PARȚIAL</Text>
-                  </View>
+        {records.map((record, i) => {
+          // records sortate DESC după dată → "anteriorul" chronologic e records[i+1]
+          const prev = i + 1 < records.length ? records[i + 1] : null;
+          let kmSinceLast: number | undefined;
+          let consumptionSinceLast: number | undefined;
+          if (prev && record.km_total !== undefined && prev.km_total !== undefined) {
+            const delta = record.km_total - prev.km_total;
+            if (delta > 0) {
+              kmSinceLast = delta;
+              if (
+                record.is_full &&
+                prev.is_full &&
+                record.liters !== undefined &&
+                record.liters > 0
+              ) {
+                consumptionSinceLast = (record.liters / delta) * 100;
+              }
+            }
+          }
+
+          return (
+            <Pressable
+              key={record.id}
+              style={({ pressed }) => [
+                styles.recordCard,
+                { backgroundColor: colors.card },
+                pressed && styles.btnPressed,
+              ]}
+              onPress={() => openEditModal(record)}
+              onLongPress={() => handleDeleteRecord(record)}
+            >
+              <View style={styles.recordHeader}>
+                <View style={styles.recordHeaderLeft}>
+                  <Text style={styles.recordDate}>{record.date}</Text>
+                  {!record.is_full && (
+                    <View style={styles.partialChip}>
+                      <Text style={styles.partialChipText}>PARȚIAL</Text>
+                    </View>
+                  )}
+                </View>
+                {record.price !== undefined && (
+                  <Text style={styles.recordPrice}>{record.price.toFixed(2)} RON</Text>
                 )}
               </View>
-              {record.price !== undefined && (
-                <Text style={styles.recordPrice}>{record.price.toFixed(2)} RON</Text>
+              <View style={styles.recordDetails}>
+                {record.liters !== undefined && (
+                  <Text style={styles.recordMeta}>{record.liters.toFixed(2)} L</Text>
+                )}
+                {record.km_total !== undefined && (
+                  <Text style={styles.recordMeta}>
+                    {record.km_total.toLocaleString('ro-RO')} km
+                  </Text>
+                )}
+              </View>
+              {prev && (
+                <Text style={[styles.recordSinceLast, { color: palette.textSecondary }]}>
+                  De la ultima:{' '}
+                  {kmSinceLast !== undefined ? `${kmSinceLast.toLocaleString('ro-RO')} km` : '– km'}{' '}
+                  ·{' '}
+                  {consumptionSinceLast !== undefined
+                    ? `${consumptionSinceLast.toFixed(1)} L/100km`
+                    : '– L/100km'}
+                </Text>
               )}
-            </View>
-            <View style={styles.recordDetails}>
-              {record.liters !== undefined && (
-                <Text style={styles.recordMeta}>{record.liters.toFixed(2)} L</Text>
-              )}
-              {record.km_total !== undefined && (
-                <Text style={styles.recordMeta}>{record.km_total.toLocaleString('ro-RO')} km</Text>
-              )}
-            </View>
-            <Text style={styles.recordHint}>Apasă lung pentru a șterge</Text>
-          </Pressable>
-        ))}
+              <Text style={styles.recordHint}>Apasă pentru editare · lung pentru ștergere</Text>
+            </Pressable>
+          );
+        })}
       </ScrollView>
 
       {/* Buton adaugă bon */}
@@ -370,7 +364,7 @@ export default function FuelScreen() {
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
           <View style={[styles.modalContent, { backgroundColor: palette.card }]}>
-            <Text style={styles.modalTitle}>Bon motorină</Text>
+            <Text style={styles.modalTitle}>{editingId ? 'Editează bon' : 'Bon alimentare'}</Text>
 
             {/* OCR */}
             <Pressable
@@ -432,7 +426,9 @@ export default function FuelScreen() {
               ]}
               value={mKm}
               onChangeText={setMKm}
-              placeholder="Ex: 125430"
+              placeholder={
+                lastKm !== undefined ? `Anterior: ${lastKm.toLocaleString('ro-RO')}` : 'Ex: 125430'
+              }
               placeholderTextColor={palette.textSecondary}
               keyboardType="number-pad"
               editable={!mLoading}
@@ -525,55 +521,10 @@ const styles = StyleSheet.create({
   statValue: { fontSize: 15, fontWeight: '700', color: primary },
   statLabel: { fontSize: 11, marginTop: 2, textAlign: 'center' },
 
-  // Service banner
-  serviceBanner: {
-    marginHorizontal: 12,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderRadius: 10,
-    padding: 12,
-  },
-  serviceBannerText: { fontWeight: '600', fontSize: 14, textAlign: 'center' },
-
   scroll: { flex: 1 },
   scrollContent: { padding: 12, paddingBottom: 90 },
 
-  // Settings section
-  settingsSection: {
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 4,
-    elevation: 1,
-  },
   sectionTitle: { fontSize: 16, fontWeight: '600', marginBottom: 14 },
-  settingsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-    backgroundColor: 'transparent',
-  },
-  settingsLabel: { flex: 1, fontSize: 14, opacity: 0.85 },
-  settingsInput: {
-    width: 110,
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 15,
-  },
-  saveSettingsBtn: {
-    marginTop: 4,
-    borderWidth: 1,
-    borderColor: primary,
-    borderRadius: 10,
-    paddingVertical: 10,
-    alignItems: 'center',
-  },
-  saveSettingsBtnText: { color: primary, fontWeight: '600', fontSize: 15 },
 
   // Records
   empty: { opacity: 0.6, fontSize: 14, marginBottom: 16, textAlign: 'center' },
@@ -619,7 +570,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   recordMeta: { fontSize: 13, opacity: 0.7 },
-  recordHint: { fontSize: 11, opacity: 0.35, marginTop: 6 },
+  recordSinceLast: { fontSize: 12, marginTop: 6, fontStyle: 'italic' },
+  recordHint: { fontSize: 11, opacity: 0.35, marginTop: 4 },
 
   btnPressed: { opacity: 0.7 },
 

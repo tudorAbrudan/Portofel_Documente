@@ -87,13 +87,7 @@ db.execSync(`
     created_at TEXT NOT NULL
   );
 
-  CREATE TABLE IF NOT EXISTS vehicle_fuel_settings (
-    vehicle_id TEXT PRIMARY KEY,
-    service_km_interval INTEGER NOT NULL DEFAULT 10000,
-    last_service_km INTEGER,
-    last_service_date TEXT,
-    updated_at TEXT NOT NULL
-  );
+  DROP TABLE IF EXISTS vehicle_fuel_settings;
 
   CREATE TABLE IF NOT EXISTS companies (
     id TEXT PRIMARY KEY,
@@ -356,4 +350,47 @@ try {
   );
 } catch {
   // indexul există deja
+}
+
+// Entity ordering: poziție globală reorderabilă manual peste toate tipurile de entitate.
+// sort_order e REAL ca să permită inserări între elemente fără renumerotare completă.
+try {
+  db.execSync(`
+    CREATE TABLE IF NOT EXISTS entity_order (
+      entity_type TEXT NOT NULL,
+      entity_id   TEXT NOT NULL,
+      sort_order  REAL NOT NULL,
+      PRIMARY KEY (entity_type, entity_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_entity_order_sort ON entity_order(sort_order);
+  `);
+} catch {
+  // tabela/indexul există deja
+}
+
+// Migrare: populează entity_order pentru entitățile existente.
+// Ordinea inițială = ordinea anterioară a app-ului (persoane, proprietăți, vehicule,
+// carduri, animale, firme), fiecare tip sortat după created_at DESC (cele mai noi primele).
+// INSERT OR IGNORE sare peste rândurile deja populate dacă migrarea rulează din nou.
+try {
+  db.execSync(`
+    INSERT OR IGNORE INTO entity_order (entity_type, entity_id, sort_order)
+    SELECT entity_type, entity_id,
+           (ROW_NUMBER() OVER (ORDER BY type_rank, created_at DESC)) * 1000.0 AS sort_order
+    FROM (
+      SELECT 1 AS type_rank, 'person'   AS entity_type, id AS entity_id, created_at FROM persons
+      UNION ALL
+      SELECT 2, 'property', id, created_at FROM properties
+      UNION ALL
+      SELECT 3, 'vehicle',  id, created_at FROM vehicles
+      UNION ALL
+      SELECT 4, 'card',     id, created_at FROM cards
+      UNION ALL
+      SELECT 5, 'animal',   id, created_at FROM animals
+      UNION ALL
+      SELECT 6, 'company',  id, created_at FROM companies
+    )
+  `);
+} catch {
+  // Migrare deja aplicată sau ROW_NUMBER indisponibil pe SQLite vechi — fallback safe: ordonarea se va construi din created_at
 }

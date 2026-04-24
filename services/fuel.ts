@@ -11,21 +11,12 @@ export interface FuelRecord {
   created_at: string;
 }
 
-export interface VehicleFuelSettings {
-  vehicle_id: string;
-  service_km_interval: number; // km între revizii, default 10000
-  last_service_km?: number;
-  last_service_date?: string;
-}
-
 export interface FuelStats {
   totalRecords: number;
   avgConsumptionL100?: number;
   totalLiters: number;
   totalCost: number;
   latestKm?: number;
-  needsService: boolean;
-  kmUntilService?: number;
   consumptionSparkline: number[];
 }
 
@@ -38,13 +29,6 @@ type FuelRow = {
   price: number | null;
   is_full: number; // SQLite boolean = 0 sau 1
   created_at: string;
-};
-
-type SettingsRow = {
-  vehicle_id: string;
-  service_km_interval: number;
-  last_service_km: number | null;
-  last_service_date: string | null;
 };
 
 function mapRecord(r: FuelRow): FuelRecord {
@@ -110,55 +94,27 @@ export async function deleteFuelRecord(id: string): Promise<void> {
   await db.runAsync('DELETE FROM fuel_records WHERE id = ?', [id]);
 }
 
-export async function getFuelSettings(vehicleId: string): Promise<VehicleFuelSettings> {
-  const row = await db.getFirstAsync<SettingsRow>(
-    'SELECT * FROM vehicle_fuel_settings WHERE vehicle_id = ?',
-    [vehicleId]
-  );
-  if (!row) {
-    return { vehicle_id: vehicleId, service_km_interval: 10000 };
+export async function updateFuelRecord(
+  id: string,
+  fields: {
+    date: string;
+    liters?: number;
+    km_total?: number;
+    price?: number;
+    is_full: boolean;
   }
-  return {
-    vehicle_id: vehicleId,
-    service_km_interval: row.service_km_interval,
-    last_service_km: row.last_service_km ?? undefined,
-    last_service_date: row.last_service_date ?? undefined,
-  };
-}
-
-export async function saveFuelSettings(
-  vehicleId: string,
-  settings: Partial<VehicleFuelSettings>
 ): Promise<void> {
-  const updated_at = new Date().toISOString();
-  // Upsert
-  const existing = await db.getFirstAsync<{ vehicle_id: string }>(
-    'SELECT vehicle_id FROM vehicle_fuel_settings WHERE vehicle_id = ?',
-    [vehicleId]
+  await db.runAsync(
+    'UPDATE fuel_records SET date = ?, liters = ?, km_total = ?, price = ?, is_full = ? WHERE id = ?',
+    [
+      fields.date,
+      fields.liters ?? null,
+      fields.km_total ?? null,
+      fields.price ?? null,
+      fields.is_full ? 1 : 0,
+      id,
+    ]
   );
-  if (existing) {
-    await db.runAsync(
-      'UPDATE vehicle_fuel_settings SET service_km_interval = ?, last_service_km = ?, last_service_date = ?, updated_at = ? WHERE vehicle_id = ?',
-      [
-        settings.service_km_interval ?? 10000,
-        settings.last_service_km ?? null,
-        settings.last_service_date ?? null,
-        updated_at,
-        vehicleId,
-      ]
-    );
-  } else {
-    await db.runAsync(
-      'INSERT INTO vehicle_fuel_settings (vehicle_id, service_km_interval, last_service_km, last_service_date, updated_at) VALUES (?, ?, ?, ?, ?)',
-      [
-        vehicleId,
-        settings.service_km_interval ?? 10000,
-        settings.last_service_km ?? null,
-        settings.last_service_date ?? null,
-        updated_at,
-      ]
-    );
-  }
 }
 
 /**
@@ -215,7 +171,6 @@ export function computeConsumptionFromFullToFull(records: FuelRecord[]): {
 
 export async function computeFuelStats(vehicleId: string): Promise<FuelStats> {
   const records = await getFuelRecords(vehicleId);
-  const settings = await getFuelSettings(vehicleId);
 
   const totalLiters = records.reduce((s, r) => s + (r.liters ?? 0), 0);
   const totalCost = records.reduce((s, r) => s + (r.price ?? 0), 0);
@@ -227,23 +182,12 @@ export async function computeFuelStats(vehicleId: string): Promise<FuelStats> {
     .sort((a, b) => (a.km_total ?? 0) - (b.km_total ?? 0));
   const latestKm = withKm.length > 0 ? withKm[withKm.length - 1].km_total : undefined;
 
-  let needsService = false;
-  let kmUntilService: number | undefined;
-  if (latestKm !== undefined && settings.last_service_km !== undefined) {
-    kmUntilService = settings.last_service_km + settings.service_km_interval - latestKm;
-    needsService = kmUntilService <= 0;
-  } else if (latestKm !== undefined && settings.last_service_km === undefined) {
-    // Nu s-a setat ultima revizie — nu alertăm
-  }
-
   return {
     totalRecords: records.length,
     avgConsumptionL100,
     totalLiters,
     totalCost,
     latestKm,
-    needsService,
-    kmUntilService,
     consumptionSparkline: sparkline,
   };
 }

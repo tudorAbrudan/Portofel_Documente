@@ -1,7 +1,7 @@
 import { memo } from 'react';
 import { StyleSheet, ScrollView, Pressable, View, Text, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import Svg, { Polyline } from 'react-native-svg';
+import Svg, { Polyline, Circle, Polygon } from 'react-native-svg';
 import { useColorScheme } from '@/components/useColorScheme';
 import { statusColors, primary, light, dark } from '@/theme/colors';
 import type { VehicleStatusItem } from '@/hooks/useVehicleStatus';
@@ -14,8 +14,6 @@ function iconForKey(key: VehicleStatusItem['key']): keyof typeof Ionicons.glyphM
       return 'shield-checkmark-outline';
     case 'itp':
       return 'clipboard-outline';
-    case 'service':
-      return 'construct-outline';
     case 'fuel':
       return 'flame-outline';
   }
@@ -23,7 +21,7 @@ function iconForKey(key: VehicleStatusItem['key']): keyof typeof Ionicons.glyphM
 
 function Sparkline({ values }: { values: number[] }) {
   const width = 128;
-  const height = 16;
+  const height = 28;
   if (values.length < 2) {
     return <View style={{ width, height }} />;
   }
@@ -31,16 +29,21 @@ function Sparkline({ values }: { values: number[] }) {
   const max = Math.max(...values);
   const range = max - min || 1;
   const step = width / (values.length - 1);
-  const points = values
-    .map((v, i) => {
-      const x = i * step;
-      const y = height - ((v - min) / range) * height;
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .join(' ');
+  const vPad = 4;
+  const innerH = height - vPad * 2;
+  const coords = values.map((v, i) => ({
+    x: i * step,
+    y: vPad + innerH - ((v - min) / range) * innerH,
+  }));
+  const linePoints = coords.map(c => `${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(' ');
+  const fillPoints = `0,${height} ${linePoints} ${width},${height}`;
   return (
     <Svg width={width} height={height}>
-      <Polyline points={points} fill="none" stroke={primary} strokeWidth={1.5} />
+      <Polygon points={fillPoints} fill={`${primary}26`} />
+      <Polyline points={linePoints} fill="none" stroke={primary} strokeWidth={1.75} />
+      {coords.map((c, i) => (
+        <Circle key={i} cx={c.x} cy={c.y} r={2} fill={primary} />
+      ))}
     </Svg>
   );
 }
@@ -138,7 +141,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   card: {
-    height: 112,
+    height: 124,
     borderRadius: 12,
     paddingVertical: 12,
     paddingHorizontal: 12,

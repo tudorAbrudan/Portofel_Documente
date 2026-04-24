@@ -2,13 +2,14 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
 import JSZip from 'jszip';
-import type { DocumentType } from '@/types';
+import type { DocumentType, EntityType } from '@/types';
 import { DOCUMENT_TYPE_LABELS } from '@/types';
 import * as entities from './entities';
 import * as docs from './documents';
 import { getCustomTypes, createCustomType } from './customTypes';
 import { toFileUri, toRelativePath } from './fileUtils';
 import { onRestoreSuccess } from './reviewPrompt';
+import { db } from './db';
 
 /**
  * Citește un fișier ca base64. Returnează null dacă nu există sau nu poate fi citit.
@@ -104,6 +105,7 @@ export async function exportBackup(): Promise<void> {
     documents,
     allPages,
     customTypes,
+    entityOrder,
   ] = await Promise.all([
     entities.getPersons(),
     entities.getProperties(),
@@ -114,6 +116,9 @@ export async function exportBackup(): Promise<void> {
     docs.getDocuments(),
     docs.getAllDocumentPages(),
     getCustomTypes(),
+    db.getAllAsync<{ entity_type: EntityType; entity_id: string; sort_order: number }>(
+      'SELECT entity_type, entity_id, sort_order FROM entity_order'
+    ),
   ]);
 
   const personNames = new Map(persons.map(p => [p.id, p.name]));
@@ -146,7 +151,7 @@ export async function exportBackup(): Promise<void> {
   }
 
   const manifest = {
-    version: 6,
+    version: 7,
     exportDate: new Date().toISOString(),
     persons,
     properties,
@@ -157,6 +162,7 @@ export async function exportBackup(): Promise<void> {
     customTypes,
     documents,
     documentPages: allPages,
+    entityOrder,
     fileMap,
   };
 
@@ -543,6 +549,31 @@ export async function importBackup(): Promise<ImportResult> {
       }
     } catch (e) {
       errors.push(`Firmă "${co.name}": ${e instanceof Error ? e.message : 'eroare'}`);
+    }
+  }
+
+  // Restaurează ordinea globală a entităților, remappând ID-urile vechi la cele noi.
+  // Ordinea e nice-to-have: erorile individuale nu blochează restul importului.
+  for (const row of (payload.entityOrder as AnyRecord[]) ?? []) {
+    try {
+      const oldId = row.entity_id as string | undefined;
+      const entityType = row.entity_type as EntityType | undefined;
+      const sortOrder = row.sort_order as number | undefined;
+      if (!oldId || !entityType || typeof sortOrder !== 'number') continue;
+      let newId: string | undefined;
+      if (entityType === 'person') newId = personMap.get(oldId);
+      else if (entityType === 'property') newId = propertyMap.get(oldId);
+      else if (entityType === 'vehicle') newId = vehicleMap.get(oldId);
+      else if (entityType === 'card') newId = cardMap.get(oldId);
+      else if (entityType === 'animal') newId = animalMap.get(oldId);
+      else if (entityType === 'company') newId = companyMap.get(oldId);
+      if (!newId) continue;
+      await db.runAsync(
+        'INSERT OR REPLACE INTO entity_order (entity_type, entity_id, sort_order) VALUES (?, ?, ?)',
+        [entityType, newId, sortOrder]
+      );
+    } catch {
+      // ignorăm erori punctuale la restaurarea ordinii
     }
   }
 

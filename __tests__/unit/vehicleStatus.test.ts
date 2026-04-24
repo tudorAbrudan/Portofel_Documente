@@ -15,7 +15,6 @@ function emptyStats(): FuelStats {
     totalRecords: 0,
     totalLiters: 0,
     totalCost: 0,
-    needsService: false,
     consumptionSparkline: [],
   };
 }
@@ -120,35 +119,6 @@ describe('buildVehicleStatusItems', () => {
     expect(casco?.severity).toBe('critical');
   });
 
-  it('service slot shown when last_service_km and latestKm known', () => {
-    const items = buildVehicleStatusItems({
-      documents: [],
-      fuelStats: {
-        ...emptyStats(),
-        latestKm: 129600,
-        needsService: false,
-        kmUntilService: 400,
-      },
-      itpEnabled: true,
-      notificationDays: 30,
-      today,
-    });
-    const svc = items.find(i => i.key === 'service');
-    expect(svc).toBeDefined();
-    expect(svc?.severity).toBe('critical'); // ≤500 km
-  });
-
-  it('service slot absent when kmUntilService undefined', () => {
-    const items = buildVehicleStatusItems({
-      documents: [],
-      fuelStats: { ...emptyStats(), latestKm: 100000 },
-      itpEnabled: true,
-      notificationDays: 30,
-      today,
-    });
-    expect(items.find(i => i.key === 'service')).toBeUndefined();
-  });
-
   it('consum slot only when avg defined', () => {
     const items = buildVehicleStatusItems({
       documents: [],
@@ -163,7 +133,7 @@ describe('buildVehicleStatusItems', () => {
     expect(fuel?.sparkline).toEqual([7, 7.2, 7.1]);
   });
 
-  it('orders items RCA, CASCO, ITP, service, fuel', () => {
+  it('orders items RCA, CASCO, ITP, fuel', () => {
     const items = buildVehicleStatusItems({
       documents: [
         doc({ id: 'r1', type: 'rca', expiry_date: '2026-08-01' }),
@@ -173,7 +143,6 @@ describe('buildVehicleStatusItems', () => {
       fuelStats: {
         ...emptyStats(),
         latestKm: 100000,
-        kmUntilService: 3000,
         avgConsumptionL100: 7,
         consumptionSparkline: [7],
       },
@@ -181,6 +150,6 @@ describe('buildVehicleStatusItems', () => {
       notificationDays: 30,
       today,
     });
-    expect(items.map(i => i.key)).toEqual(['rca', 'casco', 'itp', 'service', 'fuel']);
+    expect(items.map(i => i.key)).toEqual(['rca', 'casco', 'itp', 'fuel']);
   });
 });
