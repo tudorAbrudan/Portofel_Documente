@@ -14,6 +14,7 @@ App **local-first**: date în SQLite pe device, fișiere locale, backup în iClo
 - Export reminder expirare în calendarul nativ
 - OCR on-device pentru extragere automată de text
 - Tracker auto (RCA, ITP, CASCO, Vignetă, Talon)
+- Remindere mentenanță vehicul (km + luni) cu sync calendar
 - Documente veterinare per animal (vaccin, deparazitare, vizite)
 - Câmp „Notă privată" per document (CVV/PIN/parole) — nu pleacă niciodată la AI
 - Detecție duplicate la adăugare și afișare în detaliu (fișier identic + tip+entitate)

@@ -1,6 +1,7 @@
 import { db, generateId } from './db';
 import type { Person, Property, Vehicle, Card, Animal, Company } from '@/types';
 import * as FileSystem from 'expo-file-system/legacy';
+import { toFileUri } from './fileUtils';
 
 export async function getPersons(): Promise<Person[]> {
   const rows = await db.getAllAsync<{
@@ -167,9 +168,10 @@ export async function deleteVehicle(id: string): Promise<void> {
       [id]
     );
     if (row?.photo_uri) {
-      const info = await FileSystem.getInfoAsync(row.photo_uri);
+      const absolute = toFileUri(row.photo_uri);
+      const info = await FileSystem.getInfoAsync(absolute);
       if (info.exists) {
-        await FileSystem.deleteAsync(row.photo_uri, { idempotent: true });
+        await FileSystem.deleteAsync(absolute, { idempotent: true });
       }
     }
   } catch {

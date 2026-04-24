@@ -1,6 +1,7 @@
 import { Platform } from 'react-native';
 import { DOCUMENT_TYPE_LABELS } from '@/types';
-import type { DocumentType } from '@/types';
+import type { DocumentType, VehicleMaintenanceTask } from '@/types';
+import { APP_STORE_URL } from '@/constants/AppLinks';
 
 // expo-calendar necesită build nativ (expo prebuild + expo run:ios).
 // Importăm cu require pentru a nu crăpa app-ul dacă modulul nativ nu e linkat.
@@ -170,5 +171,124 @@ export async function addEventToCalendar(opts: EventCalendarOptions): Promise<st
     return eventId ?? null;
   } catch {
     return null;
+  }
+}
+
+// Calcul: data scadenței pentru task-ul de mentenanță, pe baza trigger_months
+function computeMaintenanceDueDate(task: VehicleMaintenanceTask): Date | null {
+  if (task.trigger_months == null) return null;
+  const base = task.last_done_date ? new Date(task.last_done_date) : new Date(task.createdAt);
+  const due = new Date(base);
+  due.setMonth(due.getMonth() + task.trigger_months);
+  return due;
+}
+
+function buildMaintenanceNotes(task: VehicleMaintenanceTask, vehicleName: string): string {
+  const lines: string[] = [`Vehicul: ${vehicleName}`, `Intervenție: ${task.name}`];
+  if (task.trigger_km != null) {
+    const baseKm = task.last_done_km ?? 0;
+    const nextKm = baseKm + task.trigger_km;
+    lines.push(
+      `Prag km: ${task.trigger_km.toLocaleString('ro-RO')} km (următorul la ${nextKm.toLocaleString('ro-RO')} km)`
+    );
+    lines.push(
+      'Dacă ai atins deja pragul de km și ai făcut intervenția, marchează task-ul ca efectuat în aplicație — reminderul va fi actualizat automat.'
+    );
+  }
+  if (task.note) {
+    lines.push(`Notă: ${task.note}`);
+  }
+  lines.push('');
+  lines.push(`Reamintire de la Dosar · ${APP_STORE_URL}`);
+  return lines.join('\n');
+}
+
+/**
+ * Creează un eveniment de calendar pentru un task de mentenanță cu trigger_months.
+ * Reminder: cu 7 zile înainte și în ziua scadenței (dimineața).
+ * Returnează ID-ul evenimentului sau null dacă nu se poate crea (permisiune/calendar indisponibil).
+ */
+export async function addMaintenanceCalendarEvent(
+  task: VehicleMaintenanceTask,
+  vehicleName: string
+): Promise<string | null> {
+  if (!CalendarModule) return null;
+  const dueDate = computeMaintenanceDueDate(task);
+  if (!dueDate) return null;
+
+  try {
+    const calendarId = await getDefaultCalendarId();
+    if (!calendarId) return null;
+
+    const startDate = new Date(dueDate);
+    startDate.setHours(9, 0, 0, 0);
+    const endDate = new Date(dueDate);
+    endDate.setHours(10, 0, 0, 0);
+
+    const eventId = await CalendarModule.createEventAsync(calendarId, {
+      title: `🔧 ${vehicleName} – ${task.name}`,
+      notes: buildMaintenanceNotes(task, vehicleName),
+      startDate,
+      endDate,
+      alarms: [
+        { relativeOffset: -7 * 24 * 60 }, // 7 zile înainte
+        { relativeOffset: 0 }, // la ora scadenței
+      ],
+      url: APP_STORE_URL,
+      timeZone: 'Europe/Bucharest',
+    });
+    return eventId ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Actualizează un eveniment de calendar existent pentru un task de mentenanță.
+ * Dacă task-ul nu mai are trigger_months, șterge evenimentul.
+ * Returnează ID-ul evenimentului (același sau nou, după caz) sau null dacă s-a șters.
+ */
+export async function updateMaintenanceCalendarEvent(
+  eventId: string,
+  task: VehicleMaintenanceTask,
+  vehicleName: string
+): Promise<string | null> {
+  if (!CalendarModule) return null;
+
+  const dueDate = computeMaintenanceDueDate(task);
+  if (!dueDate) {
+    await deleteMaintenanceCalendarEvent(eventId);
+    return null;
+  }
+
+  try {
+    const startDate = new Date(dueDate);
+    startDate.setHours(9, 0, 0, 0);
+    const endDate = new Date(dueDate);
+    endDate.setHours(10, 0, 0, 0);
+
+    await CalendarModule.updateEventAsync(eventId, {
+      title: `🔧 ${vehicleName} – ${task.name}`,
+      notes: buildMaintenanceNotes(task, vehicleName),
+      startDate,
+      endDate,
+      alarms: [{ relativeOffset: -7 * 24 * 60 }, { relativeOffset: 0 }],
+      url: APP_STORE_URL,
+      timeZone: 'Europe/Bucharest',
+    });
+    return eventId;
+  } catch {
+    // Eveniment șters din calendar de utilizator → creează unul nou
+    return addMaintenanceCalendarEvent(task, vehicleName);
+  }
+}
+
+/** Șterge un eveniment de calendar. Silent fail dacă nu există. */
+export async function deleteMaintenanceCalendarEvent(eventId: string): Promise<void> {
+  if (!CalendarModule) return;
+  try {
+    await CalendarModule.deleteEventAsync(eventId);
+  } catch {
+    // deja șters sau calendar inaccesibil
   }
 }

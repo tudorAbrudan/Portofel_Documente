@@ -21,6 +21,7 @@ import { BottomActionBar } from '@/components/ui/BottomActionBar';
 import { primary, statusColors } from '@/theme/colors';
 import { useEntities } from '@/hooks/useEntities';
 import { useVisibilitySettings } from '@/hooks/useVisibilitySettings';
+import { toFileUri } from '@/services/fileUtils';
 import type { EntityType, Person, Property, Vehicle, Card, Animal, Company } from '@/types';
 
 type AnyEntity = Person | Property | Vehicle | Card | Animal | Company;
@@ -322,7 +323,7 @@ export default function EntitatiListScreen() {
                   style={({ pressed }) => [styles.vehicleCard, pressed && styles.cardPressed]}
                 >
                   <Image
-                    source={{ uri: vehiclePhoto }}
+                    source={{ uri: toFileUri(vehiclePhoto) }}
                     style={StyleSheet.absoluteFill}
                     resizeMode="cover"
                   />

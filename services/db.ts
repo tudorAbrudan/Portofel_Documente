@@ -128,6 +128,21 @@ db.execSync(`
     created_at TEXT NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS vehicle_maintenance_tasks (
+    id TEXT PRIMARY KEY,
+    vehicle_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    preset_key TEXT,
+    trigger_km INTEGER,
+    trigger_months INTEGER,
+    last_done_km INTEGER,
+    last_done_date TEXT,
+    note TEXT,
+    calendar_event_id TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
   CREATE INDEX IF NOT EXISTS idx_docs_expiry ON documents(expiry_date);
   CREATE INDEX IF NOT EXISTS idx_docs_person ON documents(person_id);
   CREATE INDEX IF NOT EXISTS idx_docs_vehicle ON documents(vehicle_id);
@@ -136,6 +151,7 @@ db.execSync(`
   CREATE INDEX IF NOT EXISTS idx_fuel_vehicle ON fuel_records(vehicle_id, date DESC);
   CREATE INDEX IF NOT EXISTS idx_chat_messages_thread ON chat_messages(thread_id, created_at ASC);
   CREATE INDEX IF NOT EXISTS idx_chat_threads_updated ON chat_threads(updated_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_maintenance_vehicle ON vehicle_maintenance_tasks(vehicle_id);
 `);
 
 // Migrare: adaugă custom_type_id dacă nu există
@@ -286,6 +302,25 @@ try {
   // coloana există deja
 }
 
+// Migrare: path-urile vechi absolute (file:// sau /var/...) conțin UUID-ul containerului iOS,
+// care se invalidează la reinstalări native. Convertim la path relativ față de documentDirectory.
+try {
+  const rows =
+    db.getAllSync<{ id: string; photo_uri: string }>(
+      "SELECT id, photo_uri FROM vehicles WHERE photo_uri IS NOT NULL AND (substr(photo_uri, 1, 7) = 'file://' OR substr(photo_uri, 1, 1) = '/')"
+    ) ?? [];
+  for (const r of rows) {
+    const match = r.photo_uri.match(/\/Documents\/(.+)$/);
+    if (match) {
+      db.runSync('UPDATE vehicles SET photo_uri = ? WHERE id = ?', [match[1], r.id]);
+    } else {
+      db.runSync('UPDATE vehicles SET photo_uri = NULL WHERE id = ?', [r.id]);
+    }
+  }
+} catch {
+  // best-effort; dacă migrarea eșuează, app-ul continuă — path-urile vechi vor face render silent fail
+}
+
 // Migrare: adaugă plate_number la vehicles
 try {
   db.execSync('ALTER TABLE vehicles ADD COLUMN plate_number TEXT');
@@ -296,6 +331,13 @@ try {
 // Migrare: adaugă fuel_type la vehicles
 try {
   db.execSync("ALTER TABLE vehicles ADD COLUMN fuel_type TEXT DEFAULT 'diesel'");
+} catch {
+  // coloana există deja
+}
+
+// Migrare: adaugă calendar_event_id la vehicle_maintenance_tasks
+try {
+  db.execSync('ALTER TABLE vehicle_maintenance_tasks ADD COLUMN calendar_event_id TEXT');
 } catch {
   // coloana există deja
 }

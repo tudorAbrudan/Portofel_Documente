@@ -447,7 +447,8 @@ export async function importBackup(): Promise<ImportResult> {
         let newPhotoUri: string | null = null;
         if (oldPhotoRel) {
           const oldPath = `${FileSystem.documentDirectory}${oldPhotoRel}`;
-          const newPath = `${FileSystem.documentDirectory}vehicles/${created.id}.jpg`;
+          const newRelative = `vehicles/${created.id}.jpg`;
+          const newPath = `${FileSystem.documentDirectory}${newRelative}`;
           try {
             await FileSystem.makeDirectoryAsync(`${FileSystem.documentDirectory}vehicles`, {
               intermediates: true,
@@ -457,7 +458,7 @@ export async function importBackup(): Promise<ImportResult> {
               if (oldPath !== newPath) {
                 await FileSystem.moveAsync({ from: oldPath, to: newPath });
               }
-              newPhotoUri = newPath;
+              newPhotoUri = newRelative;
             }
           } catch {
             // dacă mutarea eșuează, păstrăm photo_uri null

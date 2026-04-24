@@ -139,6 +139,49 @@ export interface Document {
   entity_links?: DocumentEntityLink[];
 }
 
+export type MaintenancePresetKey =
+  | 'oil'
+  | 'timing_belt'
+  | 'filters'
+  | 'service'
+  | 'itp'
+  | 'brakes'
+  | 'coolant'
+  | 'custom';
+
+export interface MaintenancePreset {
+  key: MaintenancePresetKey;
+  name: string;
+  icon: string;
+  trigger_km?: number;
+  trigger_months?: number;
+}
+
+export interface VehicleMaintenanceTask {
+  id: string;
+  vehicle_id: string;
+  name: string;
+  preset_key?: MaintenancePresetKey;
+  trigger_km?: number;
+  trigger_months?: number;
+  last_done_km?: number;
+  last_done_date?: string;
+  note?: string;
+  calendar_event_id?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type MaintenanceStatus = 'ok' | 'warning' | 'critical';
+
+export interface MaintenanceTaskStatus {
+  status: MaintenanceStatus;
+  kmRemaining?: number;
+  daysRemaining?: number;
+  dueBy?: 'km' | 'date';
+  dueMessage: string;
+}
+
 export type EntityType = 'person' | 'property' | 'vehicle' | 'card' | 'animal' | 'company';
 
 export const ALL_ENTITY_TYPES: EntityType[] = [

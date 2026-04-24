@@ -45,7 +45,7 @@
     "@react-navigation/native": "^7.1.28",
     "expo": "~55.0.4",
     "expo-build-properties": "~55.0.10",
-    "expo-calendar": "~55.0.9",
+    "expo-calendar": "~55.0.14",
     "expo-clipboard": "~55.0.9",
     "expo-constants": "~55.0.7",
     "expo-crypto": "~55.0.14",

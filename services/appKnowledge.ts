@@ -103,7 +103,7 @@ export function buildAppKnowledge(): string {
 **Tipuri de documente:**
 ${buildDocTypesList()}
 
-**Funcții:** scanare + OCR on-device, notificări expirare, remindere în calendar iOS, backup iCloud/Drive, blocare Face ID/PIN, detecție automată duplicate, câmp „Notă privată" per document pentru date sensibile (CVV/PIN/parole) care NU ajunge niciodată la AI.
+**Funcții:** scanare + OCR on-device, notificări expirare, remindere în calendar iOS, backup iCloud/Drive, blocare Face ID/PIN, detecție automată duplicate, câmp „Notă privată" per document pentru date sensibile (CVV/PIN/parole) care NU ajunge niciodată la AI, reminder mentenanță vehicule (km sau timp) cu sincronizare calendar.
 
 ## Vehicule
 
@@ -117,6 +117,16 @@ La deschiderea unui vehicul, utilizatorul vede:
 Câmpurile suplimentare pentru vehicul: poză (opțional), nr. înmatriculare (opțional), tip combustibil (diesel, benzină, GPL, electric). Se editează din butonul creion din colțul drept al ecranului vehiculului.
 
 Bonurile de carburant au un flag „Plin complet". Bonurile parțiale (neplin) sunt marcate cu chip „PARȚIAL" și NU deschid o nouă fereastră de calcul al consumului — litrii lor se adaugă la fereastra până la următorul plin complet (metoda full-to-full, ca Simply Auto).
+
+## Mentenanță vehicule
+
+Sub bara de status, la vehicul, există secțiunea „MENTENANȚĂ" unde utilizatorul adaugă task-uri de întreținere cu prag dual: număr de kilometri SAU număr de luni (sau ambele). Preseturi disponibile: schimb ulei, curea distribuție, filtre, revizie generală, ITP, plăcuțe frână, lichid răcire, sau personalizat.
+
+Fiecare task afișează: status (verde/galben/roșu) calculat comparând cu km-ul actual (luat din bonurile de carburant) și cu data scadentă pe baza lunilor. La atingerea pragului → status critic.
+
+Acțiuni pe task (tap pe card): „Marchează efectuat" (setează data curentă și km-ul actual), „Editează", „Șterge".
+
+Pentru task-urile cu prag pe luni, utilizatorul poate activa toggle-ul „Adaugă în calendar" — creează un eveniment în calendarul iOS cu alarme cu 7 zile înainte și în zi. Evenimentul include: vehicul, intervenție, prag km (dacă există), mesaj că poate fi efectuat mai devreme dacă atinge km, link App Store către Dosar. Când utilizatorul marchează efectuat, evenimentul din calendar se actualizează automat cu noua dată (calculată de la data efectuării).
 
 ## Reguli
 

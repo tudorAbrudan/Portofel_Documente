@@ -155,6 +155,14 @@ const FEATURES = [
     readmeBullet: 'Tracker auto (RCA, ITP, CASCO, Vignetă, Talon)',
   },
   {
+    id: 'maintenance-reminders',
+    icon: '🔧',
+    title: 'Remindere mentenanță vehicul',
+    desc: 'Schimb ulei, curea distribuție, filtre, revizie — setate pe kilometri și/sau luni. Status automat din km-ul bonurilor de carburant și sincronizare opțională în calendarul iOS.',
+    readmeBullet: 'Remindere mentenanță vehicul (km + luni) cu sync calendar',
+    chatbot: 'remindere mentenanță vehicul pe km și timp',
+  },
+  {
     id: 'animals',
     icon: '🐾',
     title: 'Documente animale',

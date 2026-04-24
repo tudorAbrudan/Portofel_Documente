@@ -29,11 +29,13 @@ import { radius } from '@/theme/layout';
 import { useEntities } from '@/hooks/useEntities';
 import { useDocuments } from '@/hooks/useDocuments';
 import { getDocuments, linkDocumentToEntity } from '@/services/documents';
+import { toFileUri, toRelativePath } from '@/services/fileUtils';
 import { DOCUMENT_TYPE_LABELS } from '@/types';
 import type { Document as DocType, DocumentType, Company } from '@/types';
 import Animated, { useSharedValue, useAnimatedScrollHandler } from 'react-native-reanimated';
 import { EntityStatusBar } from '@/components/EntityStatusBar';
 import { VehicleParallaxHero, MAX_HERO_HEIGHT } from '@/components/VehicleParallaxHero';
+import { VehicleMaintenanceSection } from '@/components/VehicleMaintenanceSection';
 import { useVehicleStatus } from '@/hooks/useVehicleStatus';
 
 export default function EntityDetailScreen() {
@@ -264,7 +266,7 @@ export default function EntityDetailScreen() {
       // nu există
     }
     await FileSystem.copyAsync({ from: asset.uri, to: dest });
-    setEditPhotoUri(dest);
+    setEditPhotoUri(toRelativePath(dest));
   }
 
   function handleRemovePhoto() {
@@ -369,7 +371,7 @@ export default function EntityDetailScreen() {
       />
 
       {isVehicle && vehicle?.photo_uri && (
-        <VehicleParallaxHero photoUri={vehicle.photo_uri} scrollY={scrollY} />
+        <VehicleParallaxHero photoUri={toFileUri(vehicle.photo_uri)} scrollY={scrollY} />
       )}
 
       {/* ── Document list ── */}
@@ -420,7 +422,9 @@ export default function EntityDetailScreen() {
                   style={styles.contactHeader}
                   hitSlop={8}
                 >
-                  <RNText style={[styles.sectionTitle, { color: C.textSecondary, marginBottom: 0 }]}>
+                  <RNText
+                    style={[styles.sectionTitle, { color: C.textSecondary, marginBottom: 0 }]}
+                  >
                     DATE CONTACT
                   </RNText>
                   <RNView style={styles.contactHeaderRight}>
@@ -500,6 +504,13 @@ export default function EntityDetailScreen() {
           })()}
 
         {isVehicle && <EntityStatusBar items={vehicleStatus.items} />}
+
+        {isVehicle && (
+          <VehicleMaintenanceSection
+            vehicleId={id as string}
+            vehicleName={vehicle?.name ?? entityName}
+          />
+        )}
 
         <RNText style={[styles.sectionTitle, { color: C.textSecondary }]}>DOCUMENTE LEGATE</RNText>
 
@@ -713,7 +724,7 @@ export default function EntityDetailScreen() {
                   {editPhotoUri ? (
                     <RNView style={styles.photoPreviewWrap}>
                       <Image
-                        source={{ uri: editPhotoUri }}
+                        source={{ uri: toFileUri(editPhotoUri) }}
                         style={[styles.photoPreview, { backgroundColor: C.border }]}
                       />
                       <Pressable
@@ -723,7 +734,10 @@ export default function EntityDetailScreen() {
                         <RNText style={[styles.photoActionText, { color: C.text }]}>Schimbă</RNText>
                       </Pressable>
                       <Pressable
-                        style={[styles.photoActionBtn, { marginLeft: 8, backgroundColor: C.border }]}
+                        style={[
+                          styles.photoActionBtn,
+                          { marginLeft: 8, backgroundColor: C.border },
+                        ]}
                         onPress={handleRemovePhoto}
                       >
                         <RNText style={[styles.photoActionText, { color: statusColors.critical }]}>
