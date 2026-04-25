@@ -18,7 +18,7 @@ import { BottomActionBar } from '@/components/ui/BottomActionBar';
 import { useMonthlyAnalysis } from '@/hooks/useMonthlyAnalysis';
 import { useFinancialAccounts } from '@/hooks/useFinancialAccounts';
 import { useCategories } from '@/hooks/useCategories';
-import { formatYearMonth } from '@/services/transactions';
+import { formatYearMonth, updateTransaction } from '@/services/transactions';
 import { useCategoryTransactions, UNCATEGORIZED_KEY } from '@/hooks/useCategoryTransactions';
 import type { Transaction, ExpenseCategory } from '@/types';
 
@@ -56,6 +56,8 @@ export default function FinanciarHubScreen() {
   const [yearMonth, setYearMonth] = useState(() => formatYearMonth(new Date()));
   const [accountFilter, setAccountFilter] = useState<string | undefined>(undefined);
   const [expandedCatKey, setExpandedCatKey] = useState<string | null>(null);
+  const [pickerTxId, setPickerTxId] = useState<string | null>(null);
+  const [pickerSaving, setPickerSaving] = useState(false);
 
   // Schimbarea filtrelor (lună sau cont) invalidează lista expandată.
   useEffect(() => {
@@ -88,8 +90,38 @@ export default function FinanciarHubScreen() {
   );
 
   const totals = analysis?.totals;
-  const breakdown = analysis?.breakdown ?? [];
+  const breakdown = useMemo(() => analysis?.breakdown ?? [], [analysis]);
   const recent = analysis?.recent ?? [];
+
+  useEffect(() => {
+    if (expandedCatKey === null) return;
+    const stillExists = breakdown.some(
+      b => (b.category_id ?? UNCATEGORIZED_KEY) === expandedCatKey
+    );
+    if (!stillExists && !loading) {
+      setExpandedCatKey(null);
+    }
+  }, [breakdown, expandedCatKey, loading]);
+
+  const handleCategoryPick = useCallback(
+    async (newCategoryId: string | null) => {
+      if (!pickerTxId) return;
+      setPickerSaving(true);
+      try {
+        await updateTransaction(pickerTxId, { category_id: newCategoryId });
+        setPickerTxId(null);
+        await Promise.all([refresh(), refreshExpanded()]);
+      } catch (e) {
+        Alert.alert(
+          'Nu s-a putut schimba categoria',
+          e instanceof Error ? e.message : 'Eroare necunoscută'
+        );
+      } finally {
+        setPickerSaving(false);
+      }
+    },
+    [pickerTxId, refresh, refreshExpanded]
+  );
   const todayYm = formatYearMonth(new Date());
   const isCurrentMonth = yearMonth === todayYm;
 
@@ -364,6 +396,7 @@ export default function FinanciarHubScreen() {
                       categoryMap={categoryMap}
                       C={C}
                       onRetry={refreshExpanded}
+                      onCategoryEdit={txId => setPickerTxId(txId)}
                     />
                   )}
                 </RNView>
@@ -428,6 +461,19 @@ export default function FinanciarHubScreen() {
         }
         safeArea
       />
+
+      <CategoryQuickPickerModal
+        visible={pickerTxId !== null}
+        categories={categories}
+        currentCategoryId={
+          pickerTxId
+            ? (expandedTxs.find(t => t.id === pickerTxId)?.category_id ?? null)
+            : null
+        }
+        onPick={handleCategoryPick}
+        onClose={() => !pickerSaving && setPickerTxId(null)}
+        C={C}
+      />
     </RNView>
   );
 }
@@ -471,6 +517,7 @@ function CategoryTransactionsList({
   categoryMap,
   C,
   onRetry,
+  onCategoryEdit,
 }: {
   loading: boolean;
   error: string | null;
@@ -478,6 +525,7 @@ function CategoryTransactionsList({
   categoryMap: Map<string, { name: string; icon?: string }>;
   C: typeof Colors.light;
   onRetry: () => void;
+  onCategoryEdit: (txId: string) => void;
 }) {
   if (loading) {
     return (
@@ -510,10 +558,12 @@ function CategoryTransactionsList({
   return (
     <RNView style={styles.expandedList}>
       {transactions.map(t => (
-        <TransactionRow
+        <ExpandedTransactionRow
           key={t.id}
           tx={t}
-          categoryName={t.category_id ? categoryMap.get(t.category_id)?.name : undefined}
+          categoryName={
+            (t.category_id && categoryMap.get(t.category_id)?.name) || 'Necategorizat'
+          }
           C={C}
           onPress={() =>
             router.push({
@@ -521,6 +571,7 @@ function CategoryTransactionsList({
               params: { id: t.id },
             })
           }
+          onCategoryPress={() => onCategoryEdit(t.id)}
         />
       ))}
     </RNView>
@@ -718,6 +769,66 @@ function TransactionRow({
   );
 }
 
+function ExpandedTransactionRow({
+  tx,
+  categoryName,
+  C,
+  onPress,
+  onCategoryPress,
+}: {
+  tx: Transaction;
+  categoryName: string;
+  C: typeof Colors.light;
+  onPress: () => void;
+  onCategoryPress: () => void;
+}) {
+  const isPositive = tx.amount >= 0;
+  const color = tx.is_internal_transfer
+    ? C.textSecondary
+    : isPositive
+      ? statusColors.ok
+      : statusColors.critical;
+  const sign = isPositive ? '+' : '';
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.txRow,
+        { backgroundColor: C.card, shadowColor: C.cardShadow },
+        pressed && { opacity: 0.9 },
+      ]}
+    >
+      <RNView style={{ flex: 1 }}>
+        <RNText style={[styles.txTitle, { color: C.text }]} numberOfLines={1}>
+          {tx.merchant ||
+            tx.description ||
+            (tx.is_internal_transfer ? 'Transfer intern' : 'Tranzacție')}
+        </RNText>
+        <RNView style={styles.txExpandedSubRow}>
+          <RNText style={[styles.txSub, { color: C.textSecondary }]}>{tx.date}</RNText>
+          <Pressable
+            onPress={onCategoryPress}
+            hitSlop={6}
+            style={({ pressed }) => [
+              styles.txCategoryPill,
+              { backgroundColor: `${primary}22`, borderColor: `${primary}55` },
+              pressed && { opacity: 0.7 },
+            ]}
+          >
+            <RNText style={[styles.txCategoryPillText, { color: primary }]} numberOfLines={1}>
+              {categoryName}
+            </RNText>
+          </Pressable>
+        </RNView>
+      </RNView>
+      <RNText style={[styles.txAmount, { color }]}>
+        {sign}
+        {tx.amount.toFixed(2)} {tx.currency}
+      </RNText>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1 },
   scrollContent: { padding: 16, paddingBottom: 96 },
@@ -851,6 +962,21 @@ const styles = StyleSheet.create({
   txTitle: { fontSize: 14, fontWeight: '500', marginBottom: 2 },
   txSub: { fontSize: 12 },
   txAmount: { fontSize: 14, fontWeight: '700' },
+  txExpandedSubRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 2,
+    flexWrap: 'wrap',
+  },
+  txCategoryPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+    borderWidth: 1,
+    maxWidth: 180,
+  },
+  txCategoryPillText: { fontSize: 11, fontWeight: '600' },
 
   emptyCard: {
     borderRadius: 12,
