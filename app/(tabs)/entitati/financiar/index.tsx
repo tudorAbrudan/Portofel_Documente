@@ -788,7 +788,10 @@ function ExpandedTransactionRow({
             (tx.is_internal_transfer ? 'Transfer intern' : 'Tranzacție')}
         </RNText>
         <RNView style={styles.txExpandedSubRow}>
-          <RNText style={[styles.txSub, { color: C.textSecondary }]}>{tx.date}</RNText>
+          <RNText style={[styles.txSub, { color: C.textSecondary }]}>
+            {tx.date}
+            {tx.is_refund ? ' • retur' : ''}
+          </RNText>
           <Pressable
             onPress={onCategoryPress}
             hitSlop={6}
