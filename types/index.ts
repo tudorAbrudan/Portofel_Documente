@@ -227,12 +227,10 @@ export interface BankStatement {
  * - `vehicle_id` NULL ⇒ canistră / alt scop, nu intră în calcul consum, KM nu e required
  * - `vehicle_id` NOT NULL + `km_total` NULL ⇒ alimentare „pending KM" (intră în lanțul de calcul când KM-ul e completat ulterior)
  * - `is_full = false` ⇒ alimentare parțială (nu deschide o fereastră nouă în algoritmul full-to-full)
- * - `account_id` NULL ⇒ plătit cash
  */
 export interface FuelRecord {
   id: string;
   vehicle_id?: string;
-  account_id?: string;
   date: string; // YYYY-MM-DD
   liters?: number;
   km_total?: number;

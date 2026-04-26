@@ -1,9 +1,6 @@
 import { db, generateId } from './db';
 import type { FuelRecord, VehicleFuelType } from '@/types';
-import { getCategoryByKey } from './categories';
 
-// Re-export FuelRecord pentru codul existent care îl importă din '@/services/fuel'.
-// Sursa de adevăr pentru tip e `types/index.ts`.
 export type { FuelRecord };
 
 export interface FuelStats {
@@ -18,7 +15,6 @@ export interface FuelStats {
 type FuelRow = {
   id: string;
   vehicle_id: string | null;
-  account_id: string | null;
   date: string;
   liters: number | null;
   km_total: number | null;
@@ -35,7 +31,6 @@ function mapRecord(r: FuelRow): FuelRecord {
   return {
     id: r.id,
     vehicle_id: r.vehicle_id ?? undefined,
-    account_id: r.account_id ?? undefined,
     date: r.date,
     liters: r.liters ?? undefined,
     km_total: r.km_total ?? undefined,
@@ -83,7 +78,6 @@ export interface AddFuelRecordInput {
   is_full?: boolean; // default true
   station?: string;
   pump_number?: string;
-  account_id?: string;
 }
 
 /**
@@ -99,7 +93,7 @@ export async function addFuelRecord(
 
 /**
  * Înregistrare de alimentare fără vehicul (canistră, scop necunoscut).
- * NU intră în calculul de consum al niciunui vehicul. Apare doar ca cheltuială.
+ * NU intră în calculul de consum al niciunui vehicul.
  */
 export async function addCanisterFuelRecord(record: AddFuelRecordInput): Promise<FuelRecord> {
   return insertFuelRecord({ ...record, vehicle_id: undefined });
@@ -107,100 +101,6 @@ export async function addCanisterFuelRecord(record: AddFuelRecordInput): Promise
 
 interface InsertInput extends AddFuelRecordInput {
   vehicle_id?: string;
-}
-
-/**
- * Sincronizează tranzacția financiară pentru o înregistrare de alimentare.
- *
- * Standardizare: dacă alimentarea are `account_id` și `price > 0`, ține în
- * `transactions` o tranzacție-cheltuială cu `fuel_record_id` setat (sursa
- * `'fuel'`, categoria sistem `vehicle`). Dacă nu mai are cont sau preț, șterge
- * tranzacția. Astfel hub-ul „Gestiune financiară" reflectă automat alimentările.
- */
-async function syncFuelTransaction(record: FuelRecord, vehicleName?: string): Promise<void> {
-  const existing = await db.getFirstAsync<{ id: string }>(
-    'SELECT id FROM transactions WHERE fuel_record_id = ?',
-    [record.id]
-  );
-
-  const hasFinancialEffect = !!record.account_id && (record.price ?? 0) > 0;
-  if (!hasFinancialEffect) {
-    if (existing) {
-      await db.runAsync('DELETE FROM transactions WHERE id = ?', [existing.id]);
-    }
-    return;
-  }
-
-  // Forțăm tranzacția în moneda contului — soldul e exprimat în account.currency,
-  // o tranzacție în altă monedă fără curs FX ar contamina balanța. Dacă userul
-  // a marcat fuel.currency != account.currency, asumăm că suma `price` e deja
-  // în moneda contului (cazul realist: cont RON, alimentare lângă graniță, dar
-  // userul a plătit cu cardul → banca o vede tot RON). Ne logăm warn-ul.
-  const accountId = record.account_id as string;
-  const account = await db
-    .getFirstAsync<{ currency: string }>('SELECT currency FROM financial_accounts WHERE id = ?', [
-      accountId,
-    ])
-    .catch(() => null);
-  const accountCurrency = account?.currency || 'RON';
-  if (record.currency && record.currency !== accountCurrency) {
-    // eslint-disable-next-line no-console
-    console.warn(
-      `[fuel] alimentare ${record.id} are currency=${record.currency} dar contul e ${accountCurrency}; presupunem că suma e în moneda contului.`
-    );
-  }
-  const currency = accountCurrency;
-  const amount = -(record.price ?? 0);
-  const amount_ron = currency === 'RON' ? amount : null;
-
-  if (existing) {
-    // Actualizăm DOAR câmpurile „obiective" (account, dată, sumă, monedă).
-    // Description / merchant / category pot fi personalizate de user în ecranul
-    // de tranzacție — nu le suprascriem. Sursa rămâne 'fuel'.
-    await db.runAsync(
-      `UPDATE transactions
-         SET account_id = ?, date = ?, amount = ?, currency = ?, amount_ron = ?, source = 'fuel'
-       WHERE id = ?`,
-      [record.account_id ?? null, record.date, amount, currency, amount_ron, existing.id]
-    );
-  } else {
-    const category = await getCategoryByKey('vehicle').catch(() => null);
-    const merchant = record.station?.trim() || null;
-    const fuelLabel = record.fuel_type ?? 'carburant';
-    const description = vehicleName
-      ? `Alimentare ${fuelLabel} — ${vehicleName}`
-      : `Alimentare ${fuelLabel}`;
-    const txId = generateId();
-    const created_at = new Date().toISOString();
-    await db.runAsync(
-      `INSERT INTO transactions
-         (id, account_id, date, amount, currency, amount_ron, description, merchant,
-          category_id, source, statement_id, fuel_record_id,
-          is_internal_transfer, linked_transaction_id, is_refund, duplicate_of_id, notes, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'fuel', NULL, ?, 0, NULL, 0, NULL, NULL, ?)`,
-      [
-        txId,
-        record.account_id ?? null,
-        record.date,
-        amount,
-        currency,
-        amount_ron,
-        description,
-        merchant,
-        category?.id ?? null,
-        record.id,
-        created_at,
-      ]
-    );
-  }
-}
-
-async function getVehicleName(vehicleId?: string | null): Promise<string | undefined> {
-  if (!vehicleId) return undefined;
-  const v = await db
-    .getFirstAsync<{ name: string }>('SELECT name FROM vehicles WHERE id = ?', [vehicleId])
-    .catch(() => null);
-  return v?.name ?? undefined;
 }
 
 async function insertFuelRecord(input: InsertInput): Promise<FuelRecord> {
@@ -213,13 +113,12 @@ async function insertFuelRecord(input: InsertInput): Promise<FuelRecord> {
 
   await db.runAsync(
     `INSERT INTO fuel_records
-       (id, vehicle_id, account_id, date, liters, km_total, price, currency, fuel_type,
+       (id, vehicle_id, date, liters, km_total, price, currency, fuel_type,
         is_full, station, pump_number, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       input.vehicle_id ?? null,
-      input.account_id ?? null,
       input.date,
       input.liters ?? null,
       input.km_total ?? null,
@@ -233,10 +132,9 @@ async function insertFuelRecord(input: InsertInput): Promise<FuelRecord> {
     ]
   );
 
-  const result: FuelRecord = {
+  return {
     id,
     vehicle_id: input.vehicle_id,
-    account_id: input.account_id,
     date: input.date,
     liters: input.liters,
     km_total: input.km_total,
@@ -248,20 +146,9 @@ async function insertFuelRecord(input: InsertInput): Promise<FuelRecord> {
     pump_number: pump ?? undefined,
     created_at,
   };
-
-  try {
-    await syncFuelTransaction(result, await getVehicleName(input.vehicle_id));
-  } catch (e) {
-    // eslint-disable-next-line no-console
-    console.warn('[fuel] insertFuelRecord: nu s-a putut sincroniza tranzacția:', e);
-  }
-
-  return result;
 }
 
 export async function deleteFuelRecord(id: string): Promise<void> {
-  // Șterge tranzacția financiară asociată (dacă există) înainte de a șterge alimentarea.
-  await db.runAsync('DELETE FROM transactions WHERE fuel_record_id = ?', [id]);
   await db.runAsync('DELETE FROM fuel_records WHERE id = ?', [id]);
 }
 
@@ -275,7 +162,6 @@ export interface UpdateFuelRecordInput {
   is_full: boolean;
   station?: string;
   pump_number?: string;
-  account_id?: string | null;
   vehicle_id?: string | null;
 }
 
@@ -284,7 +170,7 @@ export async function updateFuelRecord(id: string, fields: UpdateFuelRecordInput
   const pump = fields.pump_number?.trim() || null;
   const currency = fields.currency || 'RON';
 
-  // Construim un UPDATE flexibil pentru a permite vehicle_id/account_id să fie omise (păstrează valoarea curentă)
+  // Construim un UPDATE flexibil pentru a permite vehicle_id să fie omis (păstrează valoarea curentă)
   const sets: string[] = [
     'date = ?',
     'liters = ?',
@@ -307,10 +193,6 @@ export async function updateFuelRecord(id: string, fields: UpdateFuelRecordInput
     station,
     pump,
   ];
-  if (fields.account_id !== undefined) {
-    sets.push('account_id = ?');
-    params.push(fields.account_id ?? null);
-  }
   if (fields.vehicle_id !== undefined) {
     sets.push('vehicle_id = ?');
     params.push(fields.vehicle_id ?? null);
@@ -318,16 +200,6 @@ export async function updateFuelRecord(id: string, fields: UpdateFuelRecordInput
   params.push(id);
 
   await db.runAsync(`UPDATE fuel_records SET ${sets.join(', ')} WHERE id = ?`, params);
-
-  const updated = await getFuelRecord(id);
-  if (updated) {
-    try {
-      await syncFuelTransaction(updated, await getVehicleName(updated.vehicle_id));
-    } catch (e) {
-      // eslint-disable-next-line no-console
-      console.warn('[fuel] updateFuelRecord: nu s-a putut sincroniza tranzacția:', e);
-    }
-  }
 }
 
 /**
@@ -347,7 +219,6 @@ export function computeConsumptionFromFullToFull(records: FuelRecord[]): {
   avgConsumptionL100?: number;
   sparkline: number[];
 } {
-  // Sortăm cronologic; folosim KM când există, altfel data ca tie-break
   const sorted = [...records]
     .filter(r => r.liters !== undefined)
     .sort((a, b) => {
@@ -357,7 +228,6 @@ export function computeConsumptionFromFullToFull(records: FuelRecord[]): {
       return a.date.localeCompare(b.date);
     });
 
-  // Pivoții pentru calcul: only is_full=true ȘI km_total cunoscut
   const pivotIdx: number[] = [];
   sorted.forEach((r, i) => {
     if (r.is_full && r.km_total !== undefined) pivotIdx.push(i);

@@ -551,22 +551,26 @@ try {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Migrație fuel_records: vehicle_id NULLABLE + coloane noi (account_id, pump_number, currency, fuel_type)
-// SQLite nu suportă ALTER COLUMN; verificăm schema cu PRAGMA și recreăm tabela dacă vehicle_id e NOT NULL.
+// Migrație fuel_records: vehicle_id NULLABLE + adaugă coloane noi (pump_number,
+// currency, fuel_type) ȘI elimină coloana legacy `account_id` rămasă din
+// versiunea cu hub financiar.
+// SQLite nu suportă ALTER COLUMN / DROP COLUMN simplu — verificăm schema cu
+// PRAGMA și recreăm tabela când e nevoie.
 // ────────────────────────────────────────────────────────────────────────────
 try {
   const cols = db.getAllSync<{ name: string; notnull: number }>(
     "PRAGMA table_info('fuel_records')"
   );
   const vehicleCol = cols.find(c => c.name === 'vehicle_id');
-  const needsRecreate = vehicleCol !== undefined && vehicleCol.notnull === 1;
+  const hasAccountIdLegacy = cols.some(c => c.name === 'account_id');
+  const needsRecreate =
+    (vehicleCol !== undefined && vehicleCol.notnull === 1) || hasAccountIdLegacy;
 
   if (needsRecreate) {
     db.execSync(`
       CREATE TABLE fuel_records_v2 (
         id TEXT PRIMARY KEY,
         vehicle_id TEXT,
-        account_id TEXT,
         date TEXT NOT NULL,
         liters REAL,
         km_total INTEGER,
@@ -578,19 +582,19 @@ try {
         pump_number TEXT,
         created_at TEXT NOT NULL
       );
-      INSERT INTO fuel_records_v2 (id, vehicle_id, date, liters, km_total, price, is_full, station, created_at)
-      SELECT id, vehicle_id, date, liters, km_total, price, COALESCE(is_full, 1), station, created_at
+      INSERT INTO fuel_records_v2 (id, vehicle_id, date, liters, km_total, price, currency, fuel_type, is_full, station, pump_number, created_at)
+      SELECT id, vehicle_id, date, liters, km_total, price,
+             COALESCE(currency, 'RON'),
+             ${cols.some(c => c.name === 'fuel_type') ? 'fuel_type' : 'NULL'},
+             COALESCE(is_full, 1),
+             station,
+             ${cols.some(c => c.name === 'pump_number') ? 'pump_number' : 'NULL'},
+             created_at
       FROM fuel_records;
       DROP TABLE fuel_records;
       ALTER TABLE fuel_records_v2 RENAME TO fuel_records;
     `);
   } else {
-    // vehicle_id deja nullable (sau tabela nu există, edge case improbabil) — adaugă doar coloanele lipsă
-    try {
-      db.execSync('ALTER TABLE fuel_records ADD COLUMN account_id TEXT');
-    } catch {
-      /* coloana există */
-    }
     try {
       db.execSync('ALTER TABLE fuel_records ADD COLUMN pump_number TEXT');
     } catch {
@@ -608,12 +612,10 @@ try {
     }
   }
 
-  // Indexuri (idempotent)
   db.execSync(`
     CREATE INDEX IF NOT EXISTS idx_fuel_vehicle ON fuel_records(vehicle_id, date DESC);
     CREATE INDEX IF NOT EXISTS idx_fuel_records_station ON fuel_records(station);
     CREATE INDEX IF NOT EXISTS idx_fuel_records_vehicle_full ON fuel_records(vehicle_id, is_full);
-    CREATE INDEX IF NOT EXISTS idx_fuel_records_account ON fuel_records(account_id);
   `);
 } catch {
   // best-effort: dacă migrarea eșuează, app-ul continuă cu schema existentă

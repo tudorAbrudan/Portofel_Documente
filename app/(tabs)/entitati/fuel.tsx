@@ -28,8 +28,6 @@ import {
 } from '@/services/fuel';
 import { extractText, extractFuelInfo } from '@/services/ocr';
 import type { FuelRecord, FuelStats } from '@/services/fuel';
-import { useFinancialAccounts } from '@/hooks/useFinancialAccounts';
-import { Ionicons } from '@expo/vector-icons';
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -60,9 +58,6 @@ export default function FuelScreen() {
   const [mIsFull, setMIsFull] = useState(true);
   const [mStation, setMStation] = useState('');
   const [mPump, setMPump] = useState('');
-  const [mAccountId, setMAccountId] = useState<string | null>(null);
-  const [mAccountPickerOpen, setMAccountPickerOpen] = useState(false);
-  const { accounts: fAccounts } = useFinancialAccounts();
 
   const load = useCallback(async () => {
     if (!vehicleId) return;
@@ -107,8 +102,6 @@ export default function FuelScreen() {
     setMIsFull(true);
     setMStation('');
     setMPump('');
-    setMAccountId(null);
-    setMAccountPickerOpen(false);
     setModalVisible(true);
   }
 
@@ -121,8 +114,6 @@ export default function FuelScreen() {
     setMIsFull(record.is_full);
     setMStation(record.station ?? '');
     setMPump(record.pump_number ?? '');
-    setMAccountId(record.account_id ?? null);
-    setMAccountPickerOpen(false);
     setModalVisible(true);
   }
 
@@ -161,8 +152,7 @@ export default function FuelScreen() {
     km?: number,
     price?: number,
     station?: string,
-    pump?: string,
-    accountId?: string | null
+    pump?: string
   ) {
     if (!vehicleId) return;
     setMLoading(true);
@@ -176,7 +166,6 @@ export default function FuelScreen() {
           is_full: mIsFull,
           station,
           pump_number: pump,
-          account_id: accountId ?? null,
         });
       } else {
         await addFuelRecord(vehicleId, {
@@ -187,7 +176,6 @@ export default function FuelScreen() {
           is_full: mIsFull,
           station,
           pump_number: pump,
-          account_id: accountId ?? undefined,
         });
       }
       setModalVisible(false);
@@ -212,7 +200,6 @@ export default function FuelScreen() {
     const price = mPrice.trim() ? parseFloat(mPrice.replace(',', '.')) : undefined;
     const station = mStation.trim() || undefined;
     const pump = mPump.trim() || undefined;
-    const accountId = mAccountId;
 
     // Validare ordine cronologică: km trebuie să fie monoton crescător
     // raportat la vecinii sortați după dată (excluzând bonul editat).
@@ -239,7 +226,7 @@ export default function FuelScreen() {
             { text: 'Anulează', style: 'cancel' },
             {
               text: 'Salvează oricum',
-              onPress: () => persistRecord(date, liters, km, price, station, pump, accountId),
+              onPress: () => persistRecord(date, liters, km, price, station, pump),
             },
           ]
         );
@@ -247,7 +234,7 @@ export default function FuelScreen() {
       }
     }
 
-    await persistRecord(date, liters, km, price, station, pump, accountId);
+    await persistRecord(date, liters, km, price, station, pump);
   }
 
   function handleDeleteRecord(record: FuelRecord) {
@@ -578,71 +565,6 @@ export default function FuelScreen() {
               editable={!mLoading}
             />
 
-            {fAccounts.length > 0 && (
-              <>
-                <Text style={[styles.modalLabel, { color: palette.textSecondary }]}>
-                  Cont plată
-                </Text>
-                <Pressable
-                  style={[
-                    styles.modalInput,
-                    {
-                      borderColor: palette.border,
-                      backgroundColor: palette.background,
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                    },
-                  ]}
-                  onPress={() => setMAccountPickerOpen(v => !v)}
-                  disabled={mLoading}
-                >
-                  <Text style={{ color: colors.text, fontSize: 15 }}>
-                    {mAccountId
-                      ? fAccounts.find(a => a.id === mAccountId)?.name ?? 'Cont necunoscut'
-                      : 'Fără cont'}
-                  </Text>
-                  <Ionicons
-                    name={mAccountPickerOpen ? 'chevron-up' : 'chevron-down'}
-                    size={16}
-                    color={palette.textSecondary}
-                  />
-                </Pressable>
-                {mAccountPickerOpen && (
-                  <View
-                    style={[
-                      styles.pickerList,
-                      { borderColor: palette.border, backgroundColor: palette.background },
-                    ]}
-                  >
-                    <Pressable
-                      style={styles.pickerItem}
-                      onPress={() => {
-                        setMAccountId(null);
-                        setMAccountPickerOpen(false);
-                      }}
-                    >
-                      <Text style={{ color: colors.text }}>Fără cont</Text>
-                    </Pressable>
-                    {fAccounts.map(a => (
-                      <Pressable
-                        key={a.id}
-                        style={[styles.pickerItem, { borderTopColor: palette.border, borderTopWidth: StyleSheet.hairlineWidth }]}
-                        onPress={() => {
-                          setMAccountId(a.id);
-                          setMAccountPickerOpen(false);
-                        }}
-                      >
-                        <Text style={{ color: colors.text }}>
-                          {a.name} ({a.currency})
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                )}
-              </>
-            )}
-
             <View style={styles.modalButtons}>
               <Pressable
                 style={({ pressed }) => [
@@ -840,16 +762,5 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontStyle: 'italic',
     marginBottom: 14,
-  },
-  pickerList: {
-    borderWidth: 1,
-    borderRadius: 10,
-    marginTop: -8,
-    marginBottom: 14,
-    maxHeight: 220,
-  },
-  pickerItem: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
   },
 });
