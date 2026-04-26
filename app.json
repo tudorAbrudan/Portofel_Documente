@@ -17,12 +17,25 @@
       "bundleIdentifier": "com.ax.documente",
       "buildNumber": "33",
       "deploymentTarget": "16.0",
+      "usesIcloudStorage": true,
+      "entitlements": {
+        "com.apple.developer.icloud-services": ["CloudDocuments"],
+        "com.apple.developer.icloud-container-identifiers": ["iCloud.com.ax.documente"],
+        "com.apple.developer.ubiquity-container-identifiers": ["iCloud.com.ax.documente"]
+      },
       "infoPlist": {
         "NSCalendarsUsageDescription": "Aplicația adaugă remindere de expirare documente în calendarul tău.",
         "NSCalendarsFullAccessUsageDescription": "Aplicația adaugă remindere de expirare documente în calendarul tău.",
         "NSRemindersUsageDescription": "Aplicația poate adăuga remindere pentru expirarea documentelor.",
         "NSCameraUsageDescription": "Aplicația folosește camera pentru a fotografia documente (buletin, talon, asigurare etc.) și a le salva în dosarul tău de documente. Exemplu: fotografiezi polița RCA și o atașezi mașinii tale.",
-        "NSPhotoLibraryUsageDescription": "Aplicația accesează galeria foto pentru a importa imagini ale documentelor tale (buletin, talon, asigurare etc.) și a le salva în dosarul tău de documente. Exemplu: selectezi o fotografie a cărții de identitate pentru a o adăuga profilului tău."
+        "NSPhotoLibraryUsageDescription": "Aplicația accesează galeria foto pentru a importa imagini ale documentelor tale (buletin, talon, asigurare etc.) și a le salva în dosarul tău de documente. Exemplu: selectezi o fotografie a cărții de identitate pentru a o adăuga profilului tău.",
+        "NSUbiquitousContainers": {
+          "iCloud.com.ax.documente": {
+            "NSUbiquitousContainerIsDocumentScopePublic": true,
+            "NSUbiquitousContainerName": "Dosar",
+            "NSUbiquitousContainerSupportedFolderLevels": "Any"
+          }
+        }
       }
     },
     "android": {
