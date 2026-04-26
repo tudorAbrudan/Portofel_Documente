@@ -95,9 +95,12 @@ export async function listDir(remotePath: string): Promise<string[]> {
 }
 
 export async function ensureParentDir(remotePath: string): Promise<void> {
-  const idx = remotePath.lastIndexOf('/');
+  // Precondiție: cale relativă, fără `/` la început. Normalizăm trailing `/`
+  // ca să nu confundăm directorul însuși cu „părintele unui fișier".
+  const normalized = remotePath.endsWith('/') ? remotePath.slice(0, -1) : remotePath;
+  const idx = normalized.lastIndexOf('/');
   if (idx <= 0) return;
-  const parent = remotePath.slice(0, idx);
+  const parent = normalized.slice(0, idx);
   if (await cs.exists(parent)) return;
   try {
     await cs.mkdir(parent);
