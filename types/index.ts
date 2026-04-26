@@ -93,134 +93,6 @@ export interface Company {
   createdAt: string;
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// Analiza financiară: Conturi, Categorii, Tranzacții, Extrase
-// ────────────────────────────────────────────────────────────────────────────
-
-export type FinancialAccountType =
-  | 'bank' // cont curent
-  | 'cash' // numerar
-  | 'card' // card de credit
-  | 'savings' // cont de economii
-  | 'investment' // investiții
-  | 'other';
-
-export interface FinancialAccount {
-  id: string;
-  name: string;
-  type: FinancialAccountType;
-  currency: string; // 'RON', 'EUR', 'USD', etc.
-  initial_balance: number;
-  initial_balance_date?: string; // YYYY-MM-DD
-  iban?: string;
-  bank_name?: string;
-  color?: string; // hex pentru UI
-  icon?: string; // numele icon-ului Ionicons
-  archived: boolean;
-  notes?: string;
-  createdAt: string;
-}
-
-export const FINANCIAL_ACCOUNT_TYPE_LABELS: Record<FinancialAccountType, string> = {
-  bank: 'Cont curent',
-  cash: 'Numerar',
-  card: 'Card de credit',
-  savings: 'Economii',
-  investment: 'Investiții',
-  other: 'Altul',
-};
-
-export type CategoryKey =
-  | 'food'
-  | 'transport'
-  | 'utilities'
-  | 'health'
-  | 'vehicle'
-  | 'home'
-  | 'entertainment'
-  | 'subscriptions'
-  | 'shopping'
-  | 'education'
-  | 'travel'
-  | 'income'
-  | 'transfer'
-  | 'other';
-
-export interface ExpenseCategory {
-  id: string;
-  key?: CategoryKey; // setat doar la categoriile sistem
-  name: string;
-  icon?: string;
-  color?: string;
-  parent_id?: string;
-  is_system: boolean;
-  monthly_limit?: number; // în RON; undefined = fără limită
-  display_order: number;
-  archived: boolean;
-  createdAt: string;
-}
-
-export type TransactionSource = 'manual' | 'statement' | 'fuel' | 'ocr';
-
-/**
- * Tranzacție financiară: cheltuială (amount < 0), venit (amount > 0) sau transfer.
- *
- * Reguli:
- * - `account_id` NULL ⇒ cash sau orphan (nu apare în soldul niciunui cont)
- * - `category_id` NULL ⇒ necategorizat (apare în „Documente orfane" — vezi orphan-documents.md)
- * - `is_internal_transfer = true` ⇒ se exclude din analitice (e doar mutare între conturi proprii);
- *   `linked_transaction_id` punctează cealaltă jumătate a transferului
- * - `is_refund = true` ⇒ retur (amount > 0 dar contra-categorizat la cheltuieli)
- * - `fuel_record_id` ⇒ tranzacție generată din alimentare; sursa de adevăr e `fuel_records`
- * - `source_document_id` ⇒ tranzacție atașată unui document (bon, factură etc.) — folosit
- *   pentru deduplicare la salvare repetată și pentru link bidirecțional document ↔ tranzacție.
- *
- *   ASIMETRIE INTENȚIONATĂ a modelului: o tranzacție are cel mult UN document sursă
- *   (`source_document_id`, 1:1), dar un document poate fi legat de MAI MULTE entități
- *   (prin `document_entities`, junction table). Motivul: tranzacția documentează o singură
- *   plată concretă (un bon, o factură), pe când documentul poate să țină de mai multe
- *   entități deodată (ex.: o factură de utilități legată și de proprietate, și de
- *   persoana care a plătit). Dacă apar 2 documente pentru aceeași tranzacție (ex.:
- *   factură + bon), se păstrează cel mai recent în `source_document_id`; fără pluralizare.
- * - `duplicate_of_id` ⇒ marchează duplicat detectat (păstrăm pentru audit; UI ascunde)
- */
-export interface Transaction {
-  id: string;
-  account_id?: string;
-  date: string; // YYYY-MM-DD
-  amount: number; // negativ = cheltuială, pozitiv = venit
-  currency: string;
-  amount_ron?: number; // pre-calculat pentru agregări multi-currency
-  description?: string;
-  merchant?: string;
-  category_id?: string;
-  source: TransactionSource;
-  statement_id?: string;
-  fuel_record_id?: string;
-  source_document_id?: string;
-  is_internal_transfer: boolean;
-  linked_transaction_id?: string;
-  is_refund: boolean;
-  duplicate_of_id?: string;
-  notes?: string;
-  createdAt: string;
-}
-
-export interface BankStatement {
-  id: string;
-  account_id: string;
-  period_from: string; // YYYY-MM-DD
-  period_to: string; // YYYY-MM-DD
-  file_path?: string;
-  file_hash?: string;
-  imported_at: string; // ISO
-  transaction_count: number;
-  total_inflow: number;
-  total_outflow: number;
-  notes?: string;
-  createdAt: string;
-}
-
 /**
  * Înregistrare alimentare carburant / electric.
  *
@@ -332,19 +204,10 @@ export interface MaintenanceTaskStatus {
   dueMessage: string;
 }
 
-export type EntityType =
-  | 'person'
-  | 'property'
-  | 'vehicle'
-  | 'card'
-  | 'animal'
-  | 'company'
-  | 'financial_account';
+export type EntityType = 'person' | 'property' | 'vehicle' | 'card' | 'animal' | 'company';
 
 // Tipurile de entități pe care utilizatorul le poate activa/dezactiva din
 // Setări → Vizibilitate sau adăuga din ecranul „Adaugă entitate".
-// `financial_account` reprezintă hub-ul „Gestiune financiară" — e singleton
-// (un singur card), iar conturile bancare individuale sunt sub-resurse interne.
 export const ALL_ENTITY_TYPES: EntityType[] = [
   'person',
   'vehicle',
@@ -352,7 +215,6 @@ export const ALL_ENTITY_TYPES: EntityType[] = [
   'card',
   'animal',
   'company',
-  'financial_account',
 ];
 
 // Lista completă a tipurilor standard (fără 'custom') — apare în Setări
@@ -524,7 +386,6 @@ export const ENTITY_DOCUMENT_TYPES: Record<EntityType, DocumentType[]> = {
     'altul',
     'custom',
   ],
-  financial_account: ['contract', 'factura', 'altul', 'custom'],
 };
 
 /**
@@ -578,3 +439,35 @@ export function getDocumentLabel(
   }
   return DOCUMENT_TYPE_LABELS[doc.type] ?? doc.type;
 }
+
+// ── Cloud backup types ────────────────────────────────────────────────────────
+
+export type SnapshotFrequency = 'off' | 'daily' | 'every3days' | 'weekly' | 'monthly';
+
+export interface CloudSettings {
+  enabled: boolean;
+  snapshotFrequency: SnapshotFrequency;
+  snapshotRetention: number; // 1..20, default 4
+  encryptionEnabled: boolean;
+  ignoredCloudUploadedAt: number | null; // pentru a nu mai afișa același banner
+}
+
+export interface CloudManifestMeta {
+  version: number;
+  uploadedAt: number; // unix ms
+  hash: string; // SHA-256 hex
+  deviceId: string;
+  encrypted: boolean;
+  documentCount: number;
+  fileCount: number;
+}
+
+export interface PendingUpload {
+  id: number;
+  file_path: string; // relativ în DocumentsDirectory
+  attempt_count: number;
+  last_error: string | null;
+  created_at: number;
+}
+
+export type CloudStatus = 'idle' | 'uploading' | 'restoring' | 'error' | 'paused' | 'unavailable';
