@@ -449,7 +449,8 @@ export interface CloudSettings {
   snapshotFrequency: SnapshotFrequency;
   snapshotRetention: number; // 1..20, default 4
   encryptionEnabled: boolean;
-  ignoredCloudUploadedAt: number | null; // pentru a nu mai afișa același banner
+  /** unix ms — timestamp-ul ultimului banner ignorat (ca să nu mai apară același). */
+  ignoredCloudUploadedAt: number | null;
 }
 
 export interface CloudManifestMeta {
@@ -467,6 +468,7 @@ export interface PendingUpload {
   file_path: string; // relativ în DocumentsDirectory
   attempt_count: number;
   last_error: string | null;
+  /** unix ms — vezi cloud-backup plan (column INTEGER, nu TEXT ISO). */
   created_at: number;
 }
 

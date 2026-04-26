@@ -172,7 +172,7 @@ try {
     db.runSync('INSERT INTO cloud_state (id, device_id) VALUES (1, ?)', [generateId()]);
   }
 } catch {
-  // tabelul nu există încă sau eroare nativă în mediul de test
+  // jest mock pentru expo-sqlite nu implementează getFirstSync
 }
 
 // Migrare: adaugă custom_type_id dacă nu există
