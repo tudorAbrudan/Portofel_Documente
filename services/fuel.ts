@@ -54,7 +54,6 @@ export async function getFuelRecords(vehicleId: string): Promise<FuelRecord[]> {
 
 /**
  * Toate înregistrările (inclusiv cele fără vehicul — canistre, scop necunoscut).
- * Util pentru detectorul de orfani și pentru lista globală a tranzacțiilor de tip „alimentare".
  */
 export async function getAllFuelRecords(): Promise<FuelRecord[]> {
   const rows = await db.getAllAsync<FuelRow>(

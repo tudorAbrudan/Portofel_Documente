@@ -25,7 +25,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
 import { useThemePreference } from '@/hooks/useThemeScheme';
-import { PRIVACY_URL, SUPPORT_URL, FINANCE_AI_IMPORT_URL } from '@/constants/AppLinks';
+import { PRIVACY_URL, SUPPORT_URL } from '@/constants/AppLinks';
 import AppLockPinModal from '@/components/AppLockPinModal';
 import { primary, statusColors } from '@/theme/colors';
 import * as settings from '@/services/settings';
@@ -34,7 +34,6 @@ import type { AiProviderType } from '@/services/aiProvider';
 import { AI_CONSENT_KEY } from '@/services/aiProvider';
 import { scheduleExpirationReminders } from '@/services/notifications';
 import { exportBackup, importBackup } from '@/services/backup';
-import { hasFinancialData, wipeFinancialData } from '@/services/financialAccounts';
 import { checkForUpdateForced } from '@/services/updateCheck';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { db } from '@/services/db';
@@ -57,7 +56,6 @@ const ENTITY_LABELS: Record<EntityType, string> = {
   card: 'Card',
   animal: 'Animal',
   company: 'Firmă',
-  financial_account: 'Gestiune financiară',
 };
 
 const ENTITY_ICONS: Record<EntityType, string> = {
@@ -67,7 +65,6 @@ const ENTITY_ICONS: Record<EntityType, string> = {
   card: '💳',
   animal: '🐾',
   company: '🏢',
-  financial_account: '💰',
 };
 
 // ─── Constante contact ────────────────────────────────────────────────────────
@@ -421,65 +418,6 @@ export default function SetariScreen() {
     const isVisible = visibleEntityTypes.includes(entityType);
     if (isVisible && visibleEntityTypes.length <= 1) {
       Alert.alert('Minim unul', 'Trebuie să ai cel puțin un tip de entitate activat.');
-      return;
-    }
-
-    // Caz special: dezactivarea hub-ului „Gestiune financiară". Dacă există date
-    // (conturi sau tranzacții), oferim userului trei opțiuni: păstrează datele
-    // pentru reactivare, șterge complet istoricul, sau anulează.
-    if (entityType === 'financial_account' && isVisible) {
-      const hasData = await hasFinancialData().catch(() => false);
-      const next = visibleEntityTypes.filter(e => e !== entityType);
-      if (!hasData) {
-        await updateVisibleEntityTypes(next);
-        return;
-      }
-      Alert.alert(
-        'Dezactivează gestiunea financiară',
-        'Vrei să ștergi și istoricul (conturi, tranzacții, categorii personalizate)? Dacă alegi „Doar dezactivează", datele rămân și reapar la reactivare.',
-        [
-          { text: 'Anulează', style: 'cancel' },
-          {
-            text: 'Doar dezactivează',
-            onPress: () => {
-              updateVisibleEntityTypes(next).catch(e => {
-                Alert.alert(
-                  'Eroare',
-                  e instanceof Error ? e.message : 'Nu s-a putut dezactiva.'
-                );
-              });
-            },
-          },
-          {
-            text: 'Șterge istoricul',
-            style: 'destructive',
-            onPress: () => {
-              Alert.alert(
-                'Confirmă ștergerea',
-                'Toate conturile, tranzacțiile și categoriile personalizate vor fi șterse definitiv. Acțiunea nu poate fi anulată.',
-                [
-                  { text: 'Anulează', style: 'cancel' },
-                  {
-                    text: 'Șterge tot',
-                    style: 'destructive',
-                    onPress: async () => {
-                      try {
-                        await wipeFinancialData();
-                        await updateVisibleEntityTypes(next);
-                      } catch (e) {
-                        Alert.alert(
-                          'Eroare',
-                          e instanceof Error ? e.message : 'Ștergerea a eșuat.'
-                        );
-                      }
-                    },
-                  },
-                ]
-              );
-            },
-          },
-        ]
-      );
       return;
     }
 
@@ -1203,33 +1141,6 @@ export default function SetariScreen() {
           />
         </RNView>
 
-        {visibleEntityTypes.includes('financial_account') && (
-          <RNView style={styles.aiImportInfo}>
-            <RNText style={[styles.aiImportTitle, { color: C.textSecondary }]}>
-              Import extras bancar:
-            </RNText>
-            <RNText style={[styles.aiImportLine, { color: C.textSecondary }]}>
-              • Fără AI / Dosar AI / Model local: OCR + AI text.
-            </RNText>
-            <RNText style={[styles.aiImportLine, { color: C.textSecondary }]}>
-              • Cu cheie API proprie: PDF trimis direct la AI vision (mai precis).
-            </RNText>
-            <Pressable
-              onPress={() => {
-                Linking.openURL(FINANCE_AI_IMPORT_URL).catch(() => {
-                  Alert.alert('Eroare', 'Nu s-a putut deschide pagina de suport.');
-                });
-              }}
-              hitSlop={8}
-              style={({ pressed }) => [pressed && { opacity: 0.6 }]}
-            >
-              <RNText style={[styles.aiImportLink, { color: primary }]}>
-                Cum funcționează →
-              </RNText>
-            </Pressable>
-          </RNView>
-        )}
-
         {/* ── GDPR – Date și confidențialitate ── */}
         <RNText style={[styles.sectionLabel, { color: C.textSecondary }]}>
           DATE ȘI CONFIDENȚIALITATE
@@ -1851,25 +1762,6 @@ const styles = StyleSheet.create({
     marginTop: 20,
     marginLeft: 4,
     textTransform: 'uppercase',
-  },
-  aiImportInfo: {
-    paddingHorizontal: 8,
-    paddingVertical: 8,
-    marginTop: 8,
-  },
-  aiImportTitle: {
-    fontSize: 12,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  aiImportLine: {
-    fontSize: 12,
-    lineHeight: 18,
-  },
-  aiImportLink: {
-    fontSize: 12,
-    fontWeight: '600',
-    marginTop: 6,
   },
   sectionLabelInline: {
     marginBottom: 0,

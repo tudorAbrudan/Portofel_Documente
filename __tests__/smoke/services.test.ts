@@ -61,22 +61,6 @@ describe('Smoke tests — importuri servicii', () => {
     expect(() => require('@/services/localModel')).not.toThrow();
   });
 
-  it('financialAccounts se importă fără erori', () => {
-    expect(() => require('@/services/financialAccounts')).not.toThrow();
-  });
-
-  it('transactions se importă fără erori', () => {
-    expect(() => require('@/services/transactions')).not.toThrow();
-  });
-
-  it('categories se importă fără erori', () => {
-    expect(() => require('@/services/categories')).not.toThrow();
-  });
-
-  it('bankStatementParser se importă fără erori', () => {
-    expect(() => require('@/services/bankStatementParser')).not.toThrow();
-  });
-
   it('fuel se importă fără erori', () => {
     expect(() => require('@/services/fuel')).not.toThrow();
   });

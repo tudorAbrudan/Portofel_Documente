@@ -42,15 +42,7 @@ const DOC_CATEGORIES: { label: string; types: string[] }[] = [
   },
   {
     label: 'Financiare',
-    types: [
-      'factura',
-      'contract',
-      'card',
-      'bon_cumparaturi',
-      'bon_parcare',
-      'abonament',
-      'garantie',
-    ],
+    types: ['factura', 'contract', 'card', 'bon_cumparaturi', 'bon_parcare', 'abonament', 'garantie'],
   },
   {
     label: 'Animale',
@@ -95,61 +87,15 @@ function buildDocTypesList(): string {
 
 // ─── Construire text complet ─────────────────────────────────────────────────
 
-const FINANCE_KNOWLEDGE = `## Gestiune financiară (evidență cheltuieli)
-
-Hub central în **Entități → Gestiune financiară**. Conține:
-- Selector lună (chevron stânga/dreapta, tap pentru luna curentă) și filtru pe cont
-- Sumar luna: venituri, cheltuieli, sold net (RON)
-- Top categorii cu bare procentuale și sume cheltuite
-- Tranzacții recente
-- Sub-pagini: „Evoluție" (3/6/12 luni cu trend pe categorii), „Conturi" (listă cu sold curent + istoric extrase importate), „Categorii" (gestionare)
-- Buton „Tranzacție nouă" pentru intrare manuală
-
-**Conturi financiare** — fiecare cont are: tip (bancar/cash/economii/investiții/credit), valută, sold inițial, opțional IBAN/bancă, culoare/icon, status arhivat. Soldul curent = sold inițial + Σ(tranzacții, exclus duplicate). Ștergerea unui cont șterge atomic și extrasele importate, dezleagă transferurile interne și păstrează tranzacțiile orfane (account_id = NULL) ca să nu pierzi istoricul.
-
-**Categorii sistem** (predefinite, nu se pot șterge): Mâncare, Transport, Utilități, Sănătate, Mașină, Casă, Distracție, Abonamente, Cumpărături, Educație, Călătorii, Venituri, Transfer, Alte. Utilizatorul poate adăuga categorii proprii și seta limite lunare.
-
-**Import extras bancar** — la fiecare cont, butonul „Import extras" acceptă PDF (BT, ING, Revolut, OTP) sau CSV. Flow:
-1. Parsare locală (CSV cu separator <code>,</code> sau <code>;</code>; PDF cu OCR ML Kit)
-2. Dacă rezultatul e gol și utilizatorul a dat consimțământ AI → auto-fallback la AI (textul, nu imaginea)
-3. Manual oricând cu „Trimite la AI" / „Re-analizează cu AI"
-4. Detectare automată duplicate (sumă + dată + descriere similară între importuri repetate)
-5. Detectare automată transferuri interne între 2 conturi (excluse din cheltuieli)
-6. Istoric extrase per cont — listare cu perioadă, număr tranzacții, suma. Ștergerea unui extras șterge tranzacțiile asociate dar dezleagă elegant transferurile interne (cealaltă jumătate rămâne, nemai-marcată ca transfer).
-
-**Document → tranzacție (link 1:1)** — la salvarea unui document de tip *bon de cumpărături*, *bon de parcare*, *factură* sau *abonament* care are sumă, app întreabă „Înregistrează ca tranzacție?". Dacă da, deschide editorul pre-completat (sumă, dată, comerciant, descriere) cu legătura la document. Dacă nu, documentul rămâne salvat și poți adăuga tranzacția mai târziu din ecranul de detaliu (buton „Adaugă tranzacție"). Dacă există deja o tranzacție atașată, butonul devine „Vezi tranzacția" — fără duplicate la re-editare.
-
-**Tranzacții manuale** — la salvare, app caută automat în ±5 zile o tranzacție cu sumă opusă pe alt cont; dacă găsește exact o pereche, le leagă ca transfer intern (best-effort, fără dialog). Detecție identică la importul de extrase și la salvarea bonurilor de carburant.
-
-**Alimentări (bonuri de carburant)** — fiecare alimentare creează automat o tranzacție pe contul ales (sursa de adevăr rămâne pe alimentare). La sincronizare repetată (re-editare alimentare), tranzacția își păstrează personalizările manuale: descrierea, merchant-ul și categoria pe care le-ai schimbat — doar suma, data și contul se actualizează.
-
-**Onboarding pas „Evidență cheltuieli"** — toggle ON activează vizibilitatea hub-ului și creează automat contul „Cheltuieli generale" (RON, cash). Toggle OFF ascunde hub-ul.`;
-
-const FINANCE_DISABLED_NOTICE = `## Gestiune financiară — DEZACTIVATĂ
-
-Utilizatorul a dezactivat hub-ul „Gestiune financiară" din Setări. NU răspunde la întrebări despre conturi, tranzacții, venituri, cheltuieli, sold, buget, categorii de cheltuieli sau extrase bancare. Răspunde scurt: „Funcția «Gestiune financiară» este dezactivată. O poți reactiva din Setări → Entități active." și nu adăuga nimic legat de date financiare.`;
-
-export function buildAppKnowledge(financeHubActive: boolean = true): string {
-  const entitiesLine = financeHubActive
-    ? '**Entități:** Persoane, Vehicule, Proprietăți, Carduri bancare (fără CVV), Animale, Firme/PFA, Conturi financiare (bancar, cash, economii, investiții, credit).'
-    : '**Entități:** Persoane, Vehicule, Proprietăți, Carduri bancare (fără CVV), Animale, Firme/PFA.';
-
-  const featuresLine = financeHubActive
-    ? '**Funcții:** scanare + OCR on-device, notificări expirare, remindere în calendar iOS, backup iCloud/Drive, blocare Face ID/PIN, detecție automată duplicate, câmp „Notă privată" per document pentru date sensibile (CVV/PIN/parole) care NU ajunge niciodată la AI, reminder mentenanță vehicule (km sau timp) cu sincronizare calendar, evidență cheltuieli pe categorii și luni cu import extras bancar (PDF/CSV).'
-    : '**Funcții:** scanare + OCR on-device, notificări expirare, remindere în calendar iOS, backup iCloud/Drive, blocare Face ID/PIN, detecție automată duplicate, câmp „Notă privată" per document pentru date sensibile (CVV/PIN/parole) care NU ajunge niciodată la AI, reminder mentenanță vehicule (km sau timp) cu sincronizare calendar.';
-
-  const financeSection = financeHubActive ? FINANCE_KNOWLEDGE : FINANCE_DISABLED_NOTICE;
-
+export function buildAppKnowledge(): string {
   return `Ești asistentul aplicației „Dosar" — app mobilă locală (fără cloud) pentru documente personale. Răspunzi în română, concis.
 
-${entitiesLine}
+**Entități:** Persoane, Vehicule, Proprietăți, Carduri bancare (fără CVV), Animale, Firme/PFA.
 
 **Tipuri de documente:**
 ${buildDocTypesList()}
 
-${featuresLine}
-
-${financeSection}
+**Funcții:** scanare + OCR on-device, notificări expirare, remindere în calendar iOS, backup iCloud/Drive, blocare Face ID/PIN, detecție automată duplicate, câmp „Notă privată" per document pentru date sensibile (CVV/PIN/parole) care NU ajunge niciodată la AI, reminder mentenanță vehicule (km sau timp) cu sincronizare calendar.
 
 ## Gestiune auto
 

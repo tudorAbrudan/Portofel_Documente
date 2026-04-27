@@ -94,10 +94,6 @@ const HIDE_EXPIRY_TYPES: DocumentType[] = [
   'act_proprietate',
 ];
 
-// Tipuri de documente care reprezintă o cheltuială și pot fi propuse spre
-// înregistrare ca tranzacție în „Gestiune financiară" — dacă hub-ul e activ
-// și există cont și sumă detectată în metadata.
-const TX_PROMPT_TYPES: DocumentType[] = ['bon_cumparaturi', 'bon_parcare', 'factura'];
 const CUSTOM_EXPIRY_LABEL: Partial<Record<DocumentType, string>> = {
   talon: 'Scadență ITP (pentru reminder)',
   factura: 'Scadență (pentru reminder)',
@@ -110,7 +106,6 @@ const ENTITY_CATEGORIES: { key: EntityType; label: string }[] = [
   { key: 'card', label: 'Card' },
   { key: 'animal', label: 'Animal' },
   { key: 'company', label: 'Firmă' },
-  { key: 'financial_account', label: 'Cont financiar' },
 ];
 
 async function applyDocumentScan(uri: string): Promise<string> {
@@ -136,11 +131,10 @@ export default function AddDocumentScreen() {
     type?: string;
   }>();
   const { createDocument, refresh } = useDocuments();
-  const { persons, properties, vehicles, cards, animals, companies, financialAccounts } =
-    useEntities();
+  const { persons, properties, vehicles, cards, animals, companies } = useEntities();
   const headerHeight = useHeaderHeight();
   const { customTypes } = useCustomTypes();
-  const { visibleEntityTypes, visibleDocTypes } = useVisibilitySettings();
+  const { visibleDocTypes, visibleEntityTypes } = useVisibilitySettings();
 
   const [type, setType] = useState<DocumentType>((params.type as DocumentType) || 'altul');
   const [customTypeId, setCustomTypeId] = useState<string | null>(null);
@@ -1017,47 +1011,6 @@ export default function AddDocumentScreen() {
       await refresh();
       scheduleExpirationReminders().catch(() => {});
 
-      // Auto-prompt înregistrare cheltuială (bon/factură) în Gestiune financiară.
-      // Documentul tocmai a fost creat → nu există încă tranzacție pentru el,
-      // deci nu mai facem check-ul de duplicare. Pentru cazul „re-edit document
-      // existent", butonul „Adaugă tranzacție" de pe ecranul de detaliu document
-      // verifică `source_document_id` înainte de a deschide ecranul de tranzacție.
-      const financeHubActive = visibleEntityTypes.includes('financial_account');
-      const activeAccounts = financialAccounts.filter(a => !a.archived);
-      if (TX_PROMPT_TYPES.includes(type) && financeHubActive && activeAccounts.length > 0) {
-        const rawAmount = (metadata.amount ?? '').replace(',', '.').trim();
-        const amountNum = parseFloat(rawAmount);
-        if (!isNaN(amountNum) && amountNum > 0) {
-          const merchant = metadata.store ?? metadata.supplier ?? metadata.location ?? '';
-          const proceed = await new Promise<boolean>(resolve => {
-            Alert.alert(
-              'Înregistrează ca tranzacție?',
-              `${amountNum.toFixed(2)} RON${merchant ? ` la ${merchant}` : ''}.\n\nDacă „Nu, doar document", documentul rămâne salvat și poți adăuga tranzacția mai târziu din ecranul de detaliu.`,
-              [
-                { text: 'Nu, doar document', style: 'cancel', onPress: () => resolve(false) },
-                { text: 'Da, adaugă tranzacție', onPress: () => resolve(true) },
-              ]
-            );
-          });
-          if (proceed) {
-            setLoading(false);
-            const accountIdParam = activeAccounts.length === 1 ? activeAccounts[0].id : undefined;
-            router.replace({
-              pathname: '/(tabs)/entitati/cont/tranzactie',
-              params: {
-                ...(accountIdParam ? { account_id: accountIdParam } : {}),
-                prefill_amount: amountNum.toFixed(2),
-                prefill_date: issueDateRef.current.trim() || new Date().toISOString().slice(0, 10),
-                prefill_merchant: merchant,
-                prefill_kind: 'expense',
-                source_document_id: newDoc.id,
-              },
-            });
-            return;
-          }
-        }
-      }
-
       const finalExpiry = expiryDateRef.current.trim();
       if (finalExpiry && isCalendarAvailable()) {
         const linkedVehicleId = entityLinks.find(l => l.entityType === 'vehicle')?.entityId;
@@ -1145,11 +1098,7 @@ export default function AddDocumentScreen() {
             ? animals.map(a => ({ id: a.id, label: a.name }))
             : pickerCategory === 'company'
               ? companies.map(c => ({ id: c.id, label: c.name }))
-              : pickerCategory === 'financial_account'
-                ? financialAccounts
-                    .filter(a => !a.archived)
-                    .map(a => ({ id: a.id, label: `${a.name} (${a.currency})` }))
-                : cards.map(c => ({ id: c.id, label: c.nickname }));
+              : cards.map(c => ({ id: c.id, label: c.nickname }));
 
   function toggleEntityLink(id: string) {
     setEntityLinks(prev => {
@@ -1173,8 +1122,6 @@ export default function AddDocumentScreen() {
         return animals.find(a => a.id === link.entityId)?.name ?? link.entityId;
       case 'company':
         return companies.find(c => c.id === link.entityId)?.name ?? link.entityId;
-      case 'financial_account':
-        return financialAccounts.find(a => a.id === link.entityId)?.name ?? link.entityId;
       default:
         return link.entityId;
     }

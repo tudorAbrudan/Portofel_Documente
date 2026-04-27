@@ -826,7 +826,6 @@ export default function EditDocumentScreen() {
               card: '💳',
               animal: '🐾',
               company: '🏢',
-              financial_account: '💰',
             };
             function entityLinkLabel(link: DocumentEntityLink): string {
               switch (link.entityType) {

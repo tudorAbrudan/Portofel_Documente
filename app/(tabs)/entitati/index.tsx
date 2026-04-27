@@ -38,7 +38,6 @@ const ALL_TABS: { key: EntityTab; label: string; icon: IoniconName }[] = [
   { key: 'card', label: 'Carduri', icon: 'card-outline' },
   { key: 'animal', label: 'Animale', icon: 'paw-outline' },
   { key: 'company', label: 'Firme', icon: 'business-outline' },
-  { key: 'financial_account', label: 'Financiar', icon: 'analytics-outline' },
 ];
 
 const ENTITY_ICON: Record<EntityType, IoniconName> = {
@@ -48,7 +47,6 @@ const ENTITY_ICON: Record<EntityType, IoniconName> = {
   card: 'card',
   animal: 'paw',
   company: 'business',
-  financial_account: 'wallet',
 };
 
 const ENTITY_ICON_BG: Record<EntityType, string> = {
@@ -58,7 +56,6 @@ const ENTITY_ICON_BG: Record<EntityType, string> = {
   card: '#F3E5F5',
   animal: '#FFF3E0',
   company: '#E8EAF6',
-  financial_account: '#E0F2F1',
 };
 
 const ENTITY_ICON_COLOR: Record<EntityType, string> = {
@@ -68,20 +65,6 @@ const ENTITY_ICON_COLOR: Record<EntityType, string> = {
   card: '#7B1FA2',
   animal: '#E65100',
   company: '#283593',
-  financial_account: '#00695C',
-};
-
-// Pseudo-entitate „Gestiune financiară" — apare în lista „Toate" și e ordonabilă
-// ca orice altă entitate (sort_order salvat în entity_order cu un id sentinel).
-// Conturile individuale sunt sub-resurse ale hub-ului.
-const FINANCE_HUB_ID = '__finance_hub__';
-const FINANCE_HUB_CARD = {
-  title: 'Gestiune financiară',
-  subtitle: 'Cheltuieli, venituri și conturi',
-  icon: 'analytics' as IoniconName,
-  iconBg: '#E0F2F1',
-  iconColor: '#00695C',
-  route: '/(tabs)/entitati/financiar' as const,
 };
 
 export default function EntitatiListScreen() {
@@ -125,17 +108,8 @@ export default function EntitatiListScreen() {
       card: 4,
       animal: 5,
       company: 6,
-      financial_account: 0, // hub-ul apare sus ca default dacă nu are sort_order
     };
-    const showFinanceHub = visibleEntityTypes.includes('financial_account');
-    const financeHubItem: AnyEntity = {
-      id: FINANCE_HUB_ID,
-      name: FINANCE_HUB_CARD.title,
-    } as unknown as AnyEntity;
     const combined: TypedEntity[] = [
-      ...(showFinanceHub
-        ? [{ item: financeHubItem, entityType: 'financial_account' as EntityType }]
-        : []),
       ...persons.map(e => ({ item: e as AnyEntity, entityType: 'person' as EntityType })),
       ...properties.map(e => ({ item: e as AnyEntity, entityType: 'property' as EntityType })),
       ...vehicles.map(e => ({ item: e as AnyEntity, entityType: 'vehicle' as EntityType })),
@@ -143,8 +117,6 @@ export default function EntitatiListScreen() {
       ...animals.map(e => ({ item: e as AnyEntity, entityType: 'animal' as EntityType })),
       ...companies.map(e => ({ item: e as AnyEntity, entityType: 'company' as EntityType })),
     ];
-    // Sortăm după sort_order-ul global; fallback la rangul pe tip pentru entități
-    // nou create care încă nu au fost salvate prin flow-ul obișnuit.
     return combined.sort((a, b) => {
       const sa = globalOrderMap.get(`${a.entityType}:${a.item.id}`);
       const sb = globalOrderMap.get(`${b.entityType}:${b.item.id}`);
@@ -161,7 +133,6 @@ export default function EntitatiListScreen() {
     animals,
     companies,
     globalOrderMap,
-    visibleEntityTypes,
   ]);
 
   const rawTyped: TypedEntity[] = useMemo(
@@ -172,9 +143,7 @@ export default function EntitatiListScreen() {
   const typedList: TypedEntity[] = useMemo(() => {
     if (!searchQuery.trim()) return rawTyped;
     const q = searchQuery.trim().toLowerCase();
-    return rawTyped.filter(({ item, entityType }) => {
-      // Hub-ul nu apare în rezultate de căutare (e o intrare meta, nu o entitate cu nume).
-      if (entityType === 'financial_account' && item.id === FINANCE_HUB_ID) return false;
+    return rawTyped.filter(({ item }) => {
       return (
         ('name' in item && typeof item.name === 'string' && item.name.toLowerCase().includes(q)) ||
         ('nickname' in item &&
@@ -198,15 +167,7 @@ export default function EntitatiListScreen() {
     return null;
   };
 
-  // Hub-ul „Gestiune financiară" e o intrare meta — nu îl numărăm la „Toate"
-  // sau la celelalte tab-uri. Pe tab-ul „Financiar" îl numărăm normal (e
-  // singura intrare relevantă acolo).
-  const tabCount =
-    tab === 'financial_account'
-      ? rawTyped.length
-      : rawTyped.filter(
-          e => !(e.entityType === 'financial_account' && e.item.id === FINANCE_HUB_ID)
-        ).length;
+  const tabCount = rawTyped.length;
   const subtitleText = `${tabCount} ${
     tab === 'all'
       ? 'entități'
@@ -220,9 +181,7 @@ export default function EntitatiListScreen() {
               ? 'animale'
               : tab === 'company'
                 ? 'firme'
-                : tab === 'financial_account'
-                  ? 'hub-uri financiare'
-                  : 'carduri'
+                : 'carduri'
   }`;
 
   const emptyIconName: IoniconName =
@@ -260,37 +219,6 @@ export default function EntitatiListScreen() {
 
   const renderCard = (typed: TypedEntity, info: { isActive: boolean; onLongPress: () => void }) => {
     const { item, entityType } = typed;
-
-    // Hub-ul „Gestiune financiară" — card sintetic, ordonabil, nu duce la o entitate.
-    if (entityType === 'financial_account' && item.id === FINANCE_HUB_ID) {
-      return (
-        <Pressable
-          onPress={() => router.push(FINANCE_HUB_CARD.route)}
-          onLongPress={info.onLongPress}
-          delayLongPress={LONG_PRESS_DELAY_MS}
-          android_ripple={{ color: 'rgba(0,0,0,0.05)', borderless: false }}
-          style={({ pressed }) => [
-            styles.card,
-            { backgroundColor: C.card, shadowColor: C.cardShadow },
-            pressed && styles.cardPressed,
-            info.isActive && styles.cardActive,
-          ]}
-        >
-          <RNView style={[styles.iconWrap, { backgroundColor: FINANCE_HUB_CARD.iconBg }]}>
-            <Ionicons name={FINANCE_HUB_CARD.icon} size={22} color={FINANCE_HUB_CARD.iconColor} />
-          </RNView>
-          <RNView style={styles.cardContent}>
-            <RNText style={[styles.cardTitle, { color: C.text }]} numberOfLines={1}>
-              {FINANCE_HUB_CARD.title}
-            </RNText>
-            <RNText style={[styles.cardSub, { color: C.textSecondary }]} numberOfLines={1}>
-              {FINANCE_HUB_CARD.subtitle}
-            </RNText>
-          </RNView>
-          <Ionicons name="chevron-forward" size={16} color={C.textSecondary} />
-        </Pressable>
-      );
-    }
 
     const title = getTitle(item);
     const subtitle = getSubtitle(item, entityType);

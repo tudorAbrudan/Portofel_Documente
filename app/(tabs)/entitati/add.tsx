@@ -8,12 +8,10 @@ import {
   Platform,
   ActivityIndicator,
   ScrollView,
-  View as RNView,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useHeaderHeight } from '@react-navigation/elements';
 import * as ImagePicker from 'expo-image-picker';
-import { Ionicons } from '@expo/vector-icons';
 import { Text, View, ThemedTextInput } from '@/components/Themed';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
@@ -24,8 +22,6 @@ import { useVisibilitySettings } from '@/hooks/useVisibilitySettings';
 import { extractText, extractCardInfo } from '@/services/ocr';
 import type { EntityType } from '@/types';
 
-// Tipurile de entități clasice — fiecare are formular propriu de creație.
-// `financial_account` e tratat separat (singleton hub, nu are formular de creație).
 const MANUAL_ENTITY_TYPES: { key: EntityType; label: string }[] = [
   { key: 'person', label: 'Persoană' },
   { key: 'property', label: 'Proprietate' },
@@ -52,19 +48,8 @@ export default function AddEntityScreen() {
     createCompany,
     refresh,
   } = useEntities();
-  const { visibleEntityTypes, updateVisibleEntityTypes } = useVisibilitySettings();
+  const { visibleEntityTypes } = useVisibilitySettings();
   const ENTITY_TYPES = MANUAL_ENTITY_TYPES.filter(t => visibleEntityTypes.includes(t.key));
-  const isFinanceHubActive = visibleEntityTypes.includes('financial_account');
-
-  async function activateFinanceHub() {
-    if (isFinanceHubActive) return;
-    try {
-      await updateVisibleEntityTypes([...visibleEntityTypes, 'financial_account']);
-      router.replace('/(tabs)/entitati/financiar');
-    } catch (e) {
-      Alert.alert('Eroare', e instanceof Error ? e.message : 'Nu s-a putut activa hub-ul.');
-    }
-  }
   const headerHeight = useHeaderHeight();
 
   const [name, setName] = useState('');
@@ -176,41 +161,6 @@ export default function AddEntityScreen() {
               <Text style={styles.typeButtonText}>{label}</Text>
             </Pressable>
           ))}
-
-          <View style={[styles.separator, { backgroundColor: C.border }]} />
-          <Text style={styles.label}>Hub-uri</Text>
-          <Pressable
-            style={({ pressed }) => [
-              styles.hubButton,
-              {
-                borderColor: isFinanceHubActive ? C.border : primary,
-                backgroundColor: isFinanceHubActive ? C.background : C.card,
-                opacity: isFinanceHubActive ? 0.6 : 1,
-              },
-              pressed && !isFinanceHubActive && styles.buttonPressed,
-            ]}
-            onPress={activateFinanceHub}
-            disabled={isFinanceHubActive}
-          >
-            <RNView style={[styles.hubIcon, { backgroundColor: '#E0F2F1' }]}>
-              <Ionicons name="analytics" size={20} color="#00695C" />
-            </RNView>
-            <RNView style={styles.hubBody}>
-              <Text style={[styles.hubTitle, { color: isFinanceHubActive ? C.text : primary }]}>
-                Gestiune financiară
-              </Text>
-              <Text style={[styles.hubSub, { color: C.textSecondary }]}>
-                {isFinanceHubActive
-                  ? 'Deja adăugată — apare în lista de entități'
-                  : 'Cheltuieli, venituri și conturi într-un singur loc'}
-              </Text>
-            </RNView>
-            {isFinanceHubActive ? (
-              <Ionicons name="checkmark-circle" size={20} color={primary} />
-            ) : (
-              <Ionicons name="chevron-forward" size={18} color={primary} />
-            )}
-          </Pressable>
         </ScrollView>
       </View>
     );
@@ -400,24 +350,4 @@ const styles = StyleSheet.create({
     height: 1,
     marginVertical: 20,
   },
-  hubButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 14,
-    marginBottom: 12,
-    gap: 12,
-  },
-  hubIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  hubBody: { flex: 1, gap: 2 },
-  hubTitle: { fontSize: 15, fontWeight: '600' },
-  hubSub: { fontSize: 12, lineHeight: 16 },
 });

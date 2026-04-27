@@ -472,7 +472,6 @@ export async function addEntityLinkToDocument(
     card: 'card_id',
     animal: 'animal_id',
     company: 'company_id',
-    financial_account: 'financial_account_id',
   };
   const col = colMap[link.entityType];
   const current = await db.getFirstAsync<Record<string, string | null>>(
@@ -504,7 +503,6 @@ export async function removeEntityLinkFromDocument(
     card: 'card_id',
     animal: 'animal_id',
     company: 'company_id',
-    financial_account: 'financial_account_id',
   };
   const col = colMap[link.entityType];
   await db.runAsync(`UPDATE documents SET ${col} = ? WHERE id = ?`, [
