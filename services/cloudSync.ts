@@ -173,6 +173,8 @@ export async function readCloudMeta(): Promise<CloudManifestMeta | null> {
   }
 }
 
+// TODO(task-9): namespace remote paths by document_id if filenames ever collide.
+// Today file_path is `documents/<UUID>.<ext>` so basename is collision-safe.
 const FILES_PREFIX = `${CLOUD_ROOT}/files/`;
 const MAX_ATTEMPTS = 5;
 
@@ -180,14 +182,31 @@ function fileNameFromPath(relPath: string): string {
   return relPath.split('/').pop() ?? relPath;
 }
 
+/**
+ * Adaugă un fișier în coada de upload. Idempotent — re-enqueue resetează
+ * `attempt_count` și `last_error` (`ON CONFLICT` pe `file_path`).
+ *
+ * @throws când scrierea în SQLite eșuează (rar — DB locală).
+ */
 export async function enqueueFileUpload(filePath: string): Promise<void> {
   if (!filePath) return;
   await db.runAsync(
-    'INSERT OR IGNORE INTO pending_uploads (file_path, attempt_count, created_at) VALUES (?, 0, ?)',
+    `INSERT INTO pending_uploads (file_path, attempt_count, created_at)
+     VALUES (?, 0, ?)
+     ON CONFLICT(file_path) DO UPDATE SET
+       attempt_count = 0,
+       last_error = NULL,
+       created_at = excluded.created_at`,
     [filePath, Date.now()]
   );
 }
 
+/**
+ * Scoate un fișier din coadă (dacă era pending) și încearcă să-l șteargă din cloud
+ * (dacă era deja uploadat). Erorile remote sunt înghițite (eventual consistency).
+ *
+ * @throws când scrierea în SQLite eșuează.
+ */
 export async function dequeueFileDelete(filePath: string): Promise<void> {
   if (!filePath) return;
   await db.runAsync('DELETE FROM pending_uploads WHERE file_path = ?', [filePath]);
@@ -201,6 +220,16 @@ export async function dequeueFileDelete(filePath: string): Promise<void> {
   }
 }
 
+/**
+ * Procesează coada secvențial: citește pending rows cu `attempt_count < MAX_ATTEMPTS`,
+ * urcă base64 în iCloud. Per-rând: succes → DELETE; eroare → bump `attempt_count` + `last_error`.
+ *
+ * Apelată fire-and-forget din hooks `documents.ts`. Erorile per-fișier sunt
+ * persistate în `pending_uploads.last_error` și nu sunt aruncate.
+ *
+ * @throws când SELECT-ul inițial eșuează sau când UPDATE-ul de bookkeeping
+ *   pentru un eșec nu poate fi scris (ambele indică o problemă cu SQLite).
+ */
 export async function processQueue(): Promise<void> {
   if (!(await cloudStorage.isAvailable())) return;
 
@@ -233,9 +262,19 @@ export async function processQueue(): Promise<void> {
   }
 }
 
+/** Numărul de fișiere în coadă active (`attempt_count < MAX_ATTEMPTS`). */
 export async function getPendingCount(): Promise<number> {
   const row = await db.getFirstAsync<{ c: number }>(
     'SELECT COUNT(*) as c FROM pending_uploads WHERE attempt_count < ?',
+    [MAX_ATTEMPTS]
+  );
+  return row?.c ?? 0;
+}
+
+/** Numărul de fișiere care au atins `MAX_ATTEMPTS` și nu mai sunt re-încercate. */
+export async function getFailedCount(): Promise<number> {
+  const row = await db.getFirstAsync<{ c: number }>(
+    'SELECT COUNT(*) as c FROM pending_uploads WHERE attempt_count >= ?',
     [MAX_ATTEMPTS]
   );
   return row?.c ?? 0;
