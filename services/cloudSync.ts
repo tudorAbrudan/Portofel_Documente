@@ -5,7 +5,20 @@ import * as entities from './entities';
 import * as docs from './documents';
 import * as fuel from './fuel';
 import { getCustomTypes } from './customTypes';
-import type { CloudManifestMeta, EntityType } from '@/types';
+import type {
+  Animal,
+  Card,
+  CloudManifestMeta,
+  Company,
+  CustomDocumentType,
+  Document,
+  DocumentPage,
+  EntityType,
+  FuelRecord,
+  Person,
+  Property,
+  Vehicle,
+} from '@/types';
 
 const CLOUD_ROOT = 'Dosar';
 const MANIFEST_PATH = `${CLOUD_ROOT}/manifest.json`;
@@ -30,15 +43,33 @@ export async function getCloudState(): Promise<CloudState> {
 export async function setCloudState(patch: Partial<CloudState>): Promise<void> {
   const fields: string[] = [];
   const values: (string | number | null)[] = [];
-  for (const [key, value] of Object.entries(patch)) {
+  for (const key of Object.keys(patch) as (keyof CloudState)[]) {
+    const value = patch[key];
+    if (value === undefined) continue;
     fields.push(`${key} = ?`);
-    values.push(value as string | number | null);
+    values.push(value);
   }
   if (!fields.length) return;
   await db.runAsync(`UPDATE cloud_state SET ${fields.join(', ')} WHERE id = 1`, values);
 }
 
-async function buildManifestPayload(): Promise<Record<string, unknown>> {
+interface ManifestPayload {
+  version: number;
+  exportDate: string;
+  persons: Person[];
+  properties: Property[];
+  vehicles: Vehicle[];
+  cards: Card[];
+  animals: Animal[];
+  companies: Company[];
+  fuelRecords: FuelRecord[];
+  customTypes: CustomDocumentType[];
+  documents: Document[];
+  documentPages: DocumentPage[];
+  entityOrder: { entity_type: EntityType; entity_id: string; sort_order: number }[];
+}
+
+async function buildManifestPayload(): Promise<ManifestPayload> {
   const [
     persons,
     properties,
@@ -87,12 +118,16 @@ async function buildManifestPayload(): Promise<Record<string, unknown>> {
 /**
  * Compară hash-ul manifestului curent cu ultimul uploadat. Dacă diferă, urcă manifest + meta.
  * Returnează true dacă a făcut upload, false dacă skip (no changes).
+ *
+ * @throws când iCloud devine indisponibil între `isAvailable()` și `writeFile`,
+ *   sau când scrierea/serializarea eșuează. Apelantul (Task 11) este responsabil
+ *   să prindă și să decidă retry vs. logging.
  */
 export async function uploadManifestIfChanged(): Promise<boolean> {
   if (!(await cloudStorage.isAvailable())) return false;
 
   const payload = await buildManifestPayload();
-  const canonical = buildCanonicalManifest(payload);
+  const canonical = buildCanonicalManifest(payload as unknown as Record<string, unknown>);
   const hash = await hashManifestAsync(canonical);
 
   const state = await getCloudState();
@@ -103,10 +138,9 @@ export async function uploadManifestIfChanged(): Promise<boolean> {
   const json = JSON.stringify(payload);
   await cloudStorage.writeFile(MANIFEST_PATH, json, 'utf8');
 
-  const documentsList = payload.documents as { file_path?: string }[];
-  const pagesList = payload.documentPages as unknown[];
-  const documentCount = documentsList.length;
-  const fileCount = documentsList.filter(d => d.file_path).length + pagesList.length;
+  const documentCount = payload.documents.length;
+  const fileCount =
+    payload.documents.filter(d => d.file_path).length + payload.documentPages.length;
   const meta: CloudManifestMeta = {
     version: MANIFEST_VERSION,
     uploadedAt: Date.now(),
