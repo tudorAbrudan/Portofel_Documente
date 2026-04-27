@@ -195,12 +195,18 @@ export function CloudPasswordModal({ visible, mode, onSubmit, onCancel }: Props)
             </Pressable>
             <Pressable
               onPress={submit}
-              disabled={busy}
-              style={({ pressed }) => [
-                styles.btn,
-                { backgroundColor: primary },
-                (pressed || busy) && { opacity: 0.6 },
-              ]}
+              disabled={
+                busy || pw.length === 0 || (mode === 'setup' && (pw !== confirm || !agreed))
+              }
+              style={({ pressed }) => {
+                const submitDisabled =
+                  busy || pw.length === 0 || (mode === 'setup' && (pw !== confirm || !agreed));
+                return [
+                  styles.btn,
+                  { backgroundColor: primary },
+                  (pressed || submitDisabled) && { opacity: 0.6 },
+                ];
+              }}
             >
               {busy ? (
                 <ActivityIndicator size="small" color={onPrimary} />

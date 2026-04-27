@@ -325,12 +325,16 @@ export async function unlockWithPassword(password: string): Promise<Uint8Array> 
  * Șterge tot setup-ul de criptare (salt + verify) și clear-uiește session key-ul.
  * Apelat la dezactivarea criptării din Setări.
  *
+ * Ordine: clear in-memory PRIMUL (operație care nu poate eșua), apoi delete din
+ * SecureStore. Dacă SecureStore aruncă, măcar nu rămâne cheia activă în memorie
+ * (altfel s-ar putea continua encriptarea după ce userul a cerut dezactivare).
+ *
  * @throws când SecureStore.deleteItemAsync eșuează (rar).
  */
 export async function clearPassword(): Promise<void> {
+  setSessionKey(null);
   await SecureStore.deleteItemAsync(SALT_KEY);
   await SecureStore.deleteItemAsync(VERIFY_KEY);
-  setSessionKey(null);
 }
 
 /**

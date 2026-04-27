@@ -222,6 +222,9 @@ export default function CloudBackupScreen() {
   }, [runRestore]);
 
   // ── Encryption toggle ────────────────────────────────────────────────────
+  // TODO(future): re-enqueue all pending uploads when encryption state changes,
+  // so the queue and meta.encrypted always agree. Today the next manifest upload
+  // is the source of truth and most files re-upload anyway when content changes.
   const handleEncryptionToggle = (value: boolean) => {
     if (value) {
       // OFF → ON: cere parolă nouă.

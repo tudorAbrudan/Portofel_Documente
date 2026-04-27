@@ -130,13 +130,21 @@ async function buildManifestPayload(): Promise<ManifestPayload> {
 }
 
 /**
- * Compară hash-ul manifestului curent cu ultimul uploadat. Dacă diferă, urcă manifest + meta.
+ * Compară hash-ul manifestului curent cu ultimul uploadat. Dacă diferă, urcă meta + manifest.
  * Returnează true dacă a făcut upload, false dacă skip (no changes).
  *
  * Dacă criptarea e activă (`getCloudEncryptionEnabled() === true`) manifestul e
  * encriptat cu cheia de sesiune înainte de upload, iar `meta.encrypted` devine `true`.
  * Hash-ul e calculat pe formatul canonic plain — așa rămâne stabil indiferent
  * dacă encriptarea e on/off (IV-ul random ar varia hash-ul ciphertext-ului).
+ *
+ * **Ordine de scriere:** `meta.json` PRIMUL, apoi `manifest.json`. Meta e mic,
+ * rapid și rar eșuează; dacă scrierea manifestului eșuează după meta, încercăm
+ * un best-effort rollback al meta-ului la valorile vechi (loggat ca warning dacă
+ * și acela eșuează). Motivul ordinei: dacă am scrie întâi manifestul (potențial
+ * encriptat) și meta ar eșua, un alt device care polluiește în interval ar găsi
+ * manifest nou cu `meta.encrypted=false` stale și ar încerca să facă JSON.parse
+ * pe ciphertext. Recovery: la următorul upload reușit, ambele se reîmprospătează.
  *
  * @throws `PasswordRequiredError` când criptarea e activă dar sesiunea nu e deblocată.
  * @throws când iCloud devine indisponibil între `isAvailable()` și `writeFile`,
@@ -167,7 +175,6 @@ export async function uploadManifestIfChanged(): Promise<boolean> {
     payloadToWrite = await encryptString(json, key);
     encrypted = true;
   }
-  await cloudStorage.writeFile(MANIFEST_PATH, payloadToWrite, 'utf8');
 
   const documentCount = payload.documents.length;
   const fileCount =
@@ -181,7 +188,32 @@ export async function uploadManifestIfChanged(): Promise<boolean> {
     documentCount,
     fileCount,
   };
+
+  // Snapshot al meta-ului anterior pentru rollback dacă manifestul eșuează după meta.
+  const previousMeta = await readCloudMeta();
+
+  // Scriem META PRIMUL — mic, rapid, mai puțin probabil să eșueze. Dacă manifestul
+  // eșuează după, alt device care citește în interval vede meta cu hash nou + manifest
+  // vechi (inconsistent dar recuperabil la următorul refresh).
   await cloudStorage.writeFile(META_PATH, JSON.stringify(meta), 'utf8');
+
+  try {
+    await cloudStorage.writeFile(MANIFEST_PATH, payloadToWrite, 'utf8');
+  } catch (e) {
+    // Best-effort rollback al meta-ului la valoarea anterioară, ca să nu rămână meta
+    // pretinzând "există hash nou" cu manifest vechi pe disc.
+    if (previousMeta) {
+      try {
+        await cloudStorage.writeFile(META_PATH, JSON.stringify(previousMeta), 'utf8');
+      } catch (rollbackErr) {
+        console.warn(
+          '[cloudSync.uploadManifestIfChanged] meta rollback failed:',
+          rollbackErr instanceof Error ? rollbackErr.message : rollbackErr
+        );
+      }
+    }
+    throw e;
+  }
 
   await setCloudState({
     last_manifest_hash: hash,
@@ -298,6 +330,13 @@ export async function processQueue(): Promise<void> {
         );
         continue;
       }
+      // Per-file encryption e o setare GLOBALĂ — nu există marker per-fișier pe disc.
+      // Dacă userul toggle-uiește criptarea mid-flight, fișierele din coadă pot ajunge
+      // urcate sub setări diferite; restore cross-device se bazează pe `meta.encrypted`
+      // ca flag global pentru toate payload-urile.
+      // TODO(future): la toggle de criptare, considerează clear pe `pending_uploads`
+      // și re-enqueue, ca să garantezi consistența între queue și flag-ul global.
+      //
       // Dacă encriptarea e activă dar sesiunea nu e deblocată, marchează rândul cu
       // mesaj — DAR nu bump-uim attempt_count, ca să fie reprocesat la următorul
       // tick AppState după ce userul deblochează.
