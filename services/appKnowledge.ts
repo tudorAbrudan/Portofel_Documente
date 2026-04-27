@@ -42,7 +42,15 @@ const DOC_CATEGORIES: { label: string; types: string[] }[] = [
   },
   {
     label: 'Financiare',
-    types: ['factura', 'contract', 'card', 'bon_cumparaturi', 'bon_parcare', 'abonament', 'garantie'],
+    types: [
+      'factura',
+      'contract',
+      'card',
+      'bon_cumparaturi',
+      'bon_parcare',
+      'abonament',
+      'garantie',
+    ],
   },
   {
     label: 'Animale',

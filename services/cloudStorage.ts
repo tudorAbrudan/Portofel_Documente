@@ -1,9 +1,5 @@
 import * as FileSystem from 'expo-file-system/legacy';
-import {
-  CloudStorage,
-  CloudStorageProvider,
-  CloudStorageScope,
-} from 'react-native-cloud-storage';
+import { CloudStorage, CloudStorageProvider, CloudStorageScope } from 'react-native-cloud-storage';
 
 /**
  * Wrapper peste `react-native-cloud-storage` pentru iCloud Documents.
@@ -36,7 +32,7 @@ export async function isAvailable(): Promise<boolean> {
 export async function writeFile(
   remotePath: string,
   data: string,
-  encoding: 'utf8' | 'base64' = 'utf8',
+  encoding: 'utf8' | 'base64' = 'utf8'
 ): Promise<void> {
   await ensureParentDir(remotePath);
   if (encoding === 'utf8') {
@@ -56,7 +52,7 @@ export async function writeFile(
 
 export async function readFile(
   remotePath: string,
-  encoding: 'utf8' | 'base64' = 'utf8',
+  encoding: 'utf8' | 'base64' = 'utf8'
 ): Promise<string> {
   if (encoding === 'utf8') {
     return await cs.readFile(remotePath);
