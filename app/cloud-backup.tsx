@@ -2,6 +2,7 @@ import { View, Text, StyleSheet } from 'react-native';
 import { useColorScheme } from '@/components/useColorScheme';
 import { light, dark } from '@/theme/colors';
 
+// Task 12 will replace this stub and consume the `?action=restore` query param.
 export default function CloudBackupScreen() {
   const scheme = useColorScheme();
   const palette = scheme === 'dark' ? dark : light;

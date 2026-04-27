@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
 import { getCloudState, readCloudMeta } from '@/services/cloudSync';
 import {
@@ -23,7 +23,8 @@ interface State {
  * - Re-checks on mount and on AppState 'active'.
  * - Suppresses the banner for any cloud `uploadedAt` the user previously dismissed
  *   (stored via `setCloudIgnoredUploadedAt`).
- * - Never throws — failures are surfaced via `error` and `showBanner` stays `false`.
+ * - Never throws — failures (from `check` or `dismiss`) are surfaced via `error`
+ *   and `showBanner` stays `false`.
  *
  * @returns `{ cloudMeta, showBanner, loading, error, refresh, dismiss }`.
  */
@@ -35,16 +36,28 @@ export function useCloudRestoreDetector() {
     error: null,
   });
 
+  const mountedRef = useRef(true);
+  const inFlightRef = useRef(false);
+  const cloudMetaRef = useRef<CloudManifestMeta | null>(null);
+
   const check = useCallback(async () => {
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
     try {
       const enabled = await getCloudBackupEnabled();
       if (!enabled) {
-        setState({ cloudMeta: null, showBanner: false, loading: false, error: null });
+        cloudMetaRef.current = null;
+        if (mountedRef.current) {
+          setState({ cloudMeta: null, showBanner: false, loading: false, error: null });
+        }
         return;
       }
       const cloudMeta = await readCloudMeta();
       if (!cloudMeta) {
-        setState({ cloudMeta: null, showBanner: false, loading: false, error: null });
+        cloudMetaRef.current = null;
+        if (mountedRef.current) {
+          setState({ cloudMeta: null, showBanner: false, loading: false, error: null });
+        }
         return;
       }
       const localState = await getCloudState();
@@ -55,33 +68,54 @@ export function useCloudRestoreDetector() {
         cloudMeta.deviceId !== localState.device_id &&
         cloudMeta.uploadedAt !== ignoredAt;
 
-      setState({ cloudMeta, showBanner: isNewer, loading: false, error: null });
+      cloudMetaRef.current = cloudMeta;
+      if (mountedRef.current) {
+        setState({ cloudMeta, showBanner: isNewer, loading: false, error: null });
+      }
     } catch (e) {
-      setState({
-        cloudMeta: null,
-        showBanner: false,
-        loading: false,
-        error: e instanceof Error ? e.message : 'Eroare necunoscută',
-      });
+      if (mountedRef.current) {
+        setState({
+          cloudMeta: null,
+          showBanner: false,
+          loading: false,
+          error: e instanceof Error ? e.message : 'Eroare necunoscută',
+        });
+      }
+    } finally {
+      inFlightRef.current = false;
     }
   }, []);
 
   useEffect(() => {
+    mountedRef.current = true;
     void check();
     const sub = AppState.addEventListener('change', (s: AppStateStatus) => {
       if (s === 'active') void check();
     });
     return () => {
+      mountedRef.current = false;
       sub.remove();
     };
   }, [check]);
 
   const dismiss = useCallback(async () => {
-    if (state.cloudMeta) {
-      await setCloudIgnoredUploadedAt(state.cloudMeta.uploadedAt);
+    const captured = cloudMetaRef.current;
+    if (mountedRef.current) {
+      setState(s => ({ ...s, showBanner: false }));
     }
-    setState(s => ({ ...s, showBanner: false }));
-  }, [state.cloudMeta]);
+    if (captured) {
+      try {
+        await setCloudIgnoredUploadedAt(captured.uploadedAt);
+      } catch (e) {
+        if (mountedRef.current) {
+          setState(s => ({
+            ...s,
+            error: e instanceof Error ? e.message : 'Eroare necunoscută',
+          }));
+        }
+      }
+    }
+  }, []);
 
   return { ...state, refresh: check, dismiss };
 }
