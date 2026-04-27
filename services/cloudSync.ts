@@ -1,3 +1,4 @@
+import * as FileSystem from 'expo-file-system/legacy';
 import { db } from './db';
 import * as cloudStorage from './cloudStorage';
 import { buildCanonicalManifest, hashManifestAsync } from './manifestHash';
@@ -5,6 +6,7 @@ import * as entities from './entities';
 import * as docs from './documents';
 import * as fuel from './fuel';
 import { getCustomTypes } from './customTypes';
+import { toFileUri } from './fileUtils';
 import type {
   Animal,
   Card,
@@ -169,4 +171,72 @@ export async function readCloudMeta(): Promise<CloudManifestMeta | null> {
   } catch {
     return null;
   }
+}
+
+const FILES_PREFIX = `${CLOUD_ROOT}/files/`;
+const MAX_ATTEMPTS = 5;
+
+function fileNameFromPath(relPath: string): string {
+  return relPath.split('/').pop() ?? relPath;
+}
+
+export async function enqueueFileUpload(filePath: string): Promise<void> {
+  if (!filePath) return;
+  await db.runAsync(
+    'INSERT OR IGNORE INTO pending_uploads (file_path, attempt_count, created_at) VALUES (?, 0, ?)',
+    [filePath, Date.now()]
+  );
+}
+
+export async function dequeueFileDelete(filePath: string): Promise<void> {
+  if (!filePath) return;
+  await db.runAsync('DELETE FROM pending_uploads WHERE file_path = ?', [filePath]);
+  if (await cloudStorage.isAvailable()) {
+    const remote = `${FILES_PREFIX}${fileNameFromPath(filePath)}`;
+    try {
+      await cloudStorage.deleteFile(remote);
+    } catch {
+      // ignore — eventual consistency
+    }
+  }
+}
+
+export async function processQueue(): Promise<void> {
+  if (!(await cloudStorage.isAvailable())) return;
+
+  const pending = await db.getAllAsync<{ id: number; file_path: string; attempt_count: number }>(
+    'SELECT id, file_path, attempt_count FROM pending_uploads WHERE attempt_count < ? ORDER BY id ASC',
+    [MAX_ATTEMPTS]
+  );
+
+  for (const row of pending) {
+    try {
+      const localUri = toFileUri(row.file_path);
+      const info = await FileSystem.getInfoAsync(localUri);
+      if (!info.exists) {
+        await db.runAsync('DELETE FROM pending_uploads WHERE id = ?', [row.id]);
+        continue;
+      }
+      const base64 = await FileSystem.readAsStringAsync(localUri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      const remote = `${FILES_PREFIX}${fileNameFromPath(row.file_path)}`;
+      await cloudStorage.writeFile(remote, base64, 'base64');
+      await db.runAsync('DELETE FROM pending_uploads WHERE id = ?', [row.id]);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Eroare necunoscută';
+      await db.runAsync(
+        'UPDATE pending_uploads SET attempt_count = attempt_count + 1, last_error = ? WHERE id = ?',
+        [message, row.id]
+      );
+    }
+  }
+}
+
+export async function getPendingCount(): Promise<number> {
+  const row = await db.getFirstAsync<{ c: number }>(
+    'SELECT COUNT(*) as c FROM pending_uploads WHERE attempt_count < ?',
+    [MAX_ATTEMPTS]
+  );
+  return row?.c ?? 0;
 }

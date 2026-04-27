@@ -2,6 +2,8 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { db, generateId } from './db';
 import { computeFileHash } from './fileHash';
 import { onDocumentCreated, onDocumentRenewed } from './reviewPrompt';
+import * as cloudSync from './cloudSync';
+import { getCloudBackupEnabled } from './settings';
 import type { Document, DocumentPage, DocumentType, DocumentEntityLink, EntityType } from '@/types';
 
 export interface CreateDocumentInput {
@@ -322,6 +324,16 @@ export async function createDocument(input: CreateDocumentInput): Promise<Docume
     // Trigger review opțional — nu blochează crearea documentului.
   }
 
+  if (input.file_path) {
+    const cloudEnabled = await getCloudBackupEnabled();
+    if (cloudEnabled) {
+      await cloudSync.enqueueFileUpload(input.file_path);
+      cloudSync.processQueue().catch(() => {
+        /* fire and forget */
+      });
+    }
+  }
+
   return {
     id,
     type: input.type,
@@ -351,7 +363,30 @@ export async function setDocumentOcrText(id: string, ocrText: string): Promise<v
 }
 
 export async function deleteDocument(id: string): Promise<void> {
+  const mainRow = await db.getFirstAsync<{ file_path: string | null }>(
+    'SELECT file_path FROM documents WHERE id = ?',
+    [id]
+  );
+  const pageRows = await db.getAllAsync<{ file_path: string | null }>(
+    'SELECT file_path FROM document_pages WHERE document_id = ?',
+    [id]
+  );
+  const deletedFilePaths: string[] = [];
+  if (mainRow?.file_path) deletedFilePaths.push(mainRow.file_path);
+  for (const row of pageRows) {
+    if (row.file_path) deletedFilePaths.push(row.file_path);
+  }
+
   await db.runAsync('DELETE FROM documents WHERE id = ?', [id]);
+
+  if (deletedFilePaths.length > 0) {
+    const cloudEnabled = await getCloudBackupEnabled();
+    if (cloudEnabled) {
+      for (const path of deletedFilePaths) {
+        await cloudSync.dequeueFileDelete(path);
+      }
+    }
+  }
 }
 
 export interface UpdateDocumentInput {
@@ -525,6 +560,16 @@ export async function addDocumentPage(documentId: string, filePath: string): Pro
     'INSERT INTO document_pages (id, document_id, page_order, file_path, created_at) VALUES (?, ?, ?, ?, ?)',
     [generateId(), documentId, nextOrder, filePath, new Date().toISOString()]
   );
+
+  if (filePath) {
+    const cloudEnabled = await getCloudBackupEnabled();
+    if (cloudEnabled) {
+      await cloudSync.enqueueFileUpload(filePath);
+      cloudSync.processQueue().catch(() => {
+        /* fire and forget */
+      });
+    }
+  }
 }
 
 export async function removeDocumentPage(pageId: string): Promise<void> {

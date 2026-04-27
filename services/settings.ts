@@ -8,6 +8,7 @@ const KEY_NOTIF_DAYS = 'settings_notif_days';
 const KEY_APP_LOCK_ENABLED = 'app_lock_enabled';
 const KEY_APP_LOCK_PIN = 'app_lock_pin';
 const KEY_PUSH_ENABLED = 'settings_push_enabled';
+const KEY_CLOUD_BACKUP_ENABLED = 'cloud_backup_enabled';
 
 export async function getNotificationDays(): Promise<number> {
   const v = await AsyncStorage.getItem(KEY_NOTIF_DAYS);
@@ -28,6 +29,15 @@ export async function getPushEnabled(): Promise<boolean> {
 
 export async function setPushEnabled(enabled: boolean): Promise<void> {
   await AsyncStorage.setItem(KEY_PUSH_ENABLED, enabled ? 'true' : 'false');
+}
+
+export async function getCloudBackupEnabled(): Promise<boolean> {
+  const v = await AsyncStorage.getItem(KEY_CLOUD_BACKUP_ENABLED);
+  return v === 'true';
+}
+
+export async function setCloudBackupEnabled(enabled: boolean): Promise<void> {
+  await AsyncStorage.setItem(KEY_CLOUD_BACKUP_ENABLED, enabled ? 'true' : 'false');
 }
 
 export async function getAppLockEnabled(): Promise<boolean> {
