@@ -1072,6 +1072,15 @@ export default function SetariScreen() {
         </Pressable>
         {!backupCollapsed && (
         <RNView style={[styles.card, { backgroundColor: C.card, shadowColor: C.cardShadow }]}>
+          <InfoRow
+            icon="cloud-outline"
+            iconBg="#E8F5E9"
+            iconColor={primary}
+            label="iCloud Backup"
+            sub="Backup automat în iCloud Drive"
+            onPress={() => router.push('/cloud-backup')}
+            scheme={scheme}
+          />
           <RNText style={[styles.hint, { color: C.textSecondary }]}>
             Exportă toate datele și pozele ca fișier ZIP și salvează-l în iCloud Drive sau Files. La
             schimbarea telefonului, importă fișierul pentru a restaura complet datele și pozele.
