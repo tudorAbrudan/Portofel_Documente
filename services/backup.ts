@@ -246,95 +246,21 @@ async function extractFilesFromZip(zip: JSZip, fileMap?: Record<string, string>)
   }
 }
 
+export interface ApplyManifestOptions {
+  /** Dacă true, șterge toate datele utilizator înainte de import (cloud restore). Default false. */
+  wipeFirst?: boolean;
+}
+
 /**
- * Importă datele dintr-un backup ZIP (version 4) sau JSON vechi (version 1-3).
- * Backward compatibility: backupurile JSON mai vechi sunt importate ca înainte.
+ * Aplică un manifest (payload JSON deja parsat) peste DB-ul curent.
+ * Folosit atât de importBackup (după parse ZIP/JSON) cât și de cloudSync.restore().
  */
-export async function importBackup(): Promise<ImportResult> {
-  const result = await DocumentPicker.getDocumentAsync({
-    type: ['application/zip', 'application/json', 'public.zip-archive', 'public.json'],
-    copyToCacheDirectory: true,
-  });
-
-  if (!result || result.canceled || !result.assets || result.assets.length === 0) {
-    throw new Error('Anulat');
-  }
-
-  const asset = result.assets[0];
-  const uri = asset.uri;
-  const name = asset.name ?? '';
-
-  const isZip =
-    name.toLowerCase().endsWith('.zip') ||
-    asset.mimeType === 'application/zip' ||
-    asset.mimeType === 'public.zip-archive';
-
-  let payload: Record<string, unknown>;
-
-  if (isZip) {
-    // --- Format ZIP (version 4) ---
-    let zipBase64: string;
-    try {
-      zipBase64 = await FileSystem.readAsStringAsync(uri, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-    } catch {
-      throw new Error('Nu s-a putut citi fișierul ZIP.');
-    }
-
-    let zip: JSZip;
-    try {
-      zip = await JSZip.loadAsync(zipBase64, { base64: true });
-    } catch {
-      throw new Error('Fișierul ZIP este invalid sau corupt.');
-    }
-
-    const manifestFile = zip.file('backup.json');
-    if (!manifestFile) {
-      throw new Error('Fișierul ZIP nu conține un manifest valid (backup.json lipsă).');
-    }
-
-    const manifestText = await manifestFile.async('string');
-    try {
-      payload = JSON.parse(manifestText) as Record<string, unknown>;
-    } catch {
-      throw new Error('Manifestul backup.json este invalid.');
-    }
-
-    // Extrage fișierele din ZIP pe disk (pasează fileMap pentru version 5+)
-    const manifestFileMap =
-      payload.fileMap && typeof payload.fileMap === 'object'
-        ? (payload.fileMap as Record<string, string>)
-        : undefined;
-    await extractFilesFromZip(zip, manifestFileMap);
-  } else {
-    // --- Format JSON vechi (version 1-3) ---
-    const json = await FileSystem.readAsStringAsync(uri, {
-      encoding: FileSystem.EncodingType.UTF8,
-    });
-    try {
-      payload = JSON.parse(json) as Record<string, unknown>;
-    } catch {
-      throw new Error('Fișierul JSON este invalid sau corupt.');
-    }
-
-    // Restaurare imagini din câmpul images (version 3)
-    if (payload.images && typeof payload.images === 'object') {
-      const imagesDir = `${FileSystem.documentDirectory}documents`;
-      await FileSystem.makeDirectoryAsync(imagesDir, { intermediates: true });
-      for (const [relativePath, base64] of Object.entries(
-        payload.images as Record<string, string>
-      )) {
-        try {
-          const dest = `${FileSystem.documentDirectory}${relativePath}`;
-          await FileSystem.writeAsStringAsync(dest, base64, {
-            encoding: FileSystem.EncodingType.Base64,
-          });
-        } catch {
-          // Skip imagini care nu pot fi restaurate
-        }
-      }
-    }
+export async function applyManifest(
+  payload: Record<string, unknown>,
+  options: ApplyManifestOptions = {}
+): Promise<ImportResult> {
+  if (options.wipeFirst) {
+    await wipeUserData();
   }
 
   // --- Încarcă entitățile existente pentru deduplicare ---
@@ -705,4 +631,123 @@ export async function importBackup(): Promise<ImportResult> {
   }
 
   return { imported, skipped, errors };
+}
+
+/**
+ * Șterge toate datele utilizator (entități, documente, fișiere asociate metadata)
+ * înaintea unui restore complet din cloud. Nu atinge tabelele de infrastructură
+ * (cloud_state, pending_uploads).
+ */
+async function wipeUserData(): Promise<void> {
+  await db.execAsync(`
+    DELETE FROM document_pages;
+    DELETE FROM document_entities;
+    DELETE FROM documents;
+    DELETE FROM fuel_records;
+    DELETE FROM vehicle_maintenance_tasks;
+    DELETE FROM custom_document_types;
+    DELETE FROM cards;
+    DELETE FROM animals;
+    DELETE FROM companies;
+    DELETE FROM vehicles;
+    DELETE FROM properties;
+    DELETE FROM persons;
+    DELETE FROM entity_order;
+    DELETE FROM chat_messages;
+    DELETE FROM chat_threads;
+  `);
+}
+
+/**
+ * Importă datele dintr-un backup ZIP (version 4) sau JSON vechi (version 1-3).
+ * Backward compatibility: backupurile JSON mai vechi sunt importate ca înainte.
+ */
+export async function importBackup(): Promise<ImportResult> {
+  const result = await DocumentPicker.getDocumentAsync({
+    type: ['application/zip', 'application/json', 'public.zip-archive', 'public.json'],
+    copyToCacheDirectory: true,
+  });
+
+  if (!result || result.canceled || !result.assets || result.assets.length === 0) {
+    throw new Error('Anulat');
+  }
+
+  const asset = result.assets[0];
+  const uri = asset.uri;
+  const name = asset.name ?? '';
+
+  const isZip =
+    name.toLowerCase().endsWith('.zip') ||
+    asset.mimeType === 'application/zip' ||
+    asset.mimeType === 'public.zip-archive';
+
+  let payload: Record<string, unknown>;
+
+  if (isZip) {
+    // --- Format ZIP (version 4) ---
+    let zipBase64: string;
+    try {
+      zipBase64 = await FileSystem.readAsStringAsync(uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+    } catch {
+      throw new Error('Nu s-a putut citi fișierul ZIP.');
+    }
+
+    let zip: JSZip;
+    try {
+      zip = await JSZip.loadAsync(zipBase64, { base64: true });
+    } catch {
+      throw new Error('Fișierul ZIP este invalid sau corupt.');
+    }
+
+    const manifestFile = zip.file('backup.json');
+    if (!manifestFile) {
+      throw new Error('Fișierul ZIP nu conține un manifest valid (backup.json lipsă).');
+    }
+
+    const manifestText = await manifestFile.async('string');
+    try {
+      payload = JSON.parse(manifestText) as Record<string, unknown>;
+    } catch {
+      throw new Error('Manifestul backup.json este invalid.');
+    }
+
+    // Extrage fișierele din ZIP pe disk (pasează fileMap pentru version 5+)
+    const manifestFileMap =
+      payload.fileMap && typeof payload.fileMap === 'object'
+        ? (payload.fileMap as Record<string, string>)
+        : undefined;
+    await extractFilesFromZip(zip, manifestFileMap);
+  } else {
+    // --- Format JSON vechi (version 1-3) ---
+    const json = await FileSystem.readAsStringAsync(uri, {
+      encoding: FileSystem.EncodingType.UTF8,
+    });
+    try {
+      payload = JSON.parse(json) as Record<string, unknown>;
+    } catch {
+      throw new Error('Fișierul JSON este invalid sau corupt.');
+    }
+
+    // Restaurare imagini din câmpul images (version 3)
+    if (payload.images && typeof payload.images === 'object') {
+      const imagesDir = `${FileSystem.documentDirectory}documents`;
+      await FileSystem.makeDirectoryAsync(imagesDir, { intermediates: true });
+      for (const [relativePath, base64] of Object.entries(
+        payload.images as Record<string, string>
+      )) {
+        try {
+          const dest = `${FileSystem.documentDirectory}${relativePath}`;
+          await FileSystem.writeAsStringAsync(dest, base64, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+        } catch {
+          // Skip imagini care nu pot fi restaurate
+        }
+      }
+    }
+  }
+
+  return await applyManifest(payload);
 }
