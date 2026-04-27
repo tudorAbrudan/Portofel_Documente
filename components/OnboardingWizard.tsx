@@ -10,6 +10,8 @@ import {
   Linking,
   Alert,
   TextInput,
+  Modal,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Notifications from 'expo-notifications';
@@ -35,6 +37,10 @@ import {
   requestNotificationPermission,
   scheduleExpirationReminders,
 } from '@/services/notifications';
+import * as cloudStorage from '@/services/cloudStorage';
+import * as cloudSync from '@/services/cloudSync';
+import type { RestoreProgress } from '@/services/cloudSync';
+import { CloudRestoreProgress } from '@/components/CloudRestoreProgress';
 import { primary, statusColors } from '@/theme/colors';
 import { radius, spacing } from '@/theme/layout';
 import { useThemePreference } from '@/hooks/useThemeScheme';
@@ -47,8 +53,9 @@ const VEHICLE_MGMT = 4;
 const DOCS = 5;
 const NOTIFICATIONS = 6;
 const BACKUP = 7;
-const AI_STEP = 8;
-const SUMMARY = 9;
+const CLOUD_BACKUP = 8;
+const AI_STEP = 9;
+const SUMMARY = 10;
 
 const NOTIF_DAY_OPTIONS = [7, 14, 30] as const;
 
@@ -101,6 +108,8 @@ function stepTitle(step: number): string {
       return 'Notificări expirări';
     case BACKUP:
       return 'Backup';
+    case CLOUD_BACKUP:
+      return 'Backup automat';
     case AI_STEP:
       return 'Asistent AI';
     case SUMMARY:
@@ -128,6 +137,8 @@ function stepSubtitle(step: number): string {
       return 'Primești remindere locale pe telefon — fără server, fără cont online.';
     case BACKUP:
       return 'Exportul periodic (fișier ZIP) îți protejează datele la schimbare de telefon sau reinstalare.';
+    case CLOUD_BACKUP:
+      return 'Salvare automată în iCloud-ul tău. Datele rămân la tine — Apple le păstrează în contul tău.';
     case AI_STEP:
       return 'Complet opțional. Datele tale rămân pe dispozitiv — AI-ul e activat doar când îl folosești.';
     case SUMMARY:
@@ -162,6 +173,16 @@ export default function OnboardingWizard({ onComplete }: Props) {
   const [aiExternalModel, setAiExternalModel] = useState('');
   const [aiConsentChecked, setAiConsentChecked] = useState(false);
 
+  type CloudCheck =
+    | { status: 'checking' }
+    | { status: 'available'; meta: { count: number; date: string } | null }
+    | { status: 'unavailable' };
+
+  const [cloudCheck, setCloudCheck] = useState<CloudCheck>({ status: 'checking' });
+  const [cloudOptIn, setCloudOptIn] = useState(true);
+  const [cloudRestoring, setCloudRestoring] = useState(false);
+  const [cloudRestoreProgress, setCloudRestoreProgress] = useState<RestoreProgress | null>(null);
+
   // Lista de pași activi (VEHICLE_MGMT apare doar dacă utilizatorul a ales vehicul).
   const activeSteps: number[] = [
     WELCOME,
@@ -172,6 +193,7 @@ export default function OnboardingWizard({ onComplete }: Props) {
     DOCS,
     NOTIFICATIONS,
     BACKUP,
+    CLOUD_BACKUP,
     AI_STEP,
     SUMMARY,
   ];
@@ -191,6 +213,34 @@ export default function OnboardingWizard({ onComplete }: Props) {
         else setNotifPermStatus('undetermined');
       });
     }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const ok = await cloudStorage.isAvailable();
+        if (cancelled) return;
+        if (!ok) {
+          setCloudCheck({ status: 'unavailable' });
+          return;
+        }
+        const meta = await cloudSync.readCloudMeta();
+        if (cancelled) return;
+        setCloudCheck({
+          status: 'available',
+          meta: meta
+            ? {
+                count: meta.documentCount,
+                date: new Date(meta.uploadedAt).toLocaleDateString('ro-RO'),
+              }
+            : null,
+        });
+      } catch {
+        if (!cancelled) setCloudCheck({ status: 'unavailable' });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   function toggleEntity(entityType: EntityType) {
@@ -243,6 +293,34 @@ export default function OnboardingWizard({ onComplete }: Props) {
     await settings.setNotificationDays(notifDays);
     await scheduleExpirationReminders();
     gotoNextActive();
+  }
+
+  async function goNextFromCloudBackup() {
+    if (cloudCheck.status === 'available') {
+      // Variant A: persistă alegerea utilizatorului. Variant B (skip restore): tot
+      // activăm backup-ul ca să nu pierdem fișierele viitoare.
+      const enable = cloudCheck.meta ? true : cloudOptIn;
+      await settings.setCloudBackupEnabled(enable);
+    }
+    // Variant C (unavailable): nimic de persistat — defaultul OFF rămâne.
+    gotoNextActive();
+  }
+
+  async function handleCloudRestore() {
+    if (cloudCheck.status !== 'available' || !cloudCheck.meta) return;
+    setCloudRestoring(true);
+    setCloudRestoreProgress({ phase: 'manifest', current: 0, total: 0 });
+    try {
+      await settings.setCloudBackupEnabled(true);
+      await cloudSync.restoreFromCloud(p => setCloudRestoreProgress(p));
+      setCloudRestoring(false);
+      setCloudRestoreProgress(null);
+      gotoNextActive();
+    } catch (e) {
+      setCloudRestoring(false);
+      setCloudRestoreProgress(null);
+      Alert.alert('Eroare la restaurare', e instanceof Error ? e.message : 'Eroare necunoscută');
+    }
   }
 
   async function handleComplete() {
@@ -312,6 +390,10 @@ export default function OnboardingWizard({ onComplete }: Props) {
     }
     if (step === NOTIFICATIONS) {
       void goNextFromNotifications();
+      return;
+    }
+    if (step === CLOUD_BACKUP) {
+      void goNextFromCloudBackup();
       return;
     }
     gotoNextActive();
@@ -384,7 +466,9 @@ export default function OnboardingWizard({ onComplete }: Props) {
     'Fișierele sunt izolate în sandbox-ul sistemului; alte aplicații nu le văd.',
   ];
 
-  const isNextDisabled = !canProceedFromAiStep();
+  const isNextDisabled =
+    !canProceedFromAiStep() ||
+    (step === CLOUD_BACKUP && (cloudCheck.status === 'checking' || cloudRestoring));
 
   return (
     <View style={[styles.overlay, { backgroundColor: C.background }]}>
@@ -698,6 +782,99 @@ export default function OnboardingWizard({ onComplete }: Props) {
           </View>
         )}
 
+        {step === CLOUD_BACKUP && cloudCheck.status === 'checking' && (
+          <View style={[styles.notifCard, { backgroundColor: C.card, borderColor: C.border }]}>
+            <View style={styles.cardRow}>
+              <ActivityIndicator color={C.primary} />
+              <Text style={[styles.cardSubtitle, { color: C.textSecondary, marginLeft: 12 }]}>
+                Verific iCloud...
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {step === CLOUD_BACKUP && cloudCheck.status === 'available' && cloudCheck.meta == null && (
+          <View style={styles.bulletBlock}>
+            <View style={[styles.notifCard, { backgroundColor: C.card, borderColor: C.border }]}>
+              <View style={styles.notifRow}>
+                <View style={styles.notifRowText}>
+                  <Text style={[styles.notifLabel, { color: C.text }]}>
+                    Activează backup în iCloud
+                  </Text>
+                  <Text style={[styles.notifSub, { color: C.textSecondary }]}>
+                    Salvăm automat copii ale documentelor în iCloud-ul tău, în folderul „Dosar".
+                    Poți dezactiva oricând din Setări.
+                  </Text>
+                </View>
+                <Switch
+                  value={cloudOptIn}
+                  onValueChange={setCloudOptIn}
+                  trackColor={{ false: C.border, true: primary }}
+                />
+              </View>
+            </View>
+            {[
+              'Backup imediat la fiecare document salvat — fără efort.',
+              'Restore în câteva minute pe iPhone nou cu același Apple ID.',
+              'Datele sunt în iCloud-ul tău; nu trec printr-un server al nostru.',
+            ].map(line => (
+              <View key={line} style={styles.bulletRow}>
+                <Text style={[styles.bulletDot, { color: C.primary }]}>•</Text>
+                <Text style={[styles.bulletText, { color: C.text }]}>{line}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {step === CLOUD_BACKUP && cloudCheck.status === 'available' && cloudCheck.meta != null && (
+          <View style={styles.bulletBlock}>
+            <View style={[styles.notifCard, { backgroundColor: C.card, borderColor: C.border }]}>
+              <Text style={[styles.notifLabel, { color: C.text }]}>Am găsit un backup</Text>
+              <Text style={[styles.notifSub, { color: C.textSecondary }]}>
+                În iCloud există un backup din {cloudCheck.meta.date} cu {cloudCheck.meta.count}{' '}
+                {cloudCheck.meta.count === 1 ? 'document' : 'documente'}. Vrei să-l restaurezi acum?
+              </Text>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.cloudPrimaryCta,
+                  {
+                    backgroundColor: C.primary,
+                    opacity: cloudRestoring || pressed ? 0.85 : 1,
+                  },
+                ]}
+                onPress={() => void handleCloudRestore()}
+                disabled={cloudRestoring}
+              >
+                <Text style={styles.cloudPrimaryCtaText}>Da, restaurează backup-ul</Text>
+              </Pressable>
+              <Text style={[styles.notifSub, { color: C.textSecondary, marginTop: 12 }]}>
+                Dacă alegi „Nu, încep gol", backup-ul automat rămâne activ și începe să se
+                sincronizeze de la zero din momentul ăsta.
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {step === CLOUD_BACKUP && cloudCheck.status === 'unavailable' && (
+          <View style={styles.bulletBlock}>
+            <View style={[styles.notifCard, { backgroundColor: C.card, borderColor: C.border }]}>
+              <View style={styles.cardRow}>
+                <Ionicons name="cloud-offline-outline" size={22} color={statusColors.warning} />
+                <View style={{ flex: 1, marginLeft: spacing.gap }}>
+                  <Text style={[styles.cardTitle, { color: C.text }]}>
+                    iCloud nu este disponibil
+                  </Text>
+                  <Text style={[styles.cardSubtitle, { color: C.textSecondary }]}>
+                    {Platform.OS === 'ios'
+                      ? 'Pentru backup automat, activează iCloud Drive din Setări iOS și revino în aplicație. Între timp, poți folosi backup manual din pasul anterior.'
+                      : 'Backup automat în cloud nu este disponibil pe acest device. Folosește backup manual (export ZIP) descris la pasul anterior.'}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          </View>
+        )}
+
         {step === AI_STEP && (
           <View style={styles.aiBlock}>
             {(
@@ -953,8 +1130,12 @@ export default function OnboardingWizard({ onComplete }: Props) {
         </View>
         {step < SUMMARY && step !== AI_STEP && (
           <Pressable
-            style={({ pressed }) => [styles.btnSkip, { opacity: pressed ? 0.6 : 1 }]}
+            style={({ pressed }) => [
+              styles.btnSkip,
+              { opacity: cloudRestoring ? 0.4 : pressed ? 0.6 : 1 },
+            ]}
             onPress={() => void handleComplete()}
+            disabled={cloudRestoring}
           >
             <Text style={[styles.btnSkipText, { color: C.textSecondary }]}>
               Sari peste configurare
@@ -969,6 +1150,12 @@ export default function OnboardingWizard({ onComplete }: Props) {
         showSuccessAlert={false}
         onPinSaved={() => setLockEnabled(true)}
       />
+
+      <Modal visible={cloudRestoring} transparent animationType="fade">
+        <View style={styles.cloudRestoreOverlay}>
+          <CloudRestoreProgress progress={cloudRestoreProgress} />
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1226,5 +1413,24 @@ const styles = StyleSheet.create({
   btnSkipText: {
     fontSize: 13,
     textDecorationLine: 'underline',
+  },
+
+  cloudPrimaryCta: {
+    marginTop: 16,
+    borderRadius: radius.pill,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  cloudPrimaryCtaText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  cloudRestoreOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
   },
 });
