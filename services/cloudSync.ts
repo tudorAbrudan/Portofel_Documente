@@ -19,6 +19,7 @@ import type {
   FuelRecord,
   Person,
   Property,
+  SnapshotFrequency,
   Vehicle,
 } from '@/types';
 
@@ -278,4 +279,89 @@ export async function getFailedCount(): Promise<number> {
     [MAX_ATTEMPTS]
   );
   return row?.c ?? 0;
+}
+
+const SNAPSHOTS_PREFIX = `${CLOUD_ROOT}/snapshots/`;
+
+const FREQUENCY_MS: Record<SnapshotFrequency, number> = {
+  off: Number.POSITIVE_INFINITY,
+  daily: 24 * 60 * 60 * 1000,
+  every3days: 3 * 24 * 60 * 60 * 1000,
+  weekly: 7 * 24 * 60 * 60 * 1000,
+  monthly: 30 * 24 * 60 * 60 * 1000,
+};
+
+function todaySnapshotName(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `manifest_${y}-${m}-${day}.json`;
+}
+
+/**
+ * Dacă a trecut intervalul corespunzător `frequency` de la ultimul snapshot,
+ * copiază `manifest.json` curent în `snapshots/manifest_YYYY-MM-DD.json` și
+ * rulează cleanup pentru retenție. Skip dacă `frequency === 'off'`, iCloud
+ * indisponibil, sau manifestul nu există încă.
+ *
+ * La prima rulare (`last_snapshot_at === null`) snapshot-ul SE FACE — operatorul
+ * `&&` scurt-circuitează verificarea de interval. Dacă în aceeași zi se apelează
+ * de mai multe ori după ce intervalul a expirat, fișierul curent se suprascrie
+ * (același nume `manifest_YYYY-MM-DD.json`).
+ *
+ * @returns true dacă a făcut snapshot, false dacă a sărit.
+ * @throws când iCloud devine indisponibil între `isAvailable()` și read/write,
+ *   sau când scrierea în SQLite (`last_snapshot_at`) eșuează.
+ */
+export async function maybeSnapshot(
+  frequency: SnapshotFrequency,
+  retention: number
+): Promise<boolean> {
+  if (frequency === 'off') return false;
+  if (!(await cloudStorage.isAvailable())) return false;
+  if (!(await cloudStorage.exists(MANIFEST_PATH))) return false;
+
+  const state = await getCloudState();
+  const interval = FREQUENCY_MS[frequency];
+  const now = Date.now();
+  if (state.last_snapshot_at && now - state.last_snapshot_at < interval) {
+    return false;
+  }
+
+  const manifestText = await cloudStorage.readFile(MANIFEST_PATH, 'utf8');
+  const snapshotPath = `${SNAPSHOTS_PREFIX}${todaySnapshotName()}`;
+  await cloudStorage.writeFile(snapshotPath, manifestText, 'utf8');
+
+  await setCloudState({ last_snapshot_at: now });
+
+  await cleanupSnapshots(retention);
+
+  return true;
+}
+
+async function cleanupSnapshots(retention: number): Promise<void> {
+  const safeRetention = Math.max(1, retention); // never delete the snapshot we just took
+  const files = await cloudStorage.listDir(SNAPSHOTS_PREFIX);
+  const snapshots = files
+    .filter(f => f.startsWith('manifest_') && f.endsWith('.json'))
+    .sort()
+    .reverse();
+  const toDelete = snapshots.slice(safeRetention);
+  for (const name of toDelete) {
+    await cloudStorage.deleteFile(`${SNAPSHOTS_PREFIX}${name}`);
+  }
+}
+
+/**
+ * Listează toate snapshot-urile (`manifest_*.json`) din `snapshots/`,
+ * ordonate descrescător (cel mai nou primul). Returnează array gol dacă
+ * folder-ul nu există sau iCloud e indisponibil.
+ */
+export async function listSnapshots(): Promise<string[]> {
+  const files = await cloudStorage.listDir(SNAPSHOTS_PREFIX);
+  return files
+    .filter(f => f.startsWith('manifest_') && f.endsWith('.json'))
+    .sort()
+    .reverse();
 }
