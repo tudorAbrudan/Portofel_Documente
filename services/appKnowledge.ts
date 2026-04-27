@@ -103,7 +103,7 @@ export function buildAppKnowledge(): string {
 **Tipuri de documente:**
 ${buildDocTypesList()}
 
-**Funcții:** scanare + OCR on-device, notificări expirare, remindere în calendar iOS, backup automat în iCloud + export manual ZIP, blocare Face ID/PIN, detecție automată duplicate, câmp „Notă privată" per document pentru date sensibile (CVV/PIN/parole) care NU ajunge niciodată la AI, reminder mentenanță vehicule (km sau timp) cu sincronizare calendar.
+**Funcții:** scanare + OCR on-device, notificări expirare, remindere în calendar iOS, backup automat în iCloud + export manual ZIP, blocare Face ID/PIN, detecție automată duplicate, câmp „Notă privată" per document pentru date sensibile (CVV/PIN/parole) care NU ajunge niciodată la AI, reminder mentenanță vehicule (km sau timp) cu sincronizare calendar, secțiune „De completat" pe Home cu sugestii pentru date incomplete.
 
 ## Gestiune auto
 
@@ -145,6 +145,17 @@ Aplicația poate salva automat copii ale documentelor în iCloud Drive-ul person
 - **Criptare opțională cu parolă:** din Setări → Cloud Backup → „Criptare cu parolă". AES-256-GCM cu cheie derivată din parolă (PBKDF2). Atenție: dacă parola se uită, backup-ul devine inutilizabil; nu există recuperare.
 - **Coexistă cu backup manual ZIP:** opțiunea de export ZIP din Setări (pentru Drive / oriunde) rămâne disponibilă în paralel cu backup-ul automat.
 - **Disponibilitate:** doar pe iOS cu iCloud Drive activ în Setări iOS și logat la Apple ID. Pe Android funcționează doar export ZIP manual.
+
+## Sugestii pe Acasă („De completat")
+
+Pe ecranul Home, sub statisticile principale, apare o secțiune „DE COMPLETAT" cu carduri colapsabile când există date parțiale. Detectează automat 4 tipuri de înregistrări incomplete:
+
+- **Documente fără entitate atașată** — orice document care nu e legat de o persoană, mașină, proprietate, card, animal sau firmă, exceptând tipurile generice (altul, custom, bilet, bon cumpărături, bon parcare). Hint contextual: dacă tipul are entitate principală cunoscută (ex. RCA → mașină), o sugerează direct; dacă e ambiguu (ex. factură), listează entitățile posibile.
+- **Documente cu tip personalizat nesetat** — un document „custom" fără numele tipului ales.
+- **Carduri fără dată de expirare** — utilizatorul a salvat cardul dar n-a completat câmpul de expirare.
+- **Persoane fără contact** — nici telefon, nici email.
+
+Tap pe item navighează direct la edit-ul documentului sau la detaliul entității pentru completare. Badge cu total în antet. Toggle on/off din **Setări → Notificări → „Sugestii pe Acasă"** (default activ).
 
 ## Reguli
 

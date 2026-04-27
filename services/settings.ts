@@ -156,6 +156,19 @@ export async function setVisibleDocTypes(types: DocumentType[]): Promise<void> {
   await AsyncStorage.setItem(KEY_VISIBLE_DOC_TYPES, JSON.stringify(types));
 }
 
+// ── Sugestii pe Acasă ─────────────────────────────────────────────────────────
+
+const KEY_SHOW_ORPHANS_ON_HOME = 'settings_show_orphans_on_home';
+
+export async function getShowOrphansOnHome(): Promise<boolean> {
+  const v = await AsyncStorage.getItem(KEY_SHOW_ORPHANS_ON_HOME);
+  return v !== 'false';
+}
+
+export async function setShowOrphansOnHome(enabled: boolean): Promise<void> {
+  await AsyncStorage.setItem(KEY_SHOW_ORPHANS_ON_HOME, enabled ? 'true' : 'false');
+}
+
 // ── Onboarding ────────────────────────────────────────────────────────────────
 
 const KEY_ONBOARDING_DONE = 'settings_onboarding_done';

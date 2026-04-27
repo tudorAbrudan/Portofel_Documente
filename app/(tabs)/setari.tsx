@@ -249,6 +249,7 @@ export default function SetariScreen() {
   const [newTypeName, setNewTypeName] = useState('');
   const [notifDays, setNotifDays] = useState(7);
   const [pushEnabled, setPushEnabled] = useState(true);
+  const [showOrphans, setShowOrphans] = useState(true);
   const [appLockEnabled, setAppLockEnabled] = useState(false);
   const [appLockPinModal, setAppLockPinModal] = useState(false);
   const [termsVisible, setTermsVisible] = useState(false);
@@ -287,6 +288,7 @@ export default function SetariScreen() {
   useEffect(() => {
     settings.getNotificationDays().then(setNotifDays);
     settings.getPushEnabled().then(setPushEnabled);
+    settings.getShowOrphansOnHome().then(setShowOrphans);
     settings.getAppLockEnabled().then(setAppLockEnabled);
     AsyncStorage.getItem(AI_CONSENT_KEY).then(v => setAiConsentGiven(v === 'true'));
     aiProvider.getAiConfig().then(cfg => {
@@ -337,6 +339,11 @@ export default function SetariScreen() {
     setPushEnabled(v);
     settings.setPushEnabled(v);
     scheduleExpirationReminders().catch(() => {});
+  };
+
+  const handleShowOrphansToggle = (v: boolean) => {
+    setShowOrphans(v);
+    settings.setShowOrphansOnHome(v).catch(() => {});
   };
 
   // ── Backup ───────────────────────────────────────────────────────────────────
@@ -619,15 +626,18 @@ export default function SetariScreen() {
       }
 
       // builtin sau external — facem test real la endpoint
-      const url = aiProviderType === 'builtin'
-        ? aiProvider.PROVIDER_DEFAULTS.builtin.url
-        : aiProviderUrl.trim();
-      const model = aiProviderType === 'builtin'
-        ? aiProvider.PROVIDER_DEFAULTS.builtin.model
-        : aiProviderModel.trim();
-      const key = aiProviderType === 'builtin'
-        ? (process.env.EXPO_PUBLIC_MISTRAL_API_KEY ?? '')
-        : aiApiKey.trim();
+      const url =
+        aiProviderType === 'builtin'
+          ? aiProvider.PROVIDER_DEFAULTS.builtin.url
+          : aiProviderUrl.trim();
+      const model =
+        aiProviderType === 'builtin'
+          ? aiProvider.PROVIDER_DEFAULTS.builtin.model
+          : aiProviderModel.trim();
+      const key =
+        aiProviderType === 'builtin'
+          ? (process.env.EXPO_PUBLIC_MISTRAL_API_KEY ?? '')
+          : aiApiKey.trim();
 
       if (aiProviderType === 'external') {
         if (!url) {
@@ -770,7 +780,9 @@ export default function SetariScreen() {
       `Dosar: ${APP_VERSION}`,
     ].join('\n');
     const subject = encodeURIComponent(`Suport ${APP_NAME}`);
-    const body = encodeURIComponent(`Bună ziua,\n\n[Descrie problema ta aici]\n\n---\n${deviceInfo}`);
+    const body = encodeURIComponent(
+      `Bună ziua,\n\n[Descrie problema ta aici]\n\n---\n${deviceInfo}`
+    );
     Linking.openURL(`mailto:${CONTACT_EMAIL}?subject=${subject}&body=${body}`).catch(() => {
       Alert.alert('Email indisponibil', `Scrieți-ne la: ${CONTACT_EMAIL}`);
     });
@@ -828,11 +840,10 @@ export default function SetariScreen() {
         )}
 
         {/* ── Aspect ── */}
-        <Pressable
-          style={styles.sectionHeader}
-          onPress={() => setAspectCollapsed(v => !v)}
-        >
-          <RNText style={[styles.sectionLabel, styles.sectionLabelInline, { color: C.textSecondary }]}>
+        <Pressable style={styles.sectionHeader} onPress={() => setAspectCollapsed(v => !v)}>
+          <RNText
+            style={[styles.sectionLabel, styles.sectionLabelInline, { color: C.textSecondary }]}
+          >
             ASPECT
           </RNText>
           <Ionicons
@@ -842,38 +853,40 @@ export default function SetariScreen() {
           />
         </Pressable>
         {!aspectCollapsed && (
-        <RNView style={[styles.card, { backgroundColor: C.card, shadowColor: C.cardShadow }]}>
-          <RNText style={[styles.hint, { color: C.textSecondary }]}>
-            Alege tema de culori a aplicației.
-          </RNText>
-          <RNView style={[styles.chipRow, { marginTop: 8 }]}>
-            {(
-              [
-                ['auto', 'Automat'],
-                ['light', 'Clar'],
-                ['dark', 'Întunecat'],
-              ] as const
-            ).map(([value, label]) => {
-              const isActive = themePref === value;
-              return (
-                <Pressable
-                  key={value}
-                  style={[
-                    styles.chip,
-                    isActive
-                      ? [styles.chipActive, { borderColor: primary }]
-                      : { borderColor: C.border },
-                  ]}
-                  onPress={() => setThemePref(value)}
-                >
-                  <RNText style={[styles.chipText, { color: isActive ? '#fff' : C.textSecondary }]}>
-                    {label}
-                  </RNText>
-                </Pressable>
-              );
-            })}
+          <RNView style={[styles.card, { backgroundColor: C.card, shadowColor: C.cardShadow }]}>
+            <RNText style={[styles.hint, { color: C.textSecondary }]}>
+              Alege tema de culori a aplicației.
+            </RNText>
+            <RNView style={[styles.chipRow, { marginTop: 8 }]}>
+              {(
+                [
+                  ['auto', 'Automat'],
+                  ['light', 'Clar'],
+                  ['dark', 'Întunecat'],
+                ] as const
+              ).map(([value, label]) => {
+                const isActive = themePref === value;
+                return (
+                  <Pressable
+                    key={value}
+                    style={[
+                      styles.chip,
+                      isActive
+                        ? [styles.chipActive, { borderColor: primary }]
+                        : { borderColor: C.border },
+                    ]}
+                    onPress={() => setThemePref(value)}
+                  >
+                    <RNText
+                      style={[styles.chipText, { color: isActive ? '#fff' : C.textSecondary }]}
+                    >
+                      {label}
+                    </RNText>
+                  </Pressable>
+                );
+              })}
+            </RNView>
           </RNView>
-        </RNView>
         )}
 
         {/* ── Notificări ── */}
@@ -897,7 +910,7 @@ export default function SetariScreen() {
               maxLength={2}
             />
           </RNView>
-          <RNView style={styles.rowLast}>
+          <RNView style={[styles.row, { borderBottomColor: C.border }]}>
             <RNView style={styles.rowLeft}>
               <RNView style={[styles.rowIcon, { backgroundColor: '#E8F5E9' }]}>
                 <Ionicons name="notifications-outline" size={18} color={primary} />
@@ -911,14 +924,27 @@ export default function SetariScreen() {
               thumbColor="#fff"
             />
           </RNView>
+          <RNView style={styles.rowLast}>
+            <RNView style={styles.rowLeft}>
+              <RNView style={[styles.rowIcon, { backgroundColor: '#FFF3E0' }]}>
+                <Ionicons name="checkmark-done-outline" size={18} color="#E65100" />
+              </RNView>
+              <RNText style={[styles.rowLabel, { color: C.text }]}>Sugestii pe Acasă</RNText>
+            </RNView>
+            <Switch
+              value={showOrphans}
+              onValueChange={handleShowOrphansToggle}
+              trackColor={{ false: C.border, true: primary }}
+              thumbColor="#fff"
+            />
+          </RNView>
         </RNView>
 
         {/* ── Vizibilitate entități ── */}
-        <Pressable
-          style={styles.sectionHeader}
-          onPress={() => setEntitiesCollapsed(v => !v)}
-        >
-          <RNText style={[styles.sectionLabel, styles.sectionLabelInline, { color: C.textSecondary }]}>
+        <Pressable style={styles.sectionHeader} onPress={() => setEntitiesCollapsed(v => !v)}>
+          <RNText
+            style={[styles.sectionLabel, styles.sectionLabelInline, { color: C.textSecondary }]}
+          >
             ENTITĂȚI ACTIVE
           </RNText>
           <Ionicons
@@ -928,47 +954,46 @@ export default function SetariScreen() {
           />
         </Pressable>
         {!entitiesCollapsed && (
-        <RNView style={[styles.card, { backgroundColor: C.card, shadowColor: C.cardShadow }]}>
-          <RNText style={[styles.hint, { color: C.textSecondary }]}>
-            Alege ce tipuri de entități să apară în aplicație. Entitățile dezactivate nu vor apărea
-            în formulare sau liste.
-          </RNText>
-          {ALL_ENTITY_TYPES.map((entityType, idx) => {
-            const isActive = visibleEntityTypes.includes(entityType);
-            const isLast = idx === ALL_ENTITY_TYPES.length - 1;
-            return (
-              <RNView
-                key={entityType}
-                style={[isLast ? styles.rowLast : styles.row, { borderBottomColor: C.border }]}
-              >
-                <RNView style={styles.rowLeft}>
-                  <RNView
-                    style={[styles.rowIcon, { backgroundColor: isActive ? '#E8F5E9' : C.border }]}
-                  >
-                    <RNText style={{ fontSize: 16 }}>{ENTITY_ICONS[entityType]}</RNText>
+          <RNView style={[styles.card, { backgroundColor: C.card, shadowColor: C.cardShadow }]}>
+            <RNText style={[styles.hint, { color: C.textSecondary }]}>
+              Alege ce tipuri de entități să apară în aplicație. Entitățile dezactivate nu vor
+              apărea în formulare sau liste.
+            </RNText>
+            {ALL_ENTITY_TYPES.map((entityType, idx) => {
+              const isActive = visibleEntityTypes.includes(entityType);
+              const isLast = idx === ALL_ENTITY_TYPES.length - 1;
+              return (
+                <RNView
+                  key={entityType}
+                  style={[isLast ? styles.rowLast : styles.row, { borderBottomColor: C.border }]}
+                >
+                  <RNView style={styles.rowLeft}>
+                    <RNView
+                      style={[styles.rowIcon, { backgroundColor: isActive ? '#E8F5E9' : C.border }]}
+                    >
+                      <RNText style={{ fontSize: 16 }}>{ENTITY_ICONS[entityType]}</RNText>
+                    </RNView>
+                    <RNText style={[styles.rowLabel, { color: C.text }]}>
+                      {ENTITY_LABELS[entityType]}
+                    </RNText>
                   </RNView>
-                  <RNText style={[styles.rowLabel, { color: C.text }]}>
-                    {ENTITY_LABELS[entityType]}
-                  </RNText>
+                  <Switch
+                    value={isActive}
+                    onValueChange={() => handleToggleEntityType(entityType)}
+                    trackColor={{ false: C.border, true: primary }}
+                    thumbColor="#fff"
+                  />
                 </RNView>
-                <Switch
-                  value={isActive}
-                  onValueChange={() => handleToggleEntityType(entityType)}
-                  trackColor={{ false: C.border, true: primary }}
-                  thumbColor="#fff"
-                />
-              </RNView>
-            );
-          })}
-        </RNView>
+              );
+            })}
+          </RNView>
         )}
 
         {/* ── Vizibilitate tipuri documente ── */}
-        <Pressable
-          style={styles.sectionHeader}
-          onPress={() => setDocTypesCollapsed(v => !v)}
-        >
-          <RNText style={[styles.sectionLabel, styles.sectionLabelInline, { color: C.textSecondary }]}>
+        <Pressable style={styles.sectionHeader} onPress={() => setDocTypesCollapsed(v => !v)}>
+          <RNText
+            style={[styles.sectionLabel, styles.sectionLabelInline, { color: C.textSecondary }]}
+          >
             TIPURI DOCUMENTE ACTIVE
           </RNText>
           <Ionicons
@@ -978,90 +1003,92 @@ export default function SetariScreen() {
           />
         </Pressable>
         {!docTypesCollapsed && (
-        <>
-        <RNView style={[styles.card, { backgroundColor: C.card, shadowColor: C.cardShadow }]}>
-          <RNText style={[styles.hint, { color: C.textSecondary }]}>
-            Alege ce tipuri de documente să apară în formulare. Tipurile dezactivate nu vor apărea
-            la adăugarea documentelor.
-          </RNText>
-          <RNView style={styles.chipRow}>
-            {STANDARD_DOC_TYPES.map(docType => {
-              const isActive = visibleDocTypes.includes(docType);
-              return (
-                <Pressable
-                  key={docType}
-                  style={[
-                    styles.chip,
-                    isActive
-                      ? [styles.chipActive, { borderColor: primary }]
-                      : { borderColor: C.border },
-                  ]}
-                  onPress={() => handleToggleDocType(docType)}
-                >
-                  <RNText style={[styles.chipText, { color: isActive ? '#fff' : C.textSecondary }]}>
-                    {DOCUMENT_TYPE_LABELS[docType]}
-                  </RNText>
-                </Pressable>
-              );
-            })}
-          </RNView>
-        </RNView>
-
-        {/* ── Tipuri personalizate de documente ── */}
-        <RNText style={[styles.sectionLabel, { color: C.textSecondary, marginTop: 16 }]}>
-          TIPURI PERSONALIZATE
-        </RNText>
-        <RNView style={[styles.card, { backgroundColor: C.card, shadowColor: C.cardShadow }]}>
-          <RNText style={[styles.hint, { color: C.textSecondary }]}>
-            Adaugă tipuri proprii de documente (ex: „Asigurare viață", „Dosar medical"). Tipurile de
-            entități (Persoană, Vehicul, Proprietate etc.) sunt fixe și nu pot fi modificate.
-          </RNText>
-          {customTypes.map((ct, idx) => (
-            <RNView
-              key={ct.id}
-              style={[
-                styles.customTypeRow,
-                { borderBottomColor: C.border },
-                idx === customTypes.length - 1 && styles.customTypeRowLast,
-              ]}
-            >
-              <RNText style={[styles.customTypeName, { color: C.text }]}>{ct.name}</RNText>
-              <Pressable onPress={() => handleDeleteCustomType(ct.id, ct.name)} hitSlop={8}>
-                <Ionicons name="trash-outline" size={18} color={statusColors.critical} />
-              </Pressable>
+          <>
+            <RNView style={[styles.card, { backgroundColor: C.card, shadowColor: C.cardShadow }]}>
+              <RNText style={[styles.hint, { color: C.textSecondary }]}>
+                Alege ce tipuri de documente să apară în formulare. Tipurile dezactivate nu vor
+                apărea la adăugarea documentelor.
+              </RNText>
+              <RNView style={styles.chipRow}>
+                {STANDARD_DOC_TYPES.map(docType => {
+                  const isActive = visibleDocTypes.includes(docType);
+                  return (
+                    <Pressable
+                      key={docType}
+                      style={[
+                        styles.chip,
+                        isActive
+                          ? [styles.chipActive, { borderColor: primary }]
+                          : { borderColor: C.border },
+                      ]}
+                      onPress={() => handleToggleDocType(docType)}
+                    >
+                      <RNText
+                        style={[styles.chipText, { color: isActive ? '#fff' : C.textSecondary }]}
+                      >
+                        {DOCUMENT_TYPE_LABELS[docType]}
+                      </RNText>
+                    </Pressable>
+                  );
+                })}
+              </RNView>
             </RNView>
-          ))}
-          <RNView style={styles.addTypeRow}>
-            <TextInput
-              style={[
-                styles.addTypeInput,
-                { color: C.text, borderColor: C.border, backgroundColor: C.background },
-              ]}
-              placeholder="Nume tip nou (ex: Asigurare viață)"
-              placeholderTextColor={C.textSecondary}
-              value={newTypeName}
-              onChangeText={setNewTypeName}
-              returnKeyType="done"
-              onSubmitEditing={handleAddCustomType}
-            />
-            <Pressable
-              style={[styles.addTypeBtn, !newTypeName.trim() && styles.addTypeBtnDisabled]}
-              onPress={handleAddCustomType}
-              disabled={!newTypeName.trim()}
-            >
-              <RNText style={styles.addTypeBtnText}>Adaugă</RNText>
-            </Pressable>
-          </RNView>
-        </RNView>
-        </>
+
+            {/* ── Tipuri personalizate de documente ── */}
+            <RNText style={[styles.sectionLabel, { color: C.textSecondary, marginTop: 16 }]}>
+              TIPURI PERSONALIZATE
+            </RNText>
+            <RNView style={[styles.card, { backgroundColor: C.card, shadowColor: C.cardShadow }]}>
+              <RNText style={[styles.hint, { color: C.textSecondary }]}>
+                Adaugă tipuri proprii de documente (ex: „Asigurare viață", „Dosar medical").
+                Tipurile de entități (Persoană, Vehicul, Proprietate etc.) sunt fixe și nu pot fi
+                modificate.
+              </RNText>
+              {customTypes.map((ct, idx) => (
+                <RNView
+                  key={ct.id}
+                  style={[
+                    styles.customTypeRow,
+                    { borderBottomColor: C.border },
+                    idx === customTypes.length - 1 && styles.customTypeRowLast,
+                  ]}
+                >
+                  <RNText style={[styles.customTypeName, { color: C.text }]}>{ct.name}</RNText>
+                  <Pressable onPress={() => handleDeleteCustomType(ct.id, ct.name)} hitSlop={8}>
+                    <Ionicons name="trash-outline" size={18} color={statusColors.critical} />
+                  </Pressable>
+                </RNView>
+              ))}
+              <RNView style={styles.addTypeRow}>
+                <TextInput
+                  style={[
+                    styles.addTypeInput,
+                    { color: C.text, borderColor: C.border, backgroundColor: C.background },
+                  ]}
+                  placeholder="Nume tip nou (ex: Asigurare viață)"
+                  placeholderTextColor={C.textSecondary}
+                  value={newTypeName}
+                  onChangeText={setNewTypeName}
+                  returnKeyType="done"
+                  onSubmitEditing={handleAddCustomType}
+                />
+                <Pressable
+                  style={[styles.addTypeBtn, !newTypeName.trim() && styles.addTypeBtnDisabled]}
+                  onPress={handleAddCustomType}
+                  disabled={!newTypeName.trim()}
+                >
+                  <RNText style={styles.addTypeBtnText}>Adaugă</RNText>
+                </Pressable>
+              </RNView>
+            </RNView>
+          </>
         )}
 
         {/* ── Backup ── */}
-        <Pressable
-          style={styles.sectionHeader}
-          onPress={() => setBackupCollapsed(v => !v)}
-        >
-          <RNText style={[styles.sectionLabel, styles.sectionLabelInline, { color: C.textSecondary }]}>
+        <Pressable style={styles.sectionHeader} onPress={() => setBackupCollapsed(v => !v)}>
+          <RNText
+            style={[styles.sectionLabel, styles.sectionLabelInline, { color: C.textSecondary }]}
+          >
             BACKUP ȘI RESTAURARE
           </RNText>
           <Ionicons
@@ -1071,60 +1098,66 @@ export default function SetariScreen() {
           />
         </Pressable>
         {!backupCollapsed && (
-        <RNView style={[styles.card, { backgroundColor: C.card, shadowColor: C.cardShadow }]}>
-          <InfoRow
-            icon="cloud-outline"
-            iconBg="#E8F5E9"
-            iconColor={primary}
-            label="iCloud Backup"
-            sub="Backup automat în iCloud Drive"
-            onPress={() => router.push('/cloud-backup')}
-            scheme={scheme}
-          />
-          <RNText style={[styles.hint, { color: C.textSecondary }]}>
-            Exportă toate datele și pozele ca fișier ZIP și salvează-l în iCloud Drive sau Files. La
-            schimbarea telefonului, importă fișierul pentru a restaura complet datele și pozele.
-          </RNText>
-          <Pressable
-            style={({ pressed }) => [
-              styles.btn,
-              { opacity: pressed || backupExporting ? 0.85 : 1 },
-            ]}
-            onPress={handleExportBackup}
-            disabled={backupExporting}
-          >
-            {backupExporting ? (
-              <ActivityIndicator size="small" color="#fff" style={styles.btnIcon} />
-            ) : (
-              <Ionicons name="cloud-upload-outline" size={18} color="#fff" style={styles.btnIcon} />
-            )}
-            <RNText style={styles.btnText}>
-              {backupExporting ? 'Se exportă...' : 'Exportă backup (ZIP)'}
+          <RNView style={[styles.card, { backgroundColor: C.card, shadowColor: C.cardShadow }]}>
+            <InfoRow
+              icon="cloud-outline"
+              iconBg="#E8F5E9"
+              iconColor={primary}
+              label="iCloud Backup"
+              sub="Backup automat în iCloud Drive"
+              onPress={() => router.push('/cloud-backup')}
+              scheme={scheme}
+            />
+            <RNText style={[styles.hint, { color: C.textSecondary }]}>
+              Exportă toate datele și pozele ca fișier ZIP și salvează-l în iCloud Drive sau Files.
+              La schimbarea telefonului, importă fișierul pentru a restaura complet datele și
+              pozele.
             </RNText>
-          </Pressable>
-          <Pressable
-            style={({ pressed }) => [
-              styles.btnOutline,
-              { borderColor: primary, opacity: pressed || backupImporting ? 0.85 : 1 },
-            ]}
-            onPress={handleImportBackup}
-            disabled={backupImporting}
-          >
-            {backupImporting ? (
-              <ActivityIndicator size="small" color={primary} style={styles.btnIcon} />
-            ) : (
-              <Ionicons
-                name="cloud-download-outline"
-                size={18}
-                color={primary}
-                style={styles.btnIcon}
-              />
-            )}
-            <RNText style={[styles.btnOutlineText, { color: primary }]}>
-              {backupImporting ? 'Se importă...' : 'Importă din fișier backup'}
-            </RNText>
-          </Pressable>
-        </RNView>
+            <Pressable
+              style={({ pressed }) => [
+                styles.btn,
+                { opacity: pressed || backupExporting ? 0.85 : 1 },
+              ]}
+              onPress={handleExportBackup}
+              disabled={backupExporting}
+            >
+              {backupExporting ? (
+                <ActivityIndicator size="small" color="#fff" style={styles.btnIcon} />
+              ) : (
+                <Ionicons
+                  name="cloud-upload-outline"
+                  size={18}
+                  color="#fff"
+                  style={styles.btnIcon}
+                />
+              )}
+              <RNText style={styles.btnText}>
+                {backupExporting ? 'Se exportă...' : 'Exportă backup (ZIP)'}
+              </RNText>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [
+                styles.btnOutline,
+                { borderColor: primary, opacity: pressed || backupImporting ? 0.85 : 1 },
+              ]}
+              onPress={handleImportBackup}
+              disabled={backupImporting}
+            >
+              {backupImporting ? (
+                <ActivityIndicator size="small" color={primary} style={styles.btnIcon} />
+              ) : (
+                <Ionicons
+                  name="cloud-download-outline"
+                  size={18}
+                  color={primary}
+                  style={styles.btnIcon}
+                />
+              )}
+              <RNText style={[styles.btnOutlineText, { color: primary }]}>
+                {backupImporting ? 'Se importă...' : 'Importă din fișier backup'}
+              </RNText>
+            </Pressable>
+          </RNView>
         )}
 
         {/* ── Asistent AI ── */}
@@ -1411,9 +1444,7 @@ export default function SetariScreen() {
                   flexShrink: 0,
                 }}
               >
-                {aiModalConsentChecked && (
-                  <Ionicons name="checkmark" size={14} color="#fff" />
-                )}
+                {aiModalConsentChecked && <Ionicons name="checkmark" size={14} color="#fff" />}
               </RNView>
               <RNView style={{ flex: 1 }}>
                 <RNText style={[styles.aiToggleLabel, { color: C.text, fontSize: 13 }]}>
@@ -1422,7 +1453,8 @@ export default function SetariScreen() {
                     : 'Sunt de acord cu trimiterea datelor la serviciul AI configurat'}
                 </RNText>
                 <RNText style={[styles.aiToggleSub, { color: C.textSecondary, fontSize: 11 }]}>
-                  Acoperă: text OCR, entități, detalii documente, chat. PIN-ul nu este niciodată trimis.
+                  Acoperă: text OCR, entități, detalii documente, chat. PIN-ul nu este niciodată
+                  trimis.
                 </RNText>
               </RNView>
             </Pressable>
@@ -1438,26 +1470,40 @@ export default function SetariScreen() {
           >
             {/* Info: ce date se trimit la AI (mirror OCR_PRIVACY onboarding) */}
             {(aiProviderType === 'builtin' || aiProviderType === 'external') && (
-              <RNView style={[styles.aiPrivacyCard, { backgroundColor: C.card, borderColor: C.border }]}>
+              <RNView
+                style={[styles.aiPrivacyCard, { backgroundColor: C.card, borderColor: C.border }]}
+              >
                 <RNView style={styles.aiPrivacyRow}>
-                  <Ionicons name="image-outline" size={18} color="#F57F17" style={{ marginTop: 2 }} />
+                  <Ionicons
+                    name="image-outline"
+                    size={18}
+                    color="#F57F17"
+                    style={{ marginTop: 2 }}
+                  />
                   <RNView style={{ flex: 1 }}>
                     <RNText style={[styles.aiToggleLabel, { color: C.text }]}>
                       Trimitere imagine/document la AI
                     </RNText>
                     <RNText style={[styles.aiToggleSub, { color: C.textSecondary, marginTop: 2 }]}>
-                      Doar la apăsarea butonului „Trimite documentul la AI" din formularul documentului — niciodată automat.
+                      Doar la apăsarea butonului „Trimite documentul la AI" din formularul
+                      documentului — niciodată automat.
                     </RNText>
                   </RNView>
                 </RNView>
                 <RNView style={styles.aiPrivacyRow}>
-                  <Ionicons name="lock-closed-outline" size={18} color={primary} style={{ marginTop: 2 }} />
+                  <Ionicons
+                    name="lock-closed-outline"
+                    size={18}
+                    color={primary}
+                    style={{ marginTop: 2 }}
+                  />
                   <RNView style={{ flex: 1 }}>
                     <RNText style={[styles.aiToggleLabel, { color: C.text }]}>
                       Câmpul „Notă privată" nu pleacă niciodată la AI
                     </RNText>
                     <RNText style={[styles.aiToggleSub, { color: C.textSecondary, marginTop: 2 }]}>
-                      Folosește-l pentru date strict sensibile (CVV, PIN, parole). E separat de câmpul „Notă" normal.
+                      Folosește-l pentru date strict sensibile (CVV, PIN, parole). E separat de
+                      câmpul „Notă" normal.
                     </RNText>
                   </RNView>
                 </RNView>
@@ -1502,9 +1548,15 @@ export default function SetariScreen() {
                   <RNView>
                     <RNText style={[styles.aiLabel, { color: C.textSecondary }]}>URL API</RNText>
                     <TextInput
-                      style={[styles.aiInput, { color: C.text, borderColor: C.border, backgroundColor: C.card }]}
+                      style={[
+                        styles.aiInput,
+                        { color: C.text, borderColor: C.border, backgroundColor: C.card },
+                      ]}
                       value={aiProviderUrl}
-                      onChangeText={text => { setAiProviderUrl(text); setAiTestStatus('idle'); }}
+                      onChangeText={text => {
+                        setAiProviderUrl(text);
+                        setAiTestStatus('idle');
+                      }}
                       placeholder="ex: https://api.mistral.ai/v1"
                       placeholderTextColor={C.textSecondary}
                       autoCapitalize="none"
@@ -1515,9 +1567,15 @@ export default function SetariScreen() {
                   <RNView>
                     <RNText style={[styles.aiLabel, { color: C.textSecondary }]}>Cheie API</RNText>
                     <TextInput
-                      style={[styles.aiInput, { color: C.text, borderColor: C.border, backgroundColor: C.card }]}
+                      style={[
+                        styles.aiInput,
+                        { color: C.text, borderColor: C.border, backgroundColor: C.card },
+                      ]}
                       value={aiApiKey}
-                      onChangeText={text => { setAiApiKey(text); setAiTestStatus('idle'); }}
+                      onChangeText={text => {
+                        setAiApiKey(text);
+                        setAiTestStatus('idle');
+                      }}
                       placeholder="••••••••••"
                       placeholderTextColor={C.textSecondary}
                       secureTextEntry
@@ -1528,9 +1586,15 @@ export default function SetariScreen() {
                   <RNView>
                     <RNText style={[styles.aiLabel, { color: C.textSecondary }]}>Model</RNText>
                     <TextInput
-                      style={[styles.aiInput, { color: C.text, borderColor: C.border, backgroundColor: C.card }]}
+                      style={[
+                        styles.aiInput,
+                        { color: C.text, borderColor: C.border, backgroundColor: C.card },
+                      ]}
                       value={aiProviderModel}
-                      onChangeText={text => { setAiProviderModel(text); setAiTestStatus('idle'); }}
+                      onChangeText={text => {
+                        setAiProviderModel(text);
+                        setAiTestStatus('idle');
+                      }}
                       placeholder="ex: mistral-small-latest"
                       placeholderTextColor={C.textSecondary}
                       autoCapitalize="none"
@@ -1585,14 +1649,25 @@ export default function SetariScreen() {
 
             {/* Avertisment model local */}
             {aiProviderType === 'local' && (
-              <RNView style={[styles.localModelWarning, { backgroundColor: '#FFF8E1', borderColor: '#F9A825' }]}>
-                <Ionicons name="flask-outline" size={16} color="#F57F17" style={{ marginRight: 6, marginTop: 1 }} />
+              <RNView
+                style={[
+                  styles.localModelWarning,
+                  { backgroundColor: '#FFF8E1', borderColor: '#F9A825' },
+                ]}
+              >
+                <Ionicons
+                  name="flask-outline"
+                  size={16}
+                  color="#F57F17"
+                  style={{ marginRight: 6, marginTop: 1 }}
+                />
                 <RNView style={{ flex: 1 }}>
                   <RNText style={[styles.localModelWarningTitle, { color: '#E65100' }]}>
                     Model local – în testare
                   </RNText>
                   <RNText style={[styles.localModelWarningText, { color: '#6D4C41' }]}>
-                    Modelele locale pot produce răspunsuri incorecte (halucinații). Dacă observi erori, te rugăm să contactezi dezvoltatorul.{' '}
+                    Modelele locale pot produce răspunsuri incorecte (halucinații). Dacă observi
+                    erori, te rugăm să contactezi dezvoltatorul.{' '}
                     <RNText
                       style={{ color: primary, textDecorationLine: 'underline' }}
                       onPress={openEmail}

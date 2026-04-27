@@ -21,6 +21,9 @@ import { radius, spacing } from '@/theme/layout';
 import { useDocuments } from '@/hooks/useDocuments';
 import { useEntities } from '@/hooks/useEntities';
 import { useCustomTypes } from '@/hooks/useCustomTypes';
+import { useOrphans } from '@/hooks/useOrphans';
+import { getShowOrphansOnHome } from '@/services/settings';
+import { OrphansSection } from '@/components/OrphansSection';
 import { DOCUMENT_TYPE_LABELS, getDocumentLabel, DOC_PRIMARY_ENTITY } from '@/types';
 import type { Document, DocumentType, EntityType } from '@/types';
 import { useVisibilitySettings } from '@/hooks/useVisibilitySettings';
@@ -281,6 +284,8 @@ export default function HomeScreen() {
   } = useEntities();
   const { customTypes } = useCustomTypes();
   const { visibleDocTypes } = useVisibilitySettings();
+  const { groups: orphanGroups, refresh: refreshOrphans } = useOrphans();
+  const [showOrphans, setShowOrphans] = useState(true);
   const [duplicateGroups, setDuplicateGroups] = useState<Document[][]>([]);
   const backfillDoneRef = useRef(false);
   const cloud = useCloudRestoreDetector();
@@ -296,8 +301,14 @@ export default function HomeScreen() {
       scrollRef.current?.scrollTo({ y: 0, animated: false });
       refresh();
       refreshEntities();
-      findFileDuplicates().then(setDuplicateGroups).catch(() => {});
-    }, [])
+      refreshOrphans();
+      getShowOrphansOnHome()
+        .then(setShowOrphans)
+        .catch(() => {});
+      findFileDuplicates()
+        .then(setDuplicateGroups)
+        .catch(() => {});
+    }, [refreshOrphans])
   );
 
   // ── Stats ────────────────────────────────────────────────────────────────────
@@ -409,9 +420,7 @@ export default function HomeScreen() {
   async function handleDeleteDuplicate(docId: string) {
     // Elimină imediat din UI (optimistic), apoi confirmă cu DB
     setDuplicateGroups(prev =>
-      prev
-        .map(g => g.filter(d => d.id !== docId))
-        .filter(g => g.length >= 2)
+      prev.map(g => g.filter(d => d.id !== docId)).filter(g => g.length >= 2)
     );
     await deleteDocument(docId);
     const updated = await findFileDuplicates();
@@ -499,6 +508,9 @@ export default function HomeScreen() {
             />
           </RNView>
         </SurfaceCard>
+
+        {/* ── De completat (orfani) ── */}
+        {showOrphans && orphanGroups.length > 0 && <OrphansSection groups={orphanGroups} />}
 
         {/* ── Alerte contextuale ── */}
         {alerts.length > 0 && (
@@ -669,7 +681,10 @@ export default function HomeScreen() {
                     key={doc.id}
                     style={[
                       styles.dupRow,
-                      di < group.length - 1 && { borderBottomWidth: 1, borderBottomColor: C.border },
+                      di < group.length - 1 && {
+                        borderBottomWidth: 1,
+                        borderBottomColor: C.border,
+                      },
                     ]}
                   >
                     <Pressable
@@ -677,7 +692,10 @@ export default function HomeScreen() {
                       onPress={() => router.push(`/(tabs)/documente/${doc.id}?from=home`)}
                     >
                       <RNView
-                        style={[styles.docIcon, { backgroundColor: DOC_ICON_BG[doc.type] ?? '#F5F5F5' }]}
+                        style={[
+                          styles.docIcon,
+                          { backgroundColor: DOC_ICON_BG[doc.type] ?? '#F5F5F5' },
+                        ]}
                       >
                         <Ionicons
                           name={DOC_ICON[doc.type] ?? 'document-outline'}
@@ -689,9 +707,15 @@ export default function HomeScreen() {
                         <RNText style={[styles.docTitle, { color: C.text }]} numberOfLines={1}>
                           {getDocumentLabel(doc, customTypes)}
                         </RNText>
-                        <RNText style={[styles.docSub, { color: C.textSecondary }]} numberOfLines={1}>
+                        <RNText
+                          style={[styles.docSub, { color: C.textSecondary }]}
+                          numberOfLines={1}
+                        >
                           {doc.created_at.slice(0, 10)}
-                          {(() => { const en = resolveEntityName(doc); return en ? ` · ${en}` : ''; })()}
+                          {(() => {
+                            const en = resolveEntityName(doc);
+                            return en ? ` · ${en}` : '';
+                          })()}
                         </RNText>
                       </RNView>
                     </Pressable>
