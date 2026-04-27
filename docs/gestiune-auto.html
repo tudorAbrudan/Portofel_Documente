@@ -81,6 +81,22 @@
       display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
     }
 
+    .phone-mockup {
+      display: flex; justify-content: center; margin: 32px 0;
+    }
+    .phone-mockup > div { max-width: 320px; }
+    .phone-mockup img {
+      width: 100%; display: block;
+      border-radius: 36px;
+      box-shadow: 0 20px 50px rgba(30,35,24,0.18), 0 4px 12px rgba(30,35,24,0.08);
+      border: 1px solid var(--border);
+    }
+    .phone-mockup figcaption {
+      text-align: center; font-size: .9rem; color: var(--text-muted);
+      margin-top: 14px;
+    }
+    .phone-mockup figcaption strong { color: var(--text); display: block; margin-bottom: 4px; }
+
     .docs-grid {
       display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
       gap: 10px; margin: 18px 0;
@@ -117,6 +133,18 @@
     Talonul, asigurările, alimentările și reviziile — toate într-un singur dosar pentru
     fiecare vehicul. Cu remindere automate, statistici de consum și scanare OCR.
   </p>
+
+  <figure class="phone-mockup">
+    <div>
+      <img src="screen_vehicul_detaliu.jpeg" alt="Ecran detaliu vehicul Dosar — poză mașină, status RCA și consum, lista documente legate, butoane Carburant și Mentenanță" />
+      <figcaption>
+        <strong>Detaliu vehicul cu status la zi.</strong>
+        Poza mașinii ca fundal, numărul de înmatriculare în header, bara de status cu RCA și
+        consum mediu (sparkline „plin la plin"), documentele legate filtrate pe tip și acțiunile
+        rapide pentru carburant și mentenanță.
+      </figcaption>
+    </div>
+  </figure>
 
   <div class="features">
     <div class="feat">
