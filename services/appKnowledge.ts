@@ -95,7 +95,7 @@ export function buildAppKnowledge(): string {
 **Tipuri de documente:**
 ${buildDocTypesList()}
 
-**Funcții:** scanare + OCR on-device, notificări expirare, remindere în calendar iOS, backup iCloud/Drive, blocare Face ID/PIN, detecție automată duplicate, câmp „Notă privată" per document pentru date sensibile (CVV/PIN/parole) care NU ajunge niciodată la AI, reminder mentenanță vehicule (km sau timp) cu sincronizare calendar.
+**Funcții:** scanare + OCR on-device, notificări expirare, remindere în calendar iOS, backup automat în iCloud + export manual ZIP, blocare Face ID/PIN, detecție automată duplicate, câmp „Notă privată" per document pentru date sensibile (CVV/PIN/parole) care NU ajunge niciodată la AI, reminder mentenanță vehicule (km sau timp) cu sincronizare calendar.
 
 ## Gestiune auto
 
@@ -125,6 +125,18 @@ Fiecare task afișează: status (verde/galben/roșu) calculat comparând cu km-u
 Acțiuni pe task (tap pe card): „Marchează efectuat" (setează data curentă și km-ul actual), „Editează", „Șterge".
 
 Pentru task-urile cu prag pe luni, utilizatorul poate activa toggle-ul „Adaugă în calendar" — creează un eveniment în calendarul iOS cu alarme cu 7 zile înainte și în zi. Evenimentul include: vehicul, intervenție, prag km (dacă există), mesaj că poate fi efectuat mai devreme dacă atinge km, link App Store către Dosar. Când utilizatorul marchează efectuat, evenimentul din calendar se actualizează automat cu noua dată (calculată de la data efectuării).
+
+## Backup automat în iCloud
+
+Aplicația poate salva automat copii ale documentelor în iCloud Drive-ul personal al utilizatorului (folderul „Dosar" vizibil și în Files app). Datele sunt în iCloud-ul lui, nu trec printr-un server al nostru.
+
+- **Activare:** Setări → Cloud Backup → comutator „Activează backup în iCloud", sau direct în Onboarding (pasul „Backup automat").
+- **Cum funcționează:** la salvarea unui document nou, fișierul e urcat imediat printr-o coadă cu retry. La trecerea aplicației în background, dacă au existat modificări, manifestul (DB) e urcat. Periodic (săptămânal default; configurabil zilnic / la 3 zile / săptămânal / lunar / off), se face un snapshot stamped și se aplică retenție (default 4 snapshots păstrate).
+- **Restore pe device nou:** instalează Dosar pe noul iPhone cu același Apple ID. La onboarding, app-ul detectează backup-ul existent și propune restaurarea. Toate documentele și fișierele revin în câteva minute.
+- **Detectare cross-device:** la deschiderea aplicației, dacă pe iCloud există un manifest mai nou decât cel local (modificat pe alt device), apare un banner pe Home: „Backup mai nou disponibil. Restaurezi?". Banner-ul poate fi închis (ignorat).
+- **Criptare opțională cu parolă:** din Setări → Cloud Backup → „Criptare cu parolă". AES-256-GCM cu cheie derivată din parolă (PBKDF2). Atenție: dacă parola se uită, backup-ul devine inutilizabil; nu există recuperare.
+- **Coexistă cu backup manual ZIP:** opțiunea de export ZIP din Setări (pentru Drive / oriunde) rămâne disponibilă în paralel cu backup-ul automat.
+- **Disponibilitate:** doar pe iOS cu iCloud Drive activ în Setări iOS și logat la Apple ID. Pe Android funcționează doar export ZIP manual.
 
 ## Reguli
 
