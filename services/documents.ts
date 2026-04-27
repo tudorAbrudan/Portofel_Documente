@@ -206,7 +206,7 @@ export async function applyAutoDelete(): Promise<number> {
       }
     }
     if (shouldDelete) {
-      await db.runAsync('DELETE FROM documents WHERE id = ?', [row.id]);
+      await deleteDocument(row.id);
       deleted++;
     }
   }
