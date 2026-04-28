@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import type { EntityType, DocumentType } from '@/types';
 import { ALL_ENTITY_TYPES, STANDARD_DOC_TYPES } from '@/types';
 import * as settings from '@/services/settings';
+import { on } from '@/services/events';
 
 export function useVisibilitySettings() {
   const [visibleEntityTypes, setVisibleEntityTypesState] = useState<EntityType[]>([
@@ -32,6 +33,13 @@ export function useVisibilitySettings() {
 
   useEffect(() => {
     refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    const off = on('settings:changed', () => {
+      refresh().catch(() => {});
+    });
+    return off;
   }, [refresh]);
 
   const updateVisibleEntityTypes = useCallback(async (types: EntityType[]) => {

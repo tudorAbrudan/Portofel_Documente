@@ -11,6 +11,7 @@ import { getCustomTypes, createCustomType } from './customTypes';
 import { toFileUri, toRelativePath } from './fileUtils';
 import { onRestoreSuccess } from './reviewPrompt';
 import { db } from './db';
+import { emit } from './events';
 
 /**
  * Citește un fișier ca base64. Returnează null dacă nu există sau nu poate fi citit.
@@ -291,6 +292,11 @@ export async function applyManifest(
     return await applyManifestBody(payload);
   } finally {
     _importInProgress = false;
+    emit('documents:changed');
+    emit('links:changed');
+    emit('entities:changed');
+    emit('customTypes:changed');
+    emit('settings:changed');
   }
 }
 

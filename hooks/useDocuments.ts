@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import type { Document } from '@/types';
 import * as docs from '@/services/documents';
+import { on } from '@/services/events';
 
 export function useDocuments() {
   const [list, setList] = useState<Document[]>([]);
@@ -23,6 +24,19 @@ export function useDocuments() {
 
   useEffect(() => {
     refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    const offDocs = on('documents:changed', () => {
+      refresh().catch(() => {});
+    });
+    const offLinks = on('links:changed', () => {
+      refresh().catch(() => {});
+    });
+    return () => {
+      offDocs();
+      offLinks();
+    };
   }, [refresh]);
 
   return {

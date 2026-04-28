@@ -3,6 +3,7 @@ import type { Person, Property, Vehicle, Card, Animal, Company } from '@/types';
 import * as FileSystem from 'expo-file-system/legacy';
 import { toFileUri } from './fileUtils';
 import { assignNextOrder, removeOrder } from './entityOrder';
+import { emit } from './events';
 
 // Fallback sort pentru entități care nu au rând în entity_order (edge case:
 // migrarea nu a rulat sau entitatea a fost creată în afara căii standard).
@@ -99,6 +100,7 @@ export async function createPerson(name: string, phone?: string, email?: string)
     [id, name, phone ?? null, email ?? null, created_at]
   );
   await assignNextOrder('person', id);
+  emit('entities:changed');
   return { id, name, phone, email, createdAt: created_at };
 }
 
@@ -111,6 +113,7 @@ export async function createProperty(name: string): Promise<Property> {
     created_at,
   ]);
   await assignNextOrder('property', id);
+  emit('entities:changed');
   return { id, name, createdAt: created_at };
 }
 
@@ -123,6 +126,7 @@ export async function createVehicle(name: string): Promise<Vehicle> {
     created_at,
   ]);
   await assignNextOrder('vehicle', id);
+  emit('entities:changed');
   return { id, name, createdAt: created_at };
 }
 
@@ -134,6 +138,7 @@ export async function createCard(nickname: string, last4: string, expiry?: strin
     [id, nickname, last4, expiry ?? null, created_at]
   );
   await assignNextOrder('card', id);
+  emit('entities:changed');
   return { id, nickname, last4, expiry, createdAt: created_at };
 }
 
@@ -149,10 +154,12 @@ export async function updatePerson(
     email ?? null,
     id,
   ]);
+  emit('entities:changed');
 }
 
 export async function updateProperty(id: string, name: string): Promise<void> {
   await db.runAsync('UPDATE properties SET name = ? WHERE id = ?', [name, id]);
+  emit('entities:changed');
 }
 
 export async function updateVehicle(
@@ -166,6 +173,7 @@ export async function updateVehicle(
     'UPDATE vehicles SET name = ?, photo_uri = ?, plate_number = ?, fuel_type = ? WHERE id = ?',
     [name, photo_uri ?? null, plate_number ?? null, fuel_type ?? 'diesel', id]
   );
+  emit('entities:changed');
 }
 
 export async function updateCard(
@@ -180,16 +188,23 @@ export async function updateCard(
     expiry ?? null,
     id,
   ]);
+  emit('entities:changed');
 }
 
 export async function deletePerson(id: string): Promise<void> {
   await db.runAsync('DELETE FROM persons WHERE id = ?', [id]);
   await removeOrder('person', id);
+  emit('entities:changed');
+  emit('links:changed');
+  emit('documents:changed');
 }
 
 export async function deleteProperty(id: string): Promise<void> {
   await db.runAsync('DELETE FROM properties WHERE id = ?', [id]);
   await removeOrder('property', id);
+  emit('entities:changed');
+  emit('links:changed');
+  emit('documents:changed');
 }
 
 export async function deleteVehicle(id: string): Promise<void> {
@@ -211,11 +226,17 @@ export async function deleteVehicle(id: string): Promise<void> {
   }
   await db.runAsync('DELETE FROM vehicles WHERE id = ?', [id]);
   await removeOrder('vehicle', id);
+  emit('entities:changed');
+  emit('links:changed');
+  emit('documents:changed');
 }
 
 export async function deleteCard(id: string): Promise<void> {
   await db.runAsync('DELETE FROM cards WHERE id = ?', [id]);
   await removeOrder('card', id);
+  emit('entities:changed');
+  emit('links:changed');
+  emit('documents:changed');
 }
 
 export async function getAnimals(): Promise<Animal[]> {
@@ -244,16 +265,21 @@ export async function createAnimal(name: string, species: string): Promise<Anima
     created_at,
   ]);
   await assignNextOrder('animal', id);
+  emit('entities:changed');
   return { id, name, species, createdAt: created_at };
 }
 
 export async function updateAnimal(id: string, name: string, species: string): Promise<void> {
   await db.runAsync('UPDATE animals SET name = ?, species = ? WHERE id = ?', [name, species, id]);
+  emit('entities:changed');
 }
 
 export async function deleteAnimal(id: string): Promise<void> {
   await db.runAsync('DELETE FROM animals WHERE id = ?', [id]);
   await removeOrder('animal', id);
+  emit('entities:changed');
+  emit('links:changed');
+  emit('documents:changed');
 }
 
 export async function getCompanies(): Promise<Company[]> {
@@ -291,6 +317,7 @@ export async function createCompany(
     [id, name, cui ?? null, reg_com ?? null, created_at]
   );
   await assignNextOrder('company', id);
+  emit('entities:changed');
   return { id, name, cui, reg_com, createdAt: created_at };
 }
 
@@ -306,9 +333,13 @@ export async function updateCompany(
     reg_com ?? null,
     id,
   ]);
+  emit('entities:changed');
 }
 
 export async function deleteCompany(id: string): Promise<void> {
   await db.runAsync('DELETE FROM companies WHERE id = ?', [id]);
   await removeOrder('company', id);
+  emit('entities:changed');
+  emit('links:changed');
+  emit('documents:changed');
 }

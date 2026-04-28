@@ -3,6 +3,7 @@ import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 import type { EntityType, DocumentType, SnapshotFrequency } from '@/types';
 import { ALL_ENTITY_TYPES, STANDARD_DOC_TYPES, DEFAULT_VISIBLE_DOC_TYPES } from '@/types';
+import { emit } from './events';
 
 const KEY_NOTIF_DAYS = 'settings_notif_days';
 const KEY_APP_LOCK_ENABLED = 'app_lock_enabled';
@@ -139,6 +140,7 @@ export async function getVisibleEntityTypes(): Promise<EntityType[]> {
 
 export async function setVisibleEntityTypes(types: EntityType[]): Promise<void> {
   await AsyncStorage.setItem(KEY_VISIBLE_ENTITY_TYPES, JSON.stringify(types));
+  emit('settings:changed');
 }
 
 export async function getVisibleDocTypes(): Promise<DocumentType[]> {
@@ -154,6 +156,7 @@ export async function getVisibleDocTypes(): Promise<DocumentType[]> {
 
 export async function setVisibleDocTypes(types: DocumentType[]): Promise<void> {
   await AsyncStorage.setItem(KEY_VISIBLE_DOC_TYPES, JSON.stringify(types));
+  emit('settings:changed');
 }
 
 // ── Sugestii pe Acasă ─────────────────────────────────────────────────────────
@@ -167,6 +170,7 @@ export async function getShowOrphansOnHome(): Promise<boolean> {
 
 export async function setShowOrphansOnHome(enabled: boolean): Promise<void> {
   await AsyncStorage.setItem(KEY_SHOW_ORPHANS_ON_HOME, enabled ? 'true' : 'false');
+  emit('settings:changed');
 }
 
 // ── Onboarding ────────────────────────────────────────────────────────────────

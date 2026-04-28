@@ -4,6 +4,7 @@ import { getDocumentsByEntity } from '@/services/documents';
 import { computeFuelStats } from '@/services/fuel';
 import { buildVehicleStatusItems, type StatusItemRaw } from '@/services/vehicleStatus';
 import * as settings from '@/services/settings';
+import { on } from '@/services/events';
 import type { Vehicle } from '@/types';
 
 export type VehicleStatusItem = StatusItemRaw & {
@@ -83,6 +84,20 @@ export function useVehicleStatus(vehicle: Vehicle | undefined): UseVehicleStatus
 
   useEffect(() => {
     load();
+  }, [load]);
+
+  useEffect(() => {
+    const trigger = () => {
+      load().catch(() => {});
+    };
+    const offDocs = on('documents:changed', trigger);
+    const offEntities = on('entities:changed', trigger);
+    const offSettings = on('settings:changed', trigger);
+    return () => {
+      offDocs();
+      offEntities();
+      offSettings();
+    };
   }, [load]);
 
   return { items, loading, error, refresh: load };

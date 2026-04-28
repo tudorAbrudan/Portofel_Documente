@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { getOrphans, type OrphanGroup } from '@/services/orphans';
+import { on } from '@/services/events';
 
 export function useOrphans() {
   const [groups, setGroups] = useState<OrphanGroup[]>([]);
@@ -21,6 +22,20 @@ export function useOrphans() {
 
   useEffect(() => {
     refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    const trigger = () => {
+      refresh().catch(() => {});
+    };
+    const offDocs = on('documents:changed', trigger);
+    const offLinks = on('links:changed', trigger);
+    const offEntities = on('entities:changed', trigger);
+    return () => {
+      offDocs();
+      offLinks();
+      offEntities();
+    };
   }, [refresh]);
 
   const totalItems = groups.reduce((sum, g) => sum + g.items.length, 0);

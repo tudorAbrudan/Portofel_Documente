@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import type { Person, Property, Vehicle, Card, Animal, Company } from '@/types';
 import * as entities from '@/services/entities';
 import { setGlobalOrder, getGlobalOrderMap, type EntityRef } from '@/services/entityOrder';
+import { on } from '@/services/events';
 
 export function useEntities() {
   const [persons, setPersons] = useState<Person[]>([]);
@@ -43,6 +44,13 @@ export function useEntities() {
 
   useEffect(() => {
     refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    const off = on('entities:changed', () => {
+      refresh().catch(() => {});
+    });
+    return off;
   }, [refresh]);
 
   // Aplică o nouă ordine globală peste toate entitățile vizibile.

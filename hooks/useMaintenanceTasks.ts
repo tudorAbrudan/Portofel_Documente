@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { VehicleMaintenanceTask } from '@/types';
 import * as maintenance from '@/services/maintenance';
+import { on } from '@/services/events';
 
 export function useMaintenanceTasks(vehicleId: string | undefined) {
   const [tasks, setTasks] = useState<VehicleMaintenanceTask[]>([]);
@@ -33,6 +34,18 @@ export function useMaintenanceTasks(vehicleId: string | undefined) {
 
   useEffect(() => {
     refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    const trigger = () => {
+      refresh().catch(() => {});
+    };
+    const offDocs = on('documents:changed', trigger);
+    const offEntities = on('entities:changed', trigger);
+    return () => {
+      offDocs();
+      offEntities();
+    };
   }, [refresh]);
 
   return { tasks, currentKm, loading, error, refresh };

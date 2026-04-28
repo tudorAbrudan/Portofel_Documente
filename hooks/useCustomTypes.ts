@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { CustomDocumentType } from '@/types';
 import * as customTypesService from '@/services/customTypes';
+import { on } from '@/services/events';
 
 export function useCustomTypes() {
   const [customTypes, setCustomTypes] = useState<CustomDocumentType[]>([]);
@@ -22,6 +23,13 @@ export function useCustomTypes() {
 
   useEffect(() => {
     refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    const off = on('customTypes:changed', () => {
+      refresh().catch(() => {});
+    });
+    return off;
   }, [refresh]);
 
   const createCustomType = useCallback(async (name: string) => {

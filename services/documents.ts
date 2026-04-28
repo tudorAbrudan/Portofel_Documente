@@ -5,6 +5,7 @@ import { onDocumentCreated, onDocumentRenewed } from './reviewPrompt';
 import * as cloudSync from './cloudSync';
 import { getCloudBackupEnabled } from './settings';
 import { isImportInProgress } from './backup';
+import { emit } from './events';
 import type { Document, DocumentPage, DocumentType, DocumentEntityLink, EntityType } from '@/types';
 
 export interface CreateDocumentInput {
@@ -335,6 +336,9 @@ export async function createDocument(input: CreateDocumentInput): Promise<Docume
     }
   }
 
+  emit('documents:changed');
+  emit('links:changed');
+
   return {
     id,
     type: input.type,
@@ -361,6 +365,7 @@ export async function createDocument(input: CreateDocumentInput): Promise<Docume
 
 export async function setDocumentOcrText(id: string, ocrText: string): Promise<void> {
   await db.runAsync('UPDATE documents SET ocr_text = ? WHERE id = ?', [ocrText.trim(), id]);
+  emit('documents:changed');
 }
 
 export async function deleteDocument(id: string): Promise<void> {
@@ -388,6 +393,9 @@ export async function deleteDocument(id: string): Promise<void> {
       }
     }
   }
+
+  emit('documents:changed');
+  emit('links:changed');
 }
 
 export interface UpdateDocumentInput {
@@ -454,7 +462,10 @@ export async function updateDocument(id: string, input: UpdateDocumentInput): Pr
       'UPDATE documents SET person_id=?, vehicle_id=?, property_id=?, card_id=?, animal_id=?, company_id=? WHERE id=?',
       [personId, vehicleId, propertyId, cardId, animalId, companyId, id]
     );
+    emit('links:changed');
   }
+
+  emit('documents:changed');
 }
 
 export async function linkDocumentToEntity(
@@ -483,6 +494,8 @@ export async function linkDocumentToEntity(
   // Sincronizăm și junction table
   const links = buildEntityLinksFromInput(entity);
   await saveEntityLinks(id, links);
+  emit('documents:changed');
+  emit('links:changed');
 }
 
 export async function addEntityLinkToDocument(
@@ -517,6 +530,8 @@ export async function addEntityLinkToDocument(
   if (current && current[col] === null) {
     await db.runAsync(`UPDATE documents SET ${col} = ? WHERE id = ?`, [link.entityId, documentId]);
   }
+  emit('documents:changed');
+  emit('links:changed');
 }
 
 export async function removeEntityLinkFromDocument(
@@ -545,6 +560,8 @@ export async function removeEntityLinkFromDocument(
     remaining?.entity_id ?? null,
     documentId,
   ]);
+  emit('documents:changed');
+  emit('links:changed');
 }
 
 export async function getDocumentEntityLinks(documentId: string): Promise<DocumentEntityLink[]> {
@@ -571,10 +588,13 @@ export async function addDocumentPage(documentId: string, filePath: string): Pro
       });
     }
   }
+
+  emit('documents:changed');
 }
 
 export async function removeDocumentPage(pageId: string): Promise<void> {
   await db.runAsync('DELETE FROM document_pages WHERE id = ?', [pageId]);
+  emit('documents:changed');
 }
 
 export async function reorderDocumentPages(
@@ -588,6 +608,7 @@ export async function reorderDocumentPages(
       documentId,
     ]);
   }
+  emit('documents:changed');
 }
 
 // Reordonează TOATE fișierele unui document (inclusiv pagina principală din file_path).
@@ -606,6 +627,7 @@ export async function reorderAllDocumentFiles(
       [generateId(), documentId, i, rest[i], new Date().toISOString()]
     );
   }
+  emit('documents:changed');
 }
 
 export async function findDuplicateDocument(

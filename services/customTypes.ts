@@ -1,4 +1,5 @@
 import { db, generateId } from './db';
+import { emit } from './events';
 import type { CustomDocumentType } from '@/types';
 
 export async function getCustomTypes(): Promise<CustomDocumentType[]> {
@@ -15,9 +16,12 @@ export async function createCustomType(name: string): Promise<CustomDocumentType
     name.trim(),
     created_at,
   ]);
+  emit('customTypes:changed');
   return { id, name: name.trim(), created_at };
 }
 
 export async function deleteCustomType(id: string): Promise<void> {
   await db.runAsync('DELETE FROM custom_document_types WHERE id = ?', [id]);
+  emit('customTypes:changed');
+  emit('documents:changed');
 }
