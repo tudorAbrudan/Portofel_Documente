@@ -513,7 +513,7 @@ export default function HomeScreen() {
         {showOrphans && orphanGroups.length > 0 && <OrphansSection groups={orphanGroups} />}
 
         {/* ── Alerte contextuale ── */}
-        {alerts.length > 0 && (
+        {showOrphans && alerts.length > 0 && (
           <RNView style={styles.section}>
             <RNText style={[styles.sectionLabel, { color: C.textSecondary }]}>SUGESTII</RNText>
             {alerts.map(alert => (

@@ -159,12 +159,11 @@ function RootLayoutNav() {
           <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
         </Stack>
         {updateInfo && onboardingDone === true && updateInfo.mandatory && (
-          <UpdateBlocker version={updateInfo.version} url={updateInfo.url} />
+          <UpdateBlocker version={updateInfo.version} />
         )}
         {updateInfo && !appLock.locked && onboardingDone === true && !updateInfo.mandatory && (
           <UpdateBanner
             version={updateInfo.version}
-            url={updateInfo.url}
             onDismiss={() => {
               dismissUpdate(updateInfo.version);
               setUpdateInfo(null);

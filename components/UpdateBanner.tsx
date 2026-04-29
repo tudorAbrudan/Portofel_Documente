@@ -1,18 +1,18 @@
-import { Pressable, Linking, StyleSheet, Platform } from 'react-native';
+import { Pressable, StyleSheet, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Text, View } from '@/components/Themed';
 import { primary } from '@/theme/colors';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
+import { openAppStore } from '@/services/updateCheck';
 
 interface Props {
   version: string;
-  url: string;
   onDismiss: () => void;
 }
 
-export function UpdateBanner({ version, url, onDismiss }: Props) {
+export function UpdateBanner({ version, onDismiss }: Props) {
   const insets = useSafeAreaInsets();
   const scheme = (useColorScheme() ?? 'light') as 'light' | 'dark';
   const C = Colors[scheme];
@@ -39,7 +39,7 @@ export function UpdateBanner({ version, url, onDismiss }: Props) {
           styles.updateBtn,
           { borderColor: primary, opacity: pressed ? 0.7 : 1 },
         ]}
-        onPress={() => Linking.openURL(url)}
+        onPress={() => openAppStore()}
         hitSlop={8}
       >
         <Text style={[styles.updateBtnText, { color: primary }]}>Actualizează</Text>

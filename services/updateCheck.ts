@@ -1,22 +1,37 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
+import { Linking } from 'react-native';
 
 const BUNDLE_ID = 'com.ax.documente';
 const ITUNES_URL = `https://itunes.apple.com/lookup?bundleId=${BUNDLE_ID}&country=ro`;
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 const MONTH_MS = 30 * 24 * 60 * 60 * 1000;
 
+const APP_STORE_URL_HTTPS = 'https://apps.apple.com/ro/app/dosar-acte-documente/id6760576986';
+const APP_STORE_URL_NATIVE = 'itms-apps://apps.apple.com/ro/app/dosar-acte-documente/id6760576986';
+
 const KEY_LAST_CHECK = 'update_last_check_ts';
 const KEY_CACHED_VERSION = 'update_cached_version';
-const KEY_CACHED_URL = 'update_cached_url';
 const KEY_CACHED_RELEASE = 'update_cached_release_date';
 const KEY_DISMISSED = 'update_dismissed_version';
 
 export interface UpdateInfo {
   version: string;
-  url: string;
   /** true dacă versiunea din App Store a fost lansată cu >30 de zile în urmă */
   mandatory: boolean;
+}
+
+/**
+ * Deschide pagina app-ului în App Store.
+ * Folosește schema `itms-apps://` pentru a forța deschiderea în aplicația
+ * App Store (nu în Safari, care poate eșua cu "Cannot connect" pe rețele
+ * slabe sau la conturi Apple cu region mismatch). Fallback la `https://`
+ * dacă schema nu e suportată.
+ */
+export function openAppStore(): Promise<void> {
+  return Linking.openURL(APP_STORE_URL_NATIVE).catch(() =>
+    Linking.openURL(APP_STORE_URL_HTTPS)
+  ) as Promise<void>;
 }
 
 function currentVersion(): string {
@@ -49,21 +64,18 @@ function isNewer(storeVer: string, installedVer: string): boolean {
  */
 export async function checkForUpdate(): Promise<UpdateInfo | null> {
   try {
-    const [dismissed, lastCheckStr, cachedVersion, cachedUrl, cachedRelease] =
-      await AsyncStorage.multiGet([
-        KEY_DISMISSED,
-        KEY_LAST_CHECK,
-        KEY_CACHED_VERSION,
-        KEY_CACHED_URL,
-        KEY_CACHED_RELEASE,
-      ]).then(pairs => pairs.map(([, v]) => v));
+    const [dismissed, lastCheckStr, cachedVersion, cachedRelease] = await AsyncStorage.multiGet([
+      KEY_DISMISSED,
+      KEY_LAST_CHECK,
+      KEY_CACHED_VERSION,
+      KEY_CACHED_RELEASE,
+    ]).then(pairs => pairs.map(([, v]) => v));
 
     const now = Date.now();
     const cacheAge = lastCheckStr ? now - parseInt(lastCheckStr, 10) : Infinity;
-    const cacheValid = cacheAge < WEEK_MS && !!cachedVersion && !!cachedUrl && !!cachedRelease;
+    const cacheValid = cacheAge < WEEK_MS && !!cachedVersion && !!cachedRelease;
 
     let storeVersion: string;
-    let storeUrl: string;
     let releaseTs: number;
     // mandatory=true doar pe verificare live — niciodată din cache.
     // Dacă nu putem confirma live (offline, app dispărut din store, timeout),
@@ -72,7 +84,6 @@ export async function checkForUpdate(): Promise<UpdateInfo | null> {
 
     if (cacheValid) {
       storeVersion = cachedVersion!;
-      storeUrl = cachedUrl!;
       releaseTs = parseInt(cachedRelease!, 10);
       fromCache = true;
     } else {
@@ -82,7 +93,6 @@ export async function checkForUpdate(): Promise<UpdateInfo | null> {
       let data: {
         results?: Array<{
           version: string;
-          trackViewUrl: string;
           currentVersionReleaseDate: string;
         }>;
       };
@@ -96,20 +106,18 @@ export async function checkForUpdate(): Promise<UpdateInfo | null> {
 
       const result = data.results?.[0];
       // Dacă app-ul nu mai e în App Store (results goale) → curăță cache, nicio blocare
-      if (!result?.version || !result?.trackViewUrl) {
-        await AsyncStorage.multiRemove([KEY_CACHED_VERSION, KEY_CACHED_URL, KEY_CACHED_RELEASE]);
+      if (!result?.version) {
+        await AsyncStorage.multiRemove([KEY_CACHED_VERSION, KEY_CACHED_RELEASE]);
         return null;
       }
 
       storeVersion = result.version;
-      storeUrl = result.trackViewUrl;
       releaseTs = new Date(result.currentVersionReleaseDate ?? now).getTime();
       fromCache = false;
 
       await AsyncStorage.multiSet([
         [KEY_LAST_CHECK, String(now)],
         [KEY_CACHED_VERSION, storeVersion],
-        [KEY_CACHED_URL, storeUrl],
         [KEY_CACHED_RELEASE, String(releaseTs)],
       ]);
     }
@@ -124,7 +132,7 @@ export async function checkForUpdate(): Promise<UpdateInfo | null> {
     // Dacă e dismissat și NU e obligatoriu — respectă dorința utilizatorului
     if (!mandatory && dismissed === storeVersion) return null;
 
-    return { version: storeVersion, url: storeUrl, mandatory };
+    return { version: storeVersion, mandatory };
   } catch {
     return null;
   }
@@ -147,7 +155,6 @@ export async function checkForUpdateForced(): Promise<UpdateInfo | null> {
     let data: {
       results?: Array<{
         version: string;
-        trackViewUrl: string;
         currentVersionReleaseDate: string;
       }>;
     };
@@ -160,10 +167,9 @@ export async function checkForUpdateForced(): Promise<UpdateInfo | null> {
     }
 
     const result = data.results?.[0];
-    if (!result?.version || !result?.trackViewUrl) return null;
+    if (!result?.version) return null;
 
     const storeVersion = result.version;
-    const storeUrl = result.trackViewUrl;
     const releaseTs = new Date(result.currentVersionReleaseDate ?? Date.now()).getTime();
 
     // Actualizează cache-ul
@@ -171,14 +177,13 @@ export async function checkForUpdateForced(): Promise<UpdateInfo | null> {
     await AsyncStorage.multiSet([
       [KEY_LAST_CHECK, String(now)],
       [KEY_CACHED_VERSION, storeVersion],
-      [KEY_CACHED_URL, storeUrl],
       [KEY_CACHED_RELEASE, String(releaseTs)],
     ]);
 
     if (!isNewer(storeVersion, currentVersion())) return null;
 
     const mandatory = now - releaseTs > MONTH_MS;
-    return { version: storeVersion, url: storeUrl, mandatory };
+    return { version: storeVersion, mandatory };
   } catch {
     return null;
   }

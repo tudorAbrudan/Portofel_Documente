@@ -34,7 +34,14 @@ import type { AiProviderType } from '@/services/aiProvider';
 import { AI_CONSENT_KEY } from '@/services/aiProvider';
 import { scheduleExpirationReminders } from '@/services/notifications';
 import { exportBackup, importBackup } from '@/services/backup';
-import { checkForUpdateForced } from '@/services/updateCheck';
+import { checkForUpdateForced, openAppStore } from '@/services/updateCheck';
+import {
+  getLastCrash,
+  clearLastCrash,
+  formatCrashForClipboard,
+  type NativeCrashReport,
+} from '@/services/crashReporter';
+import * as Clipboard from 'expo-clipboard';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { db } from '@/services/db';
 import { useCustomTypes } from '@/hooks/useCustomTypes';
@@ -283,6 +290,7 @@ export default function SetariScreen() {
   const [entitiesCollapsed, setEntitiesCollapsed] = useState(true);
   const [docTypesCollapsed, setDocTypesCollapsed] = useState(true);
   const [aspectCollapsed, setAspectCollapsed] = useState(true);
+  const [lastCrash, setLastCrash] = useState<NativeCrashReport | null>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -311,7 +319,38 @@ export default function SetariScreen() {
       setDownloadedModelIds(downloaded);
       localModel.getSelectedModelId().then(setSelectedLocalModelId);
     })();
+    getLastCrash().then(setLastCrash);
   }, []);
+
+  // ── Diagnostic / crash report ────────────────────────────────────────────────
+  const handleCopyCrash = async () => {
+    if (!lastCrash) return;
+    try {
+      await Clipboard.setStringAsync(formatCrashForClipboard(lastCrash));
+      Alert.alert('Copiat', 'Detaliile crash-ului au fost copiate în clipboard.');
+    } catch {
+      Alert.alert('Eroare', 'Nu am putut copia în clipboard.');
+    }
+  };
+
+  const handleClearCrash = () => {
+    if (!lastCrash) return;
+    Alert.alert(
+      'Șterge raportul',
+      'Vrei să ștergi raportul de crash salvat? Nu mai poate fi recuperat.',
+      [
+        { text: 'Anulează', style: 'cancel' },
+        {
+          text: 'Șterge',
+          style: 'destructive',
+          onPress: async () => {
+            await clearLastCrash();
+            setLastCrash(null);
+          },
+        },
+      ]
+    );
+  };
 
   // ── App lock ─────────────────────────────────────────────────────────────────
   const handleAppLockToggle = (value: boolean) => {
@@ -708,7 +747,7 @@ export default function SetariScreen() {
           `Versiunea ${info.version} este disponibilă în App Store.`,
           [
             { text: 'Mai târziu', style: 'cancel' },
-            { text: 'Actualizează', onPress: () => Linking.openURL(info.url) },
+            { text: 'Actualizează', onPress: () => openAppStore() },
           ]
         );
       } else {
@@ -1269,6 +1308,57 @@ export default function SetariScreen() {
             scheme={scheme}
           />
         </RNView>
+
+        {/* ── Diagnostic / ultimul crash ── */}
+        {lastCrash && (
+          <>
+            <RNText style={[styles.sectionLabel, { color: C.textSecondary }]}>DIAGNOSTIC</RNText>
+            <RNView style={[styles.card, { backgroundColor: C.card, shadowColor: C.cardShadow }]}>
+              <RNView style={[styles.row, { borderBottomColor: C.border }]}>
+                <RNView style={styles.rowLeft}>
+                  <RNView style={[styles.rowIcon, { backgroundColor: '#FFEBEE' }]}>
+                    <Ionicons name="bug-outline" size={18} color={statusColors.critical} />
+                  </RNView>
+                  <RNView style={styles.rowLabelWrap}>
+                    <RNText style={[styles.rowLabel, { color: C.text }]}>Ultimul crash</RNText>
+                    <RNText style={[styles.rowSub, { color: C.textSecondary }]}>
+                      {`v${lastCrash.appVersion} (build ${lastCrash.buildNumber}) · ${new Date(
+                        lastCrash.timestamp
+                      ).toLocaleString('ro-RO')}`}
+                    </RNText>
+                  </RNView>
+                </RNView>
+              </RNView>
+              <RNText style={[styles.hint, { color: C.textSecondary }]}>
+                {`${lastCrash.name}${lastCrash.reason ? `: ${lastCrash.reason}` : ''}`}
+              </RNText>
+              <Pressable
+                style={({ pressed }) => [styles.btn, { opacity: pressed ? 0.85 : 1 }]}
+                onPress={handleCopyCrash}
+              >
+                <Ionicons name="copy-outline" size={18} color="#fff" style={styles.btnIcon} />
+                <RNText style={styles.btnText}>Copiază detalii</RNText>
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.btnOutline,
+                  { borderColor: statusColors.critical, opacity: pressed ? 0.85 : 1 },
+                ]}
+                onPress={handleClearCrash}
+              >
+                <Ionicons
+                  name="trash-outline"
+                  size={18}
+                  color={statusColors.critical}
+                  style={styles.btnIcon}
+                />
+                <RNText style={[styles.btnOutlineText, { color: statusColors.critical }]}>
+                  Șterge raportul
+                </RNText>
+              </Pressable>
+            </RNView>
+          </>
+        )}
 
         {/* ── Despre aplicație ── */}
         <RNText style={[styles.sectionLabel, { color: C.textSecondary }]}>DESPRE APLICAȚIE</RNText>

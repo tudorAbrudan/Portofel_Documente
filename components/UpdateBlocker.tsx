@@ -1,17 +1,17 @@
-import { Pressable, Linking, StyleSheet, Platform } from 'react-native';
+import { Pressable, StyleSheet, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Text, View } from '@/components/Themed';
 import { primary } from '@/theme/colors';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
+import { openAppStore } from '@/services/updateCheck';
 
 interface Props {
   version: string;
-  url: string;
 }
 
-export function UpdateBlocker({ version, url }: Props) {
+export function UpdateBlocker({ version }: Props) {
   const insets = useSafeAreaInsets();
   const scheme = (useColorScheme() ?? 'light') as 'light' | 'dark';
   const C = Colors[scheme];
@@ -41,7 +41,7 @@ export function UpdateBlocker({ version, url }: Props) {
             styles.btn,
             { backgroundColor: primary, opacity: pressed ? 0.85 : 1 },
           ]}
-          onPress={() => Linking.openURL(url)}
+          onPress={() => openAppStore()}
         >
           <Ionicons name="logo-apple-appstore" size={20} color="#fff" style={styles.btnIcon} />
           <Text style={styles.btnText}>Actualizează din App Store</Text>
