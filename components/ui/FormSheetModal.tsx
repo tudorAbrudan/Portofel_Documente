@@ -44,7 +44,7 @@ export function FormSheetModal({
       visible={visible}
       animationType="slide"
       presentationStyle="pageSheet"
-      onRequestClose={onClose}
+      onRequestClose={saving ? () => {} : onClose}
     >
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -52,7 +52,9 @@ export function FormSheetModal({
       >
         <View style={[styles.header, { borderBottomColor: C.border }]}>
           <Pressable onPress={onClose} disabled={saving} hitSlop={12}>
-            <Text style={[styles.action, { color: C.textSecondary }]}>{cancelLabel}</Text>
+            <Text style={[styles.action, { color: C.textSecondary }, saving && styles.actionDisabled]}>
+              {cancelLabel}
+            </Text>
           </Pressable>
           <Text style={[styles.title, { color: C.text }]} numberOfLines={1}>
             {title}
