@@ -4,9 +4,6 @@ import {
   ScrollView,
   Pressable,
   Alert,
-  Modal,
-  KeyboardAvoidingView,
-  Platform,
   ActivityIndicator,
   TextInput,
   Switch,
@@ -19,6 +16,7 @@ import { useColorScheme } from '@/components/useColorScheme';
 import { primary, light, dark } from '@/theme/colors';
 import { DatePickerField } from '@/components/DatePickerField';
 import { FuelConsumptionChart } from '@/components/FuelConsumptionChart';
+import { FormSheetModal } from '@/components/ui/FormSheetModal';
 import {
   getFuelRecords,
   addFuelRecord,
@@ -427,169 +425,148 @@ export default function FuelScreen() {
       </Pressable>
 
       {/* Modal adaugă bon */}
-      <Modal
+      <FormSheetModal
         visible={modalVisible}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setModalVisible(false)}
+        title={editingId ? 'Editează bon' : 'Bon alimentare'}
+        onClose={() => setModalVisible(false)}
+        onSave={handleSaveRecord}
+        saving={mLoading}
       >
-        <KeyboardAvoidingView
-          style={styles.modalOverlay}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        {/* OCR */}
+        <Pressable
+          style={({ pressed }) => [styles.ocrBtn, pressed && styles.btnPressed]}
+          onPress={handleScanReceipt}
+          disabled={mLoading}
         >
-          <View style={[styles.modalContent, { backgroundColor: palette.card }]}>
-            <Text style={styles.modalTitle}>{editingId ? 'Editează bon' : 'Bon alimentare'}</Text>
+          <Text style={styles.ocrBtnText}>
+            {mLoading ? 'Se procesează...' : '📷 Fotografiază bonul (OCR)'}
+          </Text>
+        </Pressable>
 
-            {/* OCR */}
-            <Pressable
-              style={({ pressed }) => [styles.ocrBtn, pressed && styles.btnPressed]}
-              onPress={handleScanReceipt}
-              disabled={mLoading}
-            >
-              <Text style={styles.ocrBtnText}>
-                {mLoading ? 'Se procesează...' : '📷 Fotografiază bonul (OCR)'}
-              </Text>
-            </Pressable>
+        <DatePickerField label="Data" value={mDate} onChange={setMDate} disabled={mLoading} />
 
-            <DatePickerField label="Data" value={mDate} onChange={setMDate} disabled={mLoading} />
+        <View>
+          <Text style={[styles.modalLabel, { color: palette.textSecondary }]}>Benzinărie</Text>
+          <TextInput
+            style={[
+              styles.modalInput,
+              {
+                borderColor: palette.border,
+                color: colors.text,
+                backgroundColor: palette.background,
+              },
+            ]}
+            value={mStation}
+            onChangeText={setMStation}
+            placeholder="Ex: OMV Cluj-Napoca, Calea Turzii"
+            placeholderTextColor={palette.textSecondary}
+            editable={!mLoading}
+          />
+        </View>
 
-            <Text style={[styles.modalLabel, { color: palette.textSecondary }]}>Benzinărie</Text>
-            <TextInput
-              style={[
-                styles.modalInput,
-                {
-                  borderColor: palette.border,
-                  color: colors.text,
-                  backgroundColor: palette.background,
-                },
-              ]}
-              value={mStation}
-              onChangeText={setMStation}
-              placeholder="Ex: OMV Cluj-Napoca, Calea Turzii"
-              placeholderTextColor={palette.textSecondary}
-              editable={!mLoading}
-            />
+        <View>
+          <Text style={[styles.modalLabel, { color: palette.textSecondary }]}>Nr. pompă</Text>
+          <TextInput
+            style={[
+              styles.modalInput,
+              {
+                borderColor: palette.border,
+                color: colors.text,
+                backgroundColor: palette.background,
+              },
+            ]}
+            value={mPump}
+            onChangeText={setMPump}
+            placeholder="Ex: 4"
+            placeholderTextColor={palette.textSecondary}
+            keyboardType="default"
+            editable={!mLoading}
+          />
+        </View>
 
-            <Text style={[styles.modalLabel, { color: palette.textSecondary }]}>Nr. pompă</Text>
-            <TextInput
-              style={[
-                styles.modalInput,
-                {
-                  borderColor: palette.border,
-                  color: colors.text,
-                  backgroundColor: palette.background,
-                },
-              ]}
-              value={mPump}
-              onChangeText={setMPump}
-              placeholder="Ex: 4"
-              placeholderTextColor={palette.textSecondary}
-              keyboardType="default"
-              editable={!mLoading}
-            />
+        <View>
+          <Text style={[styles.modalLabel, { color: palette.textSecondary }]}>Litri</Text>
+          <TextInput
+            style={[
+              styles.modalInput,
+              {
+                borderColor: palette.border,
+                color: colors.text,
+                backgroundColor: palette.background,
+              },
+            ]}
+            value={mLiters}
+            onChangeText={setMLiters}
+            placeholder="Ex: 45.23"
+            placeholderTextColor={palette.textSecondary}
+            keyboardType="decimal-pad"
+            editable={!mLoading}
+          />
+        </View>
 
-            <Text style={[styles.modalLabel, { color: palette.textSecondary }]}>Litri</Text>
-            <TextInput
-              style={[
-                styles.modalInput,
-                {
-                  borderColor: palette.border,
-                  color: colors.text,
-                  backgroundColor: palette.background,
-                },
-              ]}
-              value={mLiters}
-              onChangeText={setMLiters}
-              placeholder="Ex: 45.23"
-              placeholderTextColor={palette.textSecondary}
-              keyboardType="decimal-pad"
-              editable={!mLoading}
-            />
+        <View>
+          <Text style={[styles.modalLabel, { color: palette.textSecondary }]}>
+            KM total (odometru)
+          </Text>
+          <TextInput
+            style={[
+              styles.modalInput,
+              {
+                borderColor: palette.border,
+                color: colors.text,
+                backgroundColor: palette.background,
+              },
+            ]}
+            value={mKm}
+            onChangeText={setMKm}
+            placeholder={
+              lastKm !== undefined
+                ? `Anterior: ${lastKm.toLocaleString('ro-RO')}`
+                : 'Ex: 125430'
+            }
+            placeholderTextColor={palette.textSecondary}
+            keyboardType="number-pad"
+            editable={!mLoading}
+          />
+        </View>
 
-            <Text style={[styles.modalLabel, { color: palette.textSecondary }]}>
-              KM total (odometru)
-            </Text>
-            <TextInput
-              style={[
-                styles.modalInput,
-                {
-                  borderColor: palette.border,
-                  color: colors.text,
-                  backgroundColor: palette.background,
-                },
-              ]}
-              value={mKm}
-              onChangeText={setMKm}
-              placeholder={
-                lastKm !== undefined ? `Anterior: ${lastKm.toLocaleString('ro-RO')}` : 'Ex: 125430'
-              }
-              placeholderTextColor={palette.textSecondary}
-              keyboardType="number-pad"
-              editable={!mLoading}
-            />
+        <View style={styles.isFullRow}>
+          <Text style={[styles.modalLabel, { color: palette.textSecondary }]}>Plin complet</Text>
+          <Switch
+            value={mIsFull}
+            onValueChange={setMIsFull}
+            trackColor={{ false: palette.border, true: primary }}
+            disabled={mLoading}
+          />
+        </View>
+        {!mIsFull && (
+          <Text style={[styles.isFullHint, { color: palette.textSecondary }]}>
+            Litrii nu vor fi contați în consum până la următorul plin complet.
+          </Text>
+        )}
 
-            <View style={styles.isFullRow}>
-              <Text style={[styles.modalLabel, { color: palette.textSecondary }]}>
-                Plin complet
-              </Text>
-              <Switch
-                value={mIsFull}
-                onValueChange={setMIsFull}
-                trackColor={{ false: palette.border, true: primary }}
-                disabled={mLoading}
-              />
-            </View>
-            {!mIsFull && (
-              <Text style={[styles.isFullHint, { color: palette.textSecondary }]}>
-                Litrii nu vor fi contați în consum până la următorul plin complet.
-              </Text>
-            )}
-
-            <Text style={[styles.modalLabel, { color: palette.textSecondary }]}>
-              Preț total (RON)
-            </Text>
-            <TextInput
-              style={[
-                styles.modalInput,
-                {
-                  borderColor: palette.border,
-                  color: colors.text,
-                  backgroundColor: palette.background,
-                },
-              ]}
-              value={mPrice}
-              onChangeText={setMPrice}
-              placeholder="Ex: 280.50"
-              placeholderTextColor={palette.textSecondary}
-              keyboardType="decimal-pad"
-              editable={!mLoading}
-            />
-
-            <View style={styles.modalButtons}>
-              <Pressable
-                style={({ pressed }) => [
-                  styles.modalCancelBtn,
-                  { borderColor: palette.border },
-                  pressed && styles.btnPressed,
-                ]}
-                onPress={() => setModalVisible(false)}
-                disabled={mLoading}
-              >
-                <Text style={[styles.modalCancelText, { color: palette.textSecondary }]}>
-                  Anulare
-                </Text>
-              </Pressable>
-              <Pressable
-                style={({ pressed }) => [styles.modalSaveBtn, pressed && styles.btnPressed]}
-                onPress={handleSaveRecord}
-                disabled={mLoading}
-              >
-                <Text style={styles.modalSaveText}>{mLoading ? 'Se salvează...' : 'Salvează'}</Text>
-              </Pressable>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
+        <View>
+          <Text style={[styles.modalLabel, { color: palette.textSecondary }]}>
+            Preț total (RON)
+          </Text>
+          <TextInput
+            style={[
+              styles.modalInput,
+              {
+                borderColor: palette.border,
+                color: colors.text,
+                backgroundColor: palette.background,
+              },
+            ]}
+            value={mPrice}
+            onChangeText={setMPrice}
+            placeholder="Ex: 280.50"
+            placeholderTextColor={palette.textSecondary}
+            keyboardType="decimal-pad"
+            editable={!mLoading}
+          />
+        </View>
+      </FormSheetModal>
     </View>
   );
 }
@@ -698,18 +675,6 @@ const styles = StyleSheet.create({
   fabText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 
   // Modal
-  modalOverlay: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.45)',
-  },
-  modalContent: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
-    paddingBottom: 36,
-  },
-  modalTitle: { fontSize: 18, fontWeight: '700', marginBottom: 16 },
   modalLabel: { fontSize: 13, marginBottom: 5 },
   modalInput: {
     borderWidth: 1,
@@ -728,29 +693,6 @@ const styles = StyleSheet.create({
     marginBottom: 18,
   },
   ocrBtnText: { color: primary, fontSize: 15, fontWeight: '600' },
-  modalButtons: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 4,
-    backgroundColor: 'transparent',
-  },
-  modalCancelBtn: {
-    flex: 1,
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingVertical: 13,
-    alignItems: 'center',
-  },
-  modalCancelText: { fontSize: 15 },
-  modalSaveBtn: {
-    flex: 1,
-    backgroundColor: primary,
-    borderRadius: 12,
-    paddingVertical: 13,
-    alignItems: 'center',
-  },
-  modalSaveText: { color: '#fff', fontSize: 15, fontWeight: '600' },
-
   isFullRow: {
     flexDirection: 'row',
     alignItems: 'center',
