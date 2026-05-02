@@ -76,6 +76,70 @@ export interface FuelAiResult {
   station?: string;
 }
 
+export function validateFuelAiResponse(parsed: unknown): FuelAiResult {
+  const r: FuelAiResult = {};
+  if (!parsed || typeof parsed !== 'object') return r;
+  const p = parsed as Record<string, unknown>;
+
+  // liters: număr pozitiv, plauzibil pentru un bon (0.5 < L < 200)
+  if (typeof p.liters === 'number' && p.liters > 0.5 && p.liters < 200) {
+    r.liters = p.liters;
+  }
+
+  // price: număr pozitiv, plauzibil (1 < RON < 5000)
+  if (typeof p.price === 'number' && p.price > 1 && p.price < 5000) {
+    r.price = p.price;
+  }
+
+  // km: integer plauzibil (1000 < km < 9_999_999)
+  if (
+    typeof p.km === 'number' &&
+    Number.isInteger(p.km) &&
+    p.km > 1000 &&
+    p.km < 9_999_999
+  ) {
+    r.km = p.km;
+  }
+
+  // date: YYYY-MM-DD valid, în ultimii 2 ani și nu în viitor
+  if (typeof p.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(p.date)) {
+    const d = new Date(p.date);
+    const now = new Date();
+    const twoYearsAgo = new Date(now.getFullYear() - 2, now.getMonth(), now.getDate());
+    if (!isNaN(d.getTime()) && d <= now && d >= twoYearsAgo) {
+      r.date = p.date;
+    }
+  }
+
+  // station: string non-vid, max 100 chars
+  if (typeof p.station === 'string' && p.station.trim()) {
+    r.station = p.station.trim().slice(0, 100);
+  }
+
+  return r;
+}
+
+export interface FuelMergeRegexInput {
+  liters?: number;
+  km?: number;
+  price?: number;
+  date?: string;
+  station?: string;
+}
+
+export function mergeFuelResults(
+  ai: FuelAiResult,
+  regex: FuelMergeRegexInput
+): FuelAiResult {
+  return {
+    liters: ai.liters ?? regex.liters,
+    km: ai.km ?? regex.km,
+    price: ai.price ?? regex.price,
+    date: ai.date ?? regex.date,
+    station: ai.station ?? regex.station,
+  };
+}
+
 // ─── Mapper principal ─────────────────────────────────────────────────────────
 
 export async function mapOcrWithAi(
