@@ -25,6 +25,12 @@ type Props = {
   headerLeft?: ReactNode;
   headerRight?: ReactNode;
   scrollContentStyle?: ViewStyle;
+  /** iOS: offset pentru KeyboardAvoidingView (ex. înălțimea headerului). */
+  keyboardVerticalOffset?: number;
+  /** Comportament dismiss tastatură la scroll. Default: niciunul. */
+  keyboardDismissMode?: 'none' | 'on-drag' | 'interactive';
+  /** iOS: ajustează automat insets-urile când apare tastatura. */
+  automaticallyAdjustKeyboardInsets?: boolean;
   children: ReactNode;
 };
 
@@ -45,6 +51,9 @@ export function FormPageScreen({
   headerLeft,
   headerRight,
   scrollContentStyle,
+  keyboardVerticalOffset,
+  keyboardDismissMode,
+  automaticallyAdjustKeyboardInsets,
   children,
 }: Props) {
   const scheme = (useColorScheme() ?? 'light') as 'light' | 'dark';
@@ -61,12 +70,15 @@ export function FormPageScreen({
       />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={keyboardVerticalOffset}
         style={[styles.flex, { backgroundColor: C.background }]}
       >
         <ScrollView
           style={styles.flex}
           contentContainerStyle={[styles.content, scrollContentStyle]}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={keyboardDismissMode}
+          automaticallyAdjustKeyboardInsets={automaticallyAdjustKeyboardInsets}
           showsVerticalScrollIndicator={false}
         >
           {children}
