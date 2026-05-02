@@ -6,12 +6,7 @@ import { FormSheetModal } from '@/components/ui/FormSheetModal';
 describe('FormSheetModal', () => {
   it('randează titlul și butoanele când e vizibil', () => {
     const { getByText } = render(
-      <FormSheetModal
-        visible
-        title="Titlu test"
-        onClose={() => {}}
-        onSave={() => {}}
-      >
+      <FormSheetModal visible title="Titlu test" onClose={() => {}} onSave={() => {}}>
         <Text>Conținut</Text>
       </FormSheetModal>
     );
@@ -25,12 +20,7 @@ describe('FormSheetModal', () => {
   it('apelează onClose la tap pe Anulează', () => {
     const onClose = jest.fn();
     const { getByText } = render(
-      <FormSheetModal
-        visible
-        title="X"
-        onClose={onClose}
-        onSave={() => {}}
-      >
+      <FormSheetModal visible title="X" onClose={onClose} onSave={() => {}}>
         <Text>x</Text>
       </FormSheetModal>
     );
@@ -42,12 +32,7 @@ describe('FormSheetModal', () => {
   it('apelează onSave la tap pe Salvează', () => {
     const onSave = jest.fn();
     const { getByText } = render(
-      <FormSheetModal
-        visible
-        title="X"
-        onClose={() => {}}
-        onSave={onSave}
-      >
+      <FormSheetModal visible title="X" onClose={() => {}} onSave={onSave}>
         <Text>x</Text>
       </FormSheetModal>
     );
@@ -59,13 +44,7 @@ describe('FormSheetModal', () => {
   it('arată Salvez... și blochează butonul când saving=true', () => {
     const onSave = jest.fn();
     const { getByText } = render(
-      <FormSheetModal
-        visible
-        title="X"
-        onClose={() => {}}
-        onSave={onSave}
-        saving
-      >
+      <FormSheetModal visible title="X" onClose={() => {}} onSave={onSave} saving>
         <Text>x</Text>
       </FormSheetModal>
     );
