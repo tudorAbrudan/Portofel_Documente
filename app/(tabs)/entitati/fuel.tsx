@@ -25,6 +25,8 @@ import {
   computeFuelStats,
 } from '@/services/fuel';
 import { extractText, extractFuelInfo } from '@/services/ocr';
+import { mapFuelReceiptWithAi, mergeFuelResults } from '@/services/aiOcrMapper';
+import * as FileSystem from 'expo-file-system/legacy';
 import type { FuelRecord, FuelStats } from '@/services/fuel';
 
 function todayIso(): string {
@@ -121,24 +123,61 @@ export default function FuelScreen() {
       Alert.alert('Permisiune refuzată', 'Aplicația nu are acces la cameră.');
       return;
     }
-    const result = await ImagePicker.launchCameraAsync({ allowsEditing: true, quality: 0.9 });
+    const result = await ImagePicker.launchCameraAsync({
+      allowsEditing: true,
+      quality: 0.9,
+      base64: true,
+    });
     if (result.canceled || !result.assets || result.assets.length === 0) return;
-    const uri = result.assets[0].uri;
+    const asset = result.assets[0];
+    const uri = asset.uri;
+
     setMLoading(true);
     try {
-      const { text } = await extractText(uri);
-      const info = extractFuelInfo(text);
-      if (!info.liters && !info.km && !info.price && !info.date && !info.station) {
-        Alert.alert('OCR', 'Nu s-au putut extrage date din bon. Completează manual.');
-      } else {
-        if (info.date) setMDate(info.date);
-        if (info.liters !== undefined) setMLiters(String(info.liters));
-        if (info.km !== undefined) setMKm(String(info.km));
-        if (info.price !== undefined) setMPrice(String(info.price));
-        if (info.station) setMStation(info.station);
+      let ocrText = '';
+      try {
+        const ocr = await extractText(uri);
+        ocrText = ocr.text;
+      } catch {
+        Alert.alert('Eroare OCR', 'Nu s-a putut citi bonul. Completează manual.');
+        return;
       }
-    } catch {
-      Alert.alert('Eroare OCR', 'Nu s-a putut citi bonul. Completează manual.');
+
+      const base64 =
+        asset.base64 ??
+        (await FileSystem.readAsStringAsync(uri, {
+          encoding: FileSystem.EncodingType.Base64,
+        }));
+
+      let aiResult = {} as Awaited<ReturnType<typeof mapFuelReceiptWithAi>>;
+      try {
+        aiResult = await mapFuelReceiptWithAi(ocrText, base64);
+      } catch (err) {
+        console.warn(
+          '[fuel-ai] failed:',
+          err instanceof Error ? err.message : 'unknown error'
+        );
+      }
+
+      const regexResult = extractFuelInfo(ocrText);
+      const final = mergeFuelResults(aiResult, regexResult);
+
+      if (
+        final.liters === undefined &&
+        final.km === undefined &&
+        final.price === undefined &&
+        final.date === undefined &&
+        final.station === undefined
+      ) {
+        Alert.alert('OCR', 'Nu s-au putut extrage date din bon. Completează manual.');
+        return;
+      }
+
+      if (final.date) setMDate(final.date);
+      if (final.liters !== undefined) setMLiters(String(final.liters));
+      if (final.km !== undefined) setMKm(String(final.km));
+      if (final.price !== undefined) setMPrice(String(final.price));
+      if (final.station) setMStation(final.station);
     } finally {
       setMLoading(false);
     }
@@ -439,7 +478,7 @@ export default function FuelScreen() {
           disabled={mLoading}
         >
           <Text style={styles.ocrBtnText}>
-            {mLoading ? 'Se procesează...' : '📷 Fotografiază bonul (OCR)'}
+            {mLoading ? 'Se analizează bonul...' : '📷 Fotografiază bonul (OCR)'}
           </Text>
         </Pressable>
 
