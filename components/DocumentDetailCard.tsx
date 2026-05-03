@@ -30,7 +30,7 @@ export function DocumentDetailCard({ title, header, tone = 'default', children }
     }
   }
   const renderedChildren = childArray.map((child, idx) => {
-    if (idx === lastRowIdx && isValidElement(child)) {
+    if (idx === lastRowIdx && isValidElement(child) && child.type === DocumentDetailRow) {
       return cloneElement(child as React.ReactElement<{ last?: boolean }>, { last: true });
     }
     return child;
