@@ -44,7 +44,8 @@ export function DocumentDetailCard({ title, header, tone = 'default', children }
           backgroundColor: isSensitive ? palette.sensitiveBg : palette.card,
           borderColor: isSensitive ? palette.sensitiveBorder : 'transparent',
           borderWidth: isSensitive ? 1 : 0,
-          shadowColor: isSensitive ? 'transparent' : '#000',
+          shadowColor: isSensitive ? 'transparent' : palette.cardShadow,
+          shadowOpacity: isSensitive ? 0 : 1,
         },
       ]}
     >
@@ -68,7 +69,6 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 12,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
     shadowRadius: 8,
     elevation: 2,
   },
