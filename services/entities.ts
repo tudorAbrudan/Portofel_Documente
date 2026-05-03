@@ -4,6 +4,9 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { toFileUri } from './fileUtils';
 import { assignNextOrder, removeOrder } from './entityOrder';
 import { emit } from './events';
+import * as cloudSync from './cloudSync';
+import { getCloudBackupEnabled } from './settings';
+import { isImportInProgress } from './backup';
 
 // Fallback sort pentru entități care nu au rând în entity_order (edge case:
 // migrarea nu a rulat sau entitatea a fost creată în afara căii standard).
@@ -169,10 +172,34 @@ export async function updateVehicle(
   plate_number?: string | null,
   fuel_type?: 'diesel' | 'benzina' | 'gpl' | 'electric' | null
 ): Promise<void> {
+  // Read previous photo so we can sync changes to the cloud queue.
+  const prev = await db.getFirstAsync<{ photo_uri: string | null }>(
+    'SELECT photo_uri FROM vehicles WHERE id = ?',
+    [id]
+  );
+  const previousPhoto = prev?.photo_uri ?? null;
+  const nextPhoto = photo_uri ?? null;
+
   await db.runAsync(
     'UPDATE vehicles SET name = ?, photo_uri = ?, plate_number = ?, fuel_type = ? WHERE id = ?',
-    [name, photo_uri ?? null, plate_number ?? null, fuel_type ?? 'diesel', id]
+    [name, nextPhoto, plate_number ?? null, fuel_type ?? 'diesel', id]
   );
+
+  if (previousPhoto !== nextPhoto && !isImportInProgress()) {
+    const cloudEnabled = await getCloudBackupEnabled();
+    if (cloudEnabled) {
+      if (previousPhoto) {
+        await cloudSync.dequeueFileDelete(previousPhoto);
+      }
+      if (nextPhoto) {
+        await cloudSync.enqueueFileUpload(nextPhoto);
+        cloudSync.processQueue().catch(() => {
+          /* fire and forget */
+        });
+      }
+    }
+  }
+
   emit('entities:changed');
 }
 
@@ -209,13 +236,15 @@ export async function deleteProperty(id: string): Promise<void> {
 
 export async function deleteVehicle(id: string): Promise<void> {
   // Șterge fișierul poză dacă există (best-effort, fără eroare fatală)
+  let storedPhoto: string | null = null;
   try {
     const row = await db.getFirstAsync<{ photo_uri: string | null }>(
       'SELECT photo_uri FROM vehicles WHERE id = ?',
       [id]
     );
-    if (row?.photo_uri) {
-      const absolute = toFileUri(row.photo_uri);
+    storedPhoto = row?.photo_uri ?? null;
+    if (storedPhoto) {
+      const absolute = toFileUri(storedPhoto);
       const info = await FileSystem.getInfoAsync(absolute);
       if (info.exists) {
         await FileSystem.deleteAsync(absolute, { idempotent: true });
@@ -226,6 +255,14 @@ export async function deleteVehicle(id: string): Promise<void> {
   }
   await db.runAsync('DELETE FROM vehicles WHERE id = ?', [id]);
   await removeOrder('vehicle', id);
+
+  if (storedPhoto && !isImportInProgress()) {
+    const cloudEnabled = await getCloudBackupEnabled();
+    if (cloudEnabled) {
+      await cloudSync.dequeueFileDelete(storedPhoto);
+    }
+  }
+
   emit('entities:changed');
   emit('links:changed');
   emit('documents:changed');

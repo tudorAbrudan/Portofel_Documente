@@ -52,18 +52,16 @@ export function FormSheetModal({
       >
         <View style={[styles.header, { borderBottomColor: C.border }]}>
           <Pressable onPress={onClose} disabled={saving} hitSlop={12}>
-            <Text style={[styles.action, { color: C.textSecondary }, saving && styles.actionDisabled]}>
+            <Text
+              style={[styles.action, { color: C.textSecondary }, saving && styles.actionDisabled]}
+            >
               {cancelLabel}
             </Text>
           </Pressable>
           <Text style={[styles.title, { color: C.text }]} numberOfLines={1}>
             {title}
           </Text>
-          <Pressable
-            onPress={onSave}
-            disabled={saving || saveDisabled}
-            hitSlop={12}
-          >
+          <Pressable onPress={onSave} disabled={saving || saveDisabled} hitSlop={12}>
             <Text
               style={[
                 styles.action,

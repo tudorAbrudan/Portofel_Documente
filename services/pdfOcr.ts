@@ -97,7 +97,9 @@ export async function renderAllPdfPagesAsBase64(fileUri: string): Promise<string
     let imageUri: string | null = null;
     try {
       imageUri = await _renderPdfPage(uri, i, 2.0);
-      const base64 = await FileSystem.readAsStringAsync(imageUri, { encoding: EncodingType.Base64 });
+      const base64 = await FileSystem.readAsStringAsync(imageUri, {
+        encoding: EncodingType.Base64,
+      });
       results.push(base64);
     } catch {
       // pagina nu poate fi randată — continuăm

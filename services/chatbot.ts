@@ -34,7 +34,7 @@ function extractMentionedIds(text: string): Set<string> {
  * Mapare cuvinte cheie din limbaj natural → tipuri de documente.
  * Normalizat la lowercase fără diacritice pentru matching robust.
  */
-const KEYWORD_TO_TYPES: Array<{ keywords: string[]; types: DocumentType[] }> = [
+const KEYWORD_TO_TYPES: { keywords: string[]; types: DocumentType[] }[] = [
   { keywords: ['buletin', 'ci', 'carte identitate', 'identitate'], types: ['buletin'] },
   { keywords: ['pasaport', 'pașaport', 'passport'], types: ['pasaport'] },
   { keywords: ['permis', 'sofer', 'șofer'], types: ['permis_auto'] },
@@ -171,7 +171,7 @@ function findDocsByOcrSearch(docs: Document[], searchTerms: string[]): Set<strin
 
 type VehicleDomain = 'fuel' | 'maintenance' | 'km';
 
-const KEYWORD_TO_DOMAIN: Array<{ keywords: string[]; domain: VehicleDomain }> = [
+const KEYWORD_TO_DOMAIN: { keywords: string[]; domain: VehicleDomain }[] = [
   {
     keywords: [
       'consum',
@@ -354,7 +354,6 @@ async function buildKmSummary(vehicleList: Vehicle[]): Promise<string> {
   }
   return lines.join('\n');
 }
-
 
 async function buildContext(
   userMessage: string,

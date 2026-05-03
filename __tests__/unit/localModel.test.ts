@@ -10,6 +10,9 @@ import {
   getCompatibleModels,
 } from '@/services/localModel';
 
+import * as FileSystem from 'expo-file-system/legacy';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 describe('LOCAL_MODEL_CATALOG', () => {
   it('conține exact 2 modele', () => {
     expect(LOCAL_MODEL_CATALOG).toHaveLength(2);
@@ -124,9 +127,6 @@ describe('getCompatibleModels', () => {
     expect(compatible.find(m => m.id === 'ministral-3b')).toBeDefined();
   });
 });
-
-import * as FileSystem from 'expo-file-system/legacy';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // AsyncStorage mock has __esModule: true so the default import gives the mock object directly.
 const AsyncStorageMock = AsyncStorage as unknown as {

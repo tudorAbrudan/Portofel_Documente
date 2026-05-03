@@ -11,7 +11,7 @@ type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
 function navigateToFix(kind: OrphanFixKind, id: string): void {
   if (kind === 'document_edit') {
-    router.push(`/(tabs)/documente/edit?id=${id}`);
+    router.push(`/(tabs)/documente/${id}?from=home`);
   } else {
     router.push(`/(tabs)/entitati/${id}`);
   }

@@ -48,8 +48,10 @@ export interface FuelInfo {
   liters?: number;
   km?: number;
   price?: number;
+  priceL?: number; // RON/litru (din "PRICE_PER_L X CANTITY L" pe bonurile MOL/OMV/Petrom)
   date?: string; // AAAA-LL-ZZ dacă găsit
   station?: string; // brand + adresă (ex. "OMV Cluj-Napoca, Calea Turzii")
+  pump?: number; // nr. pompă (din prefixul "*N PRODUS" pe bonurile MOL/OMV/Petrom)
 }
 
 // Branduri benzinărie cunoscute pe piața RO. Ordine: cei mai frecvenți primii.
@@ -110,25 +112,15 @@ export function extractFuelInfo(text: string): FuelInfo {
   const result: FuelInfo = {};
   const normalized = text.replace(/,/g, '.'); // normalizează virgulă → punct
 
-  // Litri: "50.23 L", "50.23l", "Cantitate: 50.23", "50.23 litri"
-  const litersPatterns = [
-    /(\d+\.?\d*)\s*[Ll](?:itri?)?(?:\b|$)/,
-    /[Cc]antitate\s*:?\s*(\d+\.?\d*)/,
-    /[Qq]uantity\s*:?\s*(\d+\.?\d*)/,
-  ];
-  for (const p of litersPatterns) {
-    const m = normalized.match(p);
-    if (m) {
-      result.liters = parseFloat(m[1]);
-      break;
-    }
-  }
-
-  // Preț total: "250.50 RON", "Total: 250.50", "Suma: 250.50 lei"
+  // Preț total: "Total: 250.50", "Suma: 250.50 lei", "250.50 RON".
+  // Word boundary pe Total + lookahead negativ ca SUBTOTAL și TOTAL TVA să nu
+  // câștige înaintea liniei TOTAL pure. Calculat ÎNAINTEA litrilor — folosit
+  // de cross-check-ul matematic pentru cantitate.
   const pricePatterns = [
-    /[Tt]otal\s*:?\s*(\d+\.?\d*)/,
-    /[Ss]uma\s*:?\s*(\d+\.?\d*)/,
-    /(\d+\.?\d*)\s*(?:RON|ron|lei|LEI)/,
+    /\bTotal\s*:\s*(\d+\.?\d*)/i,
+    /\bTotal(?!\s+TVA)\s*:?\s*(\d+\.?\d*)/i,
+    /Suma\s*:?\s*(\d+\.?\d*)/i,
+    /(\d+\.?\d*)\s*(?:RON|lei)\b/i,
   ];
   for (const p of pricePatterns) {
     const m = normalized.match(p);
@@ -138,11 +130,52 @@ export function extractFuelInfo(text: string): FuelInfo {
     }
   }
 
-  // KM odometru: "KM: 125430", "km 125430", număr de 5-6 cifre precedat de km/KM
+  // Litri — strategia ierarhică:
+  // 1. Pattern X "PRICE_PER_L X CANTITY L" (MOL/OMV/Petrom) cu cross-check
+  //    matematic: dacă |total/priceL - cantity_ocr| > 0.5L, OCR a confundat
+  //    o cifră (1↔8, 0↔6, etc.) — folosim cantitatea calculată.
+  // 2. Fallback: pattern-uri "NN.NN L", "Cantitate:", "Quantity:" (case-insensitive
+  //    obligatoriu — bonurile RO sunt de regulă ALL CAPS).
+  const xPattern = normalized.match(/(\d+\.\d+)\s*X\s*(\d+\.\d+)\s*L/i);
+  if (xPattern) {
+    const priceL = parseFloat(xPattern[1]);
+    const qtyOcr = parseFloat(xPattern[2]);
+    // Expune priceL chiar și în afara range-ului RO 4-15 (ex. bon din altă țară)
+    // — UI-ul îl va folosi pentru cross-check și ediție bidirecțională.
+    if (priceL > 0 && qtyOcr > 0 && qtyOcr < 500) {
+      result.priceL = priceL;
+    }
+    if (priceL >= 4 && priceL <= 15 && qtyOcr > 0 && qtyOcr < 500) {
+      if (result.price !== undefined) {
+        const qtyMath = Math.round((result.price / priceL) * 100) / 100;
+        result.liters = Math.abs(qtyOcr - qtyMath) > 0.5 ? qtyMath : qtyOcr;
+      } else {
+        result.liters = qtyOcr;
+      }
+    }
+  }
+  if (result.liters === undefined) {
+    const litersPatterns = [
+      /(\d+\.?\d*)\s*L(?:itri?)?(?:\b|$)/i,
+      /Cantitate\s*:?\s*(\d+\.?\d*)/i,
+      /Quantity\s*:?\s*(\d+\.?\d*)/i,
+    ];
+    for (const p of litersPatterns) {
+      const m = normalized.match(p);
+      if (m) {
+        result.liters = parseFloat(m[1]);
+        break;
+      }
+    }
+  }
+
+  // KM odometru: doar cu cuvânt-cheie explicit (Odometru/Rulaj/Kilometraj).
+  // NU folosim pattern bare "KM 12345" — ar prinde fals "AUTOSTRADA A1 KM 316360"
+  // (poziția stației pe drum) drept odometru.
   const kmPatterns = [
-    /[Kk][Mm]\s*:?\s*(\d{5,6})/,
-    /[Oo]dometru\s*:?\s*(\d{5,6})/,
-    /(\d{5,6})\s*[Kk][Mm]/,
+    /Odometru\s*:?\s*(\d{5,6})/i,
+    /Rulaj\s*:?\s*(\d{5,6})/i,
+    /Kilometraj\s*:?\s*(\d{5,6})/i,
   ];
   for (const p of kmPatterns) {
     const m = normalized.match(p);
@@ -150,6 +183,14 @@ export function extractFuelInfo(text: string): FuelInfo {
       result.km = parseInt(m[1], 10);
       break;
     }
+  }
+
+  // Nr. pompă: prefixul "*N PRODUS" la începutul liniei produsului (MOL/OMV/Petrom).
+  // Ex: "*2 MOTORINA EVO D", "*1 BENZINA 95", "*12 GPL".
+  const pumpMatch = normalized.match(/\*\s*(\d{1,2})\s+(MOTORIN|BENZIN|GPL|GAZ|DIESEL)/i);
+  if (pumpMatch) {
+    const n = parseInt(pumpMatch[1], 10);
+    if (n >= 1 && n <= 20) result.pump = n;
   }
 
   // Data: DD.MM.YYYY sau DD/MM/YYYY → convertit la AAAA-LL-ZZ
@@ -461,9 +502,7 @@ export function extractDocumentInfo(text: string): DocumentInfo {
 
   // Adresă domiciliu (prezentă pe unele CI-uri): caută după keyword "Domiciliu" sau "Adresă"
   // sau linii care conțin "Str.", "B-dul", "Calea", "Bd.", "Aleea" + număr
-  const addrByKeyword = text.match(
-    /(?:domiciliu|adres[aă])\s*:?\s*\n?\s*(.{10,120})/i
-  );
+  const addrByKeyword = text.match(/(?:domiciliu|adres[aă])\s*:?\s*\n?\s*(.{10,120})/i);
   if (addrByKeyword) {
     result.address = addrByKeyword[1].trim().replace(/\s+/g, ' ');
   } else {

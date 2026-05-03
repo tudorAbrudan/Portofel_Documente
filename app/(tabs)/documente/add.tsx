@@ -267,7 +267,7 @@ export default function AddDocumentScreen() {
     type Candidate = { entityType: EntityType; entityId: string; score: number };
     const candidates: Candidate[] = [];
 
-    const check = (etype: EntityType, items: Array<{ id: string; name: string }>) => {
+    const check = (etype: EntityType, items: { id: string; name: string }[]) => {
       for (const item of items) {
         const normName = norm(item.name);
         if (normName.length < 2) continue;

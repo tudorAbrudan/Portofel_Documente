@@ -1,7 +1,4 @@
-import {
-  getDocTypeSensitivity,
-  setPerTypeConsent,
-} from '@/services/ocrConsent';
+import { getDocTypeSensitivity, setPerTypeConsent } from '@/services/ocrConsent';
 
 describe('getDocTypeSensitivity', () => {
   it('clasifică reteta_medicala ca medical', () => {

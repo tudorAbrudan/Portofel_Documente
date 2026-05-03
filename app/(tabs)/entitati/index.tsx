@@ -125,15 +125,7 @@ export default function EntitatiListScreen() {
       if (sb !== undefined) return 1;
       return TYPE_RANK[a.entityType] - TYPE_RANK[b.entityType];
     });
-  }, [
-    persons,
-    properties,
-    vehicles,
-    cards,
-    animals,
-    companies,
-    globalOrderMap,
-  ]);
+  }, [persons, properties, vehicles, cards, animals, companies, globalOrderMap]);
 
   const rawTyped: TypedEntity[] = useMemo(
     () => (tab === 'all' ? allTyped : allTyped.filter(e => e.entityType === tab)),

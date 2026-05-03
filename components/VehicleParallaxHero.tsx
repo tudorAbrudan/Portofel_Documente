@@ -36,12 +36,7 @@ export const VehicleParallaxHero = memo(function VehicleParallaxHero({ photoUri,
       [0, -naturalHeight * 0.5],
       Extrapolation.CLAMP
     );
-    const scale = interpolate(
-      scrollY.value,
-      [-naturalHeight, 0],
-      [1.4, 1],
-      Extrapolation.CLAMP
-    );
+    const scale = interpolate(scrollY.value, [-naturalHeight, 0], [1.4, 1], Extrapolation.CLAMP);
     return {
       transform: [{ translateY }, { scale }],
     };

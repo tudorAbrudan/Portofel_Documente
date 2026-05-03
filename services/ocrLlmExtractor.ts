@@ -51,8 +51,9 @@ function buildPrompt(typeLabel: string, config: TypeConfig | undefined, ocrText:
     ? `Câmpuri specifice pentru „${typeLabel}": ${config.fieldsHint}`
     : `Câmpuri utile în metadata: supplier, amount, invoice_number, tip_contract, policy_number, plate, vin, cnp, series, marca, model, due_date, period, insurer, bank, last4, lab, doctor, product_name — DOAR dacă le găsești`;
 
-  const noteInstruction = config?.noteInstruction
-    ?? 'Rezumat structurat cu informațiile cheie: identificatori (nr. document, serie, cod, poliță, VIN etc.), date importante, sume, nume și firme relevante. Format "Câmp: Valoare", câte un câmp pe rând. Max 15 rânduri. Omite informații administrative sau redundante.';
+  const noteInstruction =
+    config?.noteInstruction ??
+    'Rezumat structurat cu informațiile cheie: identificatori (nr. document, serie, cod, poliță, VIN etc.), date importante, sume, nume și firme relevante. Format "Câmp: Valoare", câte un câmp pe rând. Max 15 rânduri. Omite informații administrative sau redundante.';
 
   const textSection = ocrText.trim()
     ? `\nText OCR (referință secundară):\n---\n${ocrText.slice(0, MAX_OCR_CHARS)}\n---`

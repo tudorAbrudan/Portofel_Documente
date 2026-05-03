@@ -91,10 +91,10 @@ export async function checkForUpdate(): Promise<UpdateInfo | null> {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 8000);
       let data: {
-        results?: Array<{
+        results?: {
           version: string;
           currentVersionReleaseDate: string;
-        }>;
+        }[];
       };
       try {
         const response = await fetch(ITUNES_URL, { signal: controller.signal });
@@ -153,10 +153,10 @@ export async function checkForUpdateForced(): Promise<UpdateInfo | null> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 8000);
     let data: {
-      results?: Array<{
+      results?: {
         version: string;
         currentVersionReleaseDate: string;
-      }>;
+      }[];
     };
     try {
       const response = await fetch(ITUNES_URL, { signal: controller.signal });

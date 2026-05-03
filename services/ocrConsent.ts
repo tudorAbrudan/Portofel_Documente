@@ -5,10 +5,7 @@ export type OcrSensitivity = 'general' | 'sensitive' | 'medical';
 export type OcrConsentChoice = 'allow' | 'deny';
 
 // GDPR Art. 9 – categorie specială: niciodată persistat, ask every time
-const MEDICAL_TYPES = new Set<DocumentType>([
-  'reteta_medicala',
-  'analize_medicale',
-]);
+const MEDICAL_TYPES = new Set<DocumentType>(['reteta_medicala', 'analize_medicale']);
 
 // Date personale identificabile – necesită confirmare explicită la prima utilizare
 const SENSITIVE_TYPES = new Set<DocumentType>([
@@ -45,9 +42,7 @@ export function getDocTypeSensitivity(type: DocumentType): OcrSensitivity {
 const KEY_PER_TYPE_PREFIX = 'ocr_llm_type_';
 
 // Preferință per tip (null = nu a ales niciodată)
-export async function getPerTypeConsent(
-  type: DocumentType
-): Promise<OcrConsentChoice | null> {
+export async function getPerTypeConsent(type: DocumentType): Promise<OcrConsentChoice | null> {
   const v = await AsyncStorage.getItem(KEY_PER_TYPE_PREFIX + type);
   if (v === 'allow' || v === 'deny') return v;
   return null;
@@ -77,4 +72,3 @@ export async function getImageAiConsent(): Promise<boolean | null> {
 export async function setImageAiConsent(value: boolean): Promise<void> {
   await AsyncStorage.setItem(KEY_IMAGE_AI_CONSENT, value ? 'true' : 'false');
 }
-

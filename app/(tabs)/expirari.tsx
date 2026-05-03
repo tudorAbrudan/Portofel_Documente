@@ -400,9 +400,8 @@ export default function ExpirariScreen() {
                   Expirate de peste 30 zile
                 </RNText>
                 <RNText style={[styles.staleSub, { color: C.textSecondary }]}>
-                  {staleExpired.length}{' '}
-                  {staleExpired.length === 1 ? 'document' : 'documente'} · arhivate din lista
-                  de atenție
+                  {staleExpired.length} {staleExpired.length === 1 ? 'document' : 'documente'} ·
+                  arhivate din lista de atenție
                 </RNText>
               </RNView>
               <Ionicons

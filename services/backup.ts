@@ -7,10 +7,11 @@ import { DOCUMENT_TYPE_LABELS } from '@/types';
 import * as entities from './entities';
 import * as docs from './documents';
 import * as fuel from './fuel';
+import * as maintenance from './maintenance';
 import { getCustomTypes, createCustomType } from './customTypes';
 import { toFileUri, toRelativePath } from './fileUtils';
 import { onRestoreSuccess } from './reviewPrompt';
-import { db } from './db';
+import { db, generateId } from './db';
 import { emit } from './events';
 
 /**
@@ -105,6 +106,7 @@ export async function exportBackup(): Promise<void> {
     animals,
     companies,
     fuelRecordsList,
+    maintenanceTasks,
     documents,
     allPages,
     customTypes,
@@ -117,6 +119,7 @@ export async function exportBackup(): Promise<void> {
     entities.getAnimals(),
     entities.getCompanies(),
     fuel.getAllFuelRecords(),
+    maintenance.getAllMaintenanceTasks(),
     docs.getDocuments(),
     docs.getAllDocumentPages(),
     getCustomTypes(),
@@ -155,7 +158,7 @@ export async function exportBackup(): Promise<void> {
   }
 
   const manifest = {
-    version: 9,
+    version: 10,
     exportDate: new Date().toISOString(),
     persons,
     properties,
@@ -164,6 +167,7 @@ export async function exportBackup(): Promise<void> {
     animals,
     companies,
     fuelRecords: fuelRecordsList,
+    maintenanceTasks,
     customTypes,
     documents,
     documentPages: allPages,
@@ -610,6 +614,66 @@ async function applyManifestBody(payload: Record<string, unknown>): Promise<Impo
       imported++;
     } catch (e) {
       errors.push(`Alimentare carburant: ${e instanceof Error ? e.message : 'eroare'}`);
+    }
+  }
+
+  // Mentenanță auto: remap vehicle_id la noile id-uri și deduplicate pe
+  // (vehicle_id|name|preset_key). Tasks orfane (vehicle_id necunoscut) sunt sărite
+  // ca să nu introducem rânduri inserabile fără context. Inserăm direct în SQL ca
+  // să păstrăm `created_at`, `updated_at` și `calendar_event_id` originale.
+  const existingMaintenance = await maintenance.getAllMaintenanceTasks();
+  const existingMaintenanceByKey = new Set(
+    existingMaintenance.map(
+      t => `${t.vehicle_id}|${t.name.toLowerCase().trim()}|${t.preset_key ?? ''}`
+    )
+  );
+  for (const m of (payload.maintenanceTasks as AnyRecord[]) ?? []) {
+    try {
+      const oldVehicleId = m.vehicle_id as string | undefined;
+      if (!oldVehicleId) {
+        skipped++;
+        continue;
+      }
+      const newVehicleId = vehicleMap.get(oldVehicleId);
+      if (!newVehicleId) {
+        skipped++;
+        continue;
+      }
+      const name = ((m.name as string) || '').trim();
+      const presetKey = (m.preset_key as string | null | undefined) ?? null;
+      const key = `${newVehicleId}|${name.toLowerCase()}|${presetKey ?? ''}`;
+      if (existingMaintenanceByKey.has(key)) {
+        skipped++;
+        continue;
+      }
+      const id = (m.id as string | undefined) || generateId();
+      const createdAt =
+        (m.createdAt as string) || (m.created_at as string) || new Date().toISOString();
+      const updatedAt = (m.updatedAt as string) || (m.updated_at as string) || createdAt;
+      await db.runAsync(
+        `INSERT INTO vehicle_maintenance_tasks
+         (id, vehicle_id, name, preset_key, trigger_km, trigger_months,
+          last_done_km, last_done_date, note, calendar_event_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          id,
+          newVehicleId,
+          name || 'Mentenanță',
+          presetKey,
+          (m.trigger_km as number | undefined) ?? null,
+          (m.trigger_months as number | undefined) ?? null,
+          (m.last_done_km as number | undefined) ?? null,
+          (m.last_done_date as string | undefined) ?? null,
+          ((m.note as string | undefined) ?? '').trim() || null,
+          (m.calendar_event_id as string | undefined) ?? null,
+          createdAt,
+          updatedAt,
+        ]
+      );
+      existingMaintenanceByKey.add(key);
+      imported++;
+    } catch (e) {
+      errors.push(`Mentenanță auto: ${e instanceof Error ? e.message : 'eroare'}`);
     }
   }
 

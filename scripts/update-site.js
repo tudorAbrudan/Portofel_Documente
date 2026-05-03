@@ -174,8 +174,7 @@ const FEATURES = [
     icon: '🔒',
     title: 'Notă privată protejată de AI',
     desc: 'Câmp separat per document, destinat datelor sensibile (CVV, PIN, parole). Garantat că nu ajunge niciodată la asistentul AI sau la niciun serviciu extern.',
-    readmeBullet:
-      'Câmp „Notă privată" per document (CVV/PIN/parole) — nu pleacă niciodată la AI',
+    readmeBullet: 'Câmp „Notă privată" per document (CVV/PIN/parole) — nu pleacă niciodată la AI',
     chatbot: 'câmp privat separat care nu se trimite niciodată la AI',
     faq: {
       q: 'Cum stochez date sensibile (CVV, PIN, parole)?',
@@ -187,7 +186,8 @@ const FEATURES = [
     icon: '🧭',
     title: 'Detecție duplicate',
     desc: 'La adăugare și în detaliu document, app-ul te avertizează dacă ai deja un document cu același fișier sau același tip și entitate. Eviți dublurile fără efort.',
-    readmeBullet: 'Detecție duplicate la adăugare și afișare în detaliu (fișier identic + tip+entitate)',
+    readmeBullet:
+      'Detecție duplicate la adăugare și afișare în detaliu (fișier identic + tip+entitate)',
     chatbot: 'detecție automată de duplicate',
   },
   {
@@ -328,9 +328,13 @@ function generateReadmeFeatures() {
 
 function replaceMarker(text, markerName, newContent, commentStyle = 'html') {
   const start =
-    commentStyle === 'html' ? `<!-- DOSAR:${markerName}_START -->` : `<!-- DOSAR:${markerName}_START -->`;
+    commentStyle === 'html'
+      ? `<!-- DOSAR:${markerName}_START -->`
+      : `<!-- DOSAR:${markerName}_START -->`;
   const end =
-    commentStyle === 'html' ? `<!-- DOSAR:${markerName}_END -->` : `<!-- DOSAR:${markerName}_END -->`;
+    commentStyle === 'html'
+      ? `<!-- DOSAR:${markerName}_END -->`
+      : `<!-- DOSAR:${markerName}_END -->`;
   const startIdx = text.indexOf(start);
   const endIdx = text.indexOf(end);
   if (startIdx === -1 || endIdx === -1) {

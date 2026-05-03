@@ -285,8 +285,12 @@ export default function EditDocumentScreen() {
       }
       const ocrText = doc?.ocr_text ?? '';
       const extracted = await extractFieldsWithLlm(type, ocrText, imageBase64);
-      if (Object.keys(extracted.metadata).length > 0) setMetadata(prev => ({ ...extracted.metadata, ...prev }));
-      if (extracted.expiry_date) { setExpiryDate(extracted.expiry_date); expiryDateRef.current = extracted.expiry_date; }
+      if (Object.keys(extracted.metadata).length > 0)
+        setMetadata(prev => ({ ...extracted.metadata, ...prev }));
+      if (extracted.expiry_date) {
+        setExpiryDate(extracted.expiry_date);
+        expiryDateRef.current = extracted.expiry_date;
+      }
       if (extracted.issue_date) setIssueDate(extracted.issue_date);
       if (extracted.note) setNote(extracted.note);
       setAiOcrApplied(true);
@@ -698,283 +702,288 @@ export default function EditDocumentScreen() {
         keyboardDismissMode="interactive"
         automaticallyAdjustKeyboardInsets
       >
-          {/* 1. POZE & OCR */}
-          <Text style={styles.sectionLabel}>Poze / scan</Text>
-          <DocumentPhotoSection
-            pages={photoPages}
-            ocrLoading={ocrLoading || aiOcrLoading}
-            ocrText={doc.ocr_text ?? undefined}
-            onAddPage={handleAddPage}
-            onRotate={handleRotate}
-            onDelete={handleDeletePage}
-            onRunOcr={handleOcr}
-            onFullscreen={handleFullscreen}
-            onReorderPage={handleReorderPage}
-            onOcrTextSave={handleOcrSave}
-          />
-          {aiOcrApplied && (
-            <View style={[styles.aiBadge, { backgroundColor: '#f0f5e8' }]}>
-              <Text style={[styles.aiBadgeText, { color: primary }]}>
-                ✦ Câmpuri completate cu AI · Verifică înainte de salvare
-              </Text>
-            </View>
-          )}
-          {(aiOcrLoading || llmFieldLoading) && (
-            <View style={styles.aiLoadingRow}>
-              <ActivityIndicator size="small" color={primary} style={{ marginRight: 6 }} />
-              <Text style={styles.aiLoadingText}>
-                {llmFieldLoading ? 'Analizez documentul cu AI...' : 'Analizez cu AI...'}
-              </Text>
-            </View>
-          )}
-          {textAiConsentAvailable && allPages.length > 0 && !llmFieldLoading && (
-            <View>
-              <View style={styles.aiActionsRow}>
-                <Pressable
-                  style={({ pressed }) => [styles.aiActionBtn, { borderColor: '#F57F17', opacity: pressed ? 0.75 : 1 }]}
-                  onPress={runAiImageAnalysis}
-                >
-                  <Text style={[styles.aiActionBtnText, { color: '#F57F17' }]}>
-                    Trimite documentul la AI
-                  </Text>
-                </Pressable>
-              </View>
-              <Text style={styles.aiActionInfo}>
-                Se trimite imaginea/PDF-ul documentului la AI pentru extragerea datelor. Acțiune manuală explicită.
-              </Text>
-            </View>
-          )}
-
-          {/* 2. TIP DOCUMENT */}
-          <Text style={styles.label}>Tip document</Text>
-          <Pressable
-            style={[styles.typeToggleRow, { borderColor: colors.border }]}
-            onPress={() => setTypePickerVisible(v => !v)}
-          >
-            <Text style={styles.typeToggleCurrent}>
-              {type === 'custom'
-                ? (customTypes.find(c => c.id === customTypeId)?.name ?? 'Tip personalizat')
-                : (DOCUMENT_TYPE_LABELS[type] ?? type)}
+        {/* 1. POZE & OCR */}
+        <Text style={styles.sectionLabel}>Poze / scan</Text>
+        <DocumentPhotoSection
+          pages={photoPages}
+          ocrLoading={ocrLoading || aiOcrLoading}
+          ocrText={doc.ocr_text ?? undefined}
+          onAddPage={handleAddPage}
+          onRotate={handleRotate}
+          onDelete={handleDeletePage}
+          onRunOcr={handleOcr}
+          onFullscreen={handleFullscreen}
+          onReorderPage={handleReorderPage}
+          onOcrTextSave={handleOcrSave}
+        />
+        {aiOcrApplied && (
+          <View style={[styles.aiBadge, { backgroundColor: '#f0f5e8' }]}>
+            <Text style={[styles.aiBadgeText, { color: primary }]}>
+              ✦ Câmpuri completate cu AI · Verifică înainte de salvare
             </Text>
-            <Text style={styles.typeToggleChevron}>{typePickerVisible ? '▲' : '▼ Schimbă'}</Text>
-          </Pressable>
-          {typePickerVisible && (
-            <View style={styles.typeRow}>
-              {standardTypes.map(({ value, label }) => {
-                const active = type === value;
-                return (
-                  <Pressable
-                    key={value}
-                    style={[
-                      styles.typeChip,
-                      { borderColor: colors.border },
-                      active && styles.typeChipActive,
-                    ]}
-                    onPress={() => {
-                      setType(value);
-                      setCustomTypeId(null);
-                      setTypePickerVisible(false);
-                    }}
-                  >
-                    <Text style={[styles.typeChipText, active && styles.typeChipTextActive]}>
-                      {label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-              {customTypes.map(ct => {
-                const active = type === 'custom' && customTypeId === ct.id;
-                return (
-                  <Pressable
-                    key={ct.id}
-                    style={[
-                      styles.typeChip,
-                      { borderColor: colors.border },
-                      active && styles.typeChipActive,
-                    ]}
-                    onPress={() => {
-                      setType('custom');
-                      setCustomTypeId(ct.id);
-                      setTypePickerVisible(false);
-                    }}
-                  >
-                    <Text style={[styles.typeChipText, active && styles.typeChipTextActive]}>
-                      {ct.name}
-                    </Text>
-                  </Pressable>
-                );
-              })}
+          </View>
+        )}
+        {(aiOcrLoading || llmFieldLoading) && (
+          <View style={styles.aiLoadingRow}>
+            <ActivityIndicator size="small" color={primary} style={{ marginRight: 6 }} />
+            <Text style={styles.aiLoadingText}>
+              {llmFieldLoading ? 'Analizez documentul cu AI...' : 'Analizez cu AI...'}
+            </Text>
+          </View>
+        )}
+        {textAiConsentAvailable && allPages.length > 0 && !llmFieldLoading && (
+          <View>
+            <View style={styles.aiActionsRow}>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.aiActionBtn,
+                  { borderColor: '#F57F17', opacity: pressed ? 0.75 : 1 },
+                ]}
+                onPress={runAiImageAnalysis}
+              >
+                <Text style={[styles.aiActionBtnText, { color: '#F57F17' }]}>
+                  Trimite documentul la AI
+                </Text>
+              </Pressable>
             </View>
-          )}
+            <Text style={styles.aiActionInfo}>
+              Se trimite imaginea/PDF-ul documentului la AI pentru extragerea datelor. Acțiune
+              manuală explicită.
+            </Text>
+          </View>
+        )}
 
-          {/* 3. LEGAT DE ENTITATE */}
-          <Text style={styles.label}>Legat de</Text>
-          {(() => {
-            const ENTITY_ICONS: Record<EntityType, string> = {
-              person: '👤',
-              vehicle: '🚗',
-              property: '🏠',
-              card: '💳',
-              animal: '🐾',
-              company: '🏢',
-            };
-            function entityLinkLabel(link: DocumentEntityLink): string {
-              switch (link.entityType) {
-                case 'person':
-                  return persons.find(p => p.id === link.entityId)?.name ?? link.entityId;
-                case 'vehicle':
-                  return vehicles.find(v => v.id === link.entityId)?.name ?? link.entityId;
-                case 'property':
-                  return properties.find(p => p.id === link.entityId)?.name ?? link.entityId;
-                case 'card': {
-                  const c = cards.find(c => c.id === link.entityId);
-                  return c ? `${c.nickname} ····${c.last4}` : link.entityId;
-                }
-                case 'animal':
-                  return animals.find(a => a.id === link.entityId)?.name ?? link.entityId;
-                case 'company':
-                  return companies.find(c => c.id === link.entityId)?.name ?? link.entityId;
-                default:
-                  return link.entityId;
-              }
-            }
-            return (
-              <View style={styles.entityLinksRow}>
-                {entityLinks.length === 0 && (
-                  <Text style={[styles.entityValue, styles.entityPlaceholder]}>Nelegat</Text>
-                )}
-                {entityLinks.map((link, idx) => (
-                  <View
-                    key={idx}
-                    style={[
-                      styles.entityChip,
-                      { backgroundColor: colors.card, borderColor: colors.border },
-                    ]}
-                  >
-                    <Text style={[styles.entityChipText, { color: colors.text }]}>
-                      {ENTITY_ICONS[link.entityType]} {entityLinkLabel(link)}
-                    </Text>
-                    <Pressable
-                      onPress={() => handleRemoveEntityLink(link)}
-                      hitSlop={8}
-                      style={styles.entityChipRemove}
-                    >
-                      <Text style={{ color: statusColors.critical, fontSize: 14, fontWeight: '700' }}>
-                        ✕
-                      </Text>
-                    </Pressable>
-                  </View>
-                ))}
-                <Pressable
-                  style={[styles.entityAddBtn, { borderColor: primary }]}
-                  onPress={() => setLinkEntityVisible(true)}
-                >
-                  <Text style={[styles.entityAddBtnText, { color: primary }]}>+ Adaugă</Text>
-                </Pressable>
-              </View>
-            );
-          })()}
-
-          {/* 4. CÂMPURI SPECIFICE TIPULUI */}
-          {(DOCUMENT_FIELDS[type] ?? []).map((field: FieldDef) => (
-            <View key={field.key}>
-              <Text style={styles.label}>{field.label}</Text>
-              <ThemedTextInput
-                style={styles.input}
-                placeholder={field.placeholder ?? ''}
-                value={metadata[field.key] ?? ''}
-                onChangeText={v => setMetadata(prev => ({ ...prev, [field.key]: v }))}
-                keyboardType={field.keyboardType ?? 'default'}
-                editable={!saving}
-              />
-            </View>
-          ))}
-
-          {/* 5. DATE */}
-          <DatePickerField
-            label="Data emisiune (opțional)"
-            value={issueDate}
-            onChange={setIssueDate}
-            disabled={saving}
-          />
-          <DatePickerField
-            label="Data expirare (opțional)"
-            value={expiryDate}
-            onChange={v => {
-              expiryDateRef.current = v;
-              setExpiryDate(v);
-            }}
-            disabled={saving}
-          />
-
-          {/* 6. AUTO-ȘTERGERE */}
-          <Text style={styles.label}>
-            {'Auto-ștergere (opțional)'}
-            {autoDelete !== null ? `: ${autoDeleteLabel(autoDelete)}` : ''}
+        {/* 2. TIP DOCUMENT */}
+        <Text style={styles.label}>Tip document</Text>
+        <Pressable
+          style={[styles.typeToggleRow, { borderColor: colors.border }]}
+          onPress={() => setTypePickerVisible(v => !v)}
+        >
+          <Text style={styles.typeToggleCurrent}>
+            {type === 'custom'
+              ? (customTypes.find(c => c.id === customTypeId)?.name ?? 'Tip personalizat')
+              : (DOCUMENT_TYPE_LABELS[type] ?? type)}
           </Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.chipsRow}
-            style={styles.chipsScroll}
-          >
-            {(
-              [
-                ...(expiryDate ? [{ label: 'La expirare', value: 'expiry' }] : []),
-                ...DELETE_OPTIONS,
-              ] as { label: string; value: string | null }[]
-            ).map(opt => {
-              const active = autoDelete === opt.value;
+          <Text style={styles.typeToggleChevron}>{typePickerVisible ? '▲' : '▼ Schimbă'}</Text>
+        </Pressable>
+        {typePickerVisible && (
+          <View style={styles.typeRow}>
+            {standardTypes.map(({ value, label }) => {
+              const active = type === value;
               return (
                 <Pressable
-                  key={opt.value ?? 'never'}
+                  key={value}
                   style={[
                     styles.typeChip,
                     { borderColor: colors.border },
                     active && styles.typeChipActive,
                   ]}
-                  onPress={() => setAutoDelete(opt.value)}
+                  onPress={() => {
+                    setType(value);
+                    setCustomTypeId(null);
+                    setTypePickerVisible(false);
+                  }}
                 >
                   <Text style={[styles.typeChipText, active && styles.typeChipTextActive]}>
-                    {opt.label}
+                    {label}
                   </Text>
                 </Pressable>
               );
             })}
-          </ScrollView>
-
-          {/* 7. NOTĂ */}
-          <Text style={styles.label}>Notă (opțional)</Text>
-          <ThemedTextInput
-            style={[styles.input, styles.inputMultiline]}
-            placeholder="Notă"
-            value={note}
-            onChangeText={setNote}
-            multiline
-            editable={!saving}
-          />
-
-          {/* 7b. NOTĂ PRIVATĂ — nu se trimite la AI */}
-          <View style={styles.privateLabelRow}>
-            <Ionicons name="lock-closed" size={14} color={sensitive} />
-            <Text style={[styles.label, { color: sensitive, opacity: 1 }]}>
-              Notă privată (opțional)
-            </Text>
+            {customTypes.map(ct => {
+              const active = type === 'custom' && customTypeId === ct.id;
+              return (
+                <Pressable
+                  key={ct.id}
+                  style={[
+                    styles.typeChip,
+                    { borderColor: colors.border },
+                    active && styles.typeChipActive,
+                  ]}
+                  onPress={() => {
+                    setType('custom');
+                    setCustomTypeId(ct.id);
+                    setTypePickerVisible(false);
+                  }}
+                >
+                  <Text style={[styles.typeChipText, active && styles.typeChipTextActive]}>
+                    {ct.name}
+                  </Text>
+                </Pressable>
+              );
+            })}
           </View>
-          <Text style={[styles.privateHint, { color: colors.text }]}>
-            Rămâne pe acest telefon. Nu se trimite niciodată la asistentul AI. Potrivită pentru CVV, PIN, parole, coduri de acces.
+        )}
+
+        {/* 3. LEGAT DE ENTITATE */}
+        <Text style={styles.label}>Legat de</Text>
+        {(() => {
+          const ENTITY_ICONS: Record<EntityType, string> = {
+            person: '👤',
+            vehicle: '🚗',
+            property: '🏠',
+            card: '💳',
+            animal: '🐾',
+            company: '🏢',
+          };
+          function entityLinkLabel(link: DocumentEntityLink): string {
+            switch (link.entityType) {
+              case 'person':
+                return persons.find(p => p.id === link.entityId)?.name ?? link.entityId;
+              case 'vehicle':
+                return vehicles.find(v => v.id === link.entityId)?.name ?? link.entityId;
+              case 'property':
+                return properties.find(p => p.id === link.entityId)?.name ?? link.entityId;
+              case 'card': {
+                const c = cards.find(c => c.id === link.entityId);
+                return c ? `${c.nickname} ····${c.last4}` : link.entityId;
+              }
+              case 'animal':
+                return animals.find(a => a.id === link.entityId)?.name ?? link.entityId;
+              case 'company':
+                return companies.find(c => c.id === link.entityId)?.name ?? link.entityId;
+              default:
+                return link.entityId;
+            }
+          }
+          return (
+            <View style={styles.entityLinksRow}>
+              {entityLinks.length === 0 && (
+                <Text style={[styles.entityValue, styles.entityPlaceholder]}>Nelegat</Text>
+              )}
+              {entityLinks.map((link, idx) => (
+                <View
+                  key={idx}
+                  style={[
+                    styles.entityChip,
+                    { backgroundColor: colors.card, borderColor: colors.border },
+                  ]}
+                >
+                  <Text style={[styles.entityChipText, { color: colors.text }]}>
+                    {ENTITY_ICONS[link.entityType]} {entityLinkLabel(link)}
+                  </Text>
+                  <Pressable
+                    onPress={() => handleRemoveEntityLink(link)}
+                    hitSlop={8}
+                    style={styles.entityChipRemove}
+                  >
+                    <Text style={{ color: statusColors.critical, fontSize: 14, fontWeight: '700' }}>
+                      ✕
+                    </Text>
+                  </Pressable>
+                </View>
+              ))}
+              <Pressable
+                style={[styles.entityAddBtn, { borderColor: primary }]}
+                onPress={() => setLinkEntityVisible(true)}
+              >
+                <Text style={[styles.entityAddBtnText, { color: primary }]}>+ Adaugă</Text>
+              </Pressable>
+            </View>
+          );
+        })()}
+
+        {/* 4. CÂMPURI SPECIFICE TIPULUI */}
+        {(DOCUMENT_FIELDS[type] ?? []).map((field: FieldDef) => (
+          <View key={field.key}>
+            <Text style={styles.label}>{field.label}</Text>
+            <ThemedTextInput
+              style={styles.input}
+              placeholder={field.placeholder ?? ''}
+              value={metadata[field.key] ?? ''}
+              onChangeText={v => setMetadata(prev => ({ ...prev, [field.key]: v }))}
+              keyboardType={field.keyboardType ?? 'default'}
+              editable={!saving}
+            />
+          </View>
+        ))}
+
+        {/* 5. DATE */}
+        <DatePickerField
+          label="Data emisiune (opțional)"
+          value={issueDate}
+          onChange={setIssueDate}
+          disabled={saving}
+        />
+        <DatePickerField
+          label="Data expirare (opțional)"
+          value={expiryDate}
+          onChange={v => {
+            expiryDateRef.current = v;
+            setExpiryDate(v);
+          }}
+          disabled={saving}
+        />
+
+        {/* 6. AUTO-ȘTERGERE */}
+        <Text style={styles.label}>
+          {'Auto-ștergere (opțional)'}
+          {autoDelete !== null ? `: ${autoDeleteLabel(autoDelete)}` : ''}
+        </Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.chipsRow}
+          style={styles.chipsScroll}
+        >
+          {(
+            [
+              ...(expiryDate ? [{ label: 'La expirare', value: 'expiry' }] : []),
+              ...DELETE_OPTIONS,
+            ] as { label: string; value: string | null }[]
+          ).map(opt => {
+            const active = autoDelete === opt.value;
+            return (
+              <Pressable
+                key={opt.value ?? 'never'}
+                style={[
+                  styles.typeChip,
+                  { borderColor: colors.border },
+                  active && styles.typeChipActive,
+                ]}
+                onPress={() => setAutoDelete(opt.value)}
+              >
+                <Text style={[styles.typeChipText, active && styles.typeChipTextActive]}>
+                  {opt.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+
+        {/* 7. NOTĂ */}
+        <Text style={styles.label}>Notă (opțional)</Text>
+        <ThemedTextInput
+          style={[styles.input, styles.inputMultiline]}
+          placeholder="Notă"
+          value={note}
+          onChangeText={setNote}
+          multiline
+          editable={!saving}
+        />
+
+        {/* 7b. NOTĂ PRIVATĂ — nu se trimite la AI */}
+        <View style={styles.privateLabelRow}>
+          <Ionicons name="lock-closed" size={14} color={sensitive} />
+          <Text style={[styles.label, { color: sensitive, opacity: 1 }]}>
+            Notă privată (opțional)
           </Text>
-          <ThemedTextInput
-            style={[styles.input, styles.inputMultiline, styles.privateInput]}
-            placeholder="Ex. CVV 123 · PIN 4821"
-            placeholderTextColor="#999"
-            value={privateNotes}
-            onChangeText={setPrivateNotes}
-            multiline
-            editable={!saving}
-            autoCorrect={false}
-            autoCapitalize="none"
-          />
+        </View>
+        <Text style={[styles.privateHint, { color: colors.text }]}>
+          Rămâne pe acest telefon. Nu se trimite niciodată la asistentul AI. Potrivită pentru CVV,
+          PIN, parole, coduri de acces.
+        </Text>
+        <ThemedTextInput
+          style={[styles.input, styles.inputMultiline, styles.privateInput]}
+          placeholder="Ex. CVV 123 · PIN 4821"
+          placeholderTextColor="#999"
+          value={privateNotes}
+          onChangeText={setPrivateNotes}
+          multiline
+          editable={!saving}
+          autoCorrect={false}
+          autoCapitalize="none"
+        />
       </FormPageScreen>
 
       {/* Fullscreen modal */}

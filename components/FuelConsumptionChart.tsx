@@ -41,7 +41,9 @@ export function FuelConsumptionChart({ values, averageL100, cardColor, textSecon
     y: PAD_Y + ((max - v) / range) * (H - PAD_Y * 2),
   }));
 
-  const linePath = points.map((p, i) => (i === 0 ? `M ${p.x} ${p.y}` : `L ${p.x} ${p.y}`)).join(' ');
+  const linePath = points
+    .map((p, i) => (i === 0 ? `M ${p.x} ${p.y}` : `L ${p.x} ${p.y}`))
+    .join(' ');
   const last = points[points.length - 1];
   const first = points[0];
   const areaPath = `${linePath} L ${last.x} ${H - PAD_Y / 2} L ${first.x} ${H - PAD_Y / 2} Z`;

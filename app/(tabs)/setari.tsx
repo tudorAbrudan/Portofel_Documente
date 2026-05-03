@@ -1,7 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import * as localModel from '@/services/localModel';
 import type { LocalModelEntry } from '@/services/localModel';
-type ModelWithCompat = LocalModelEntry & { incompatibilityReason: string | null };
 import * as FileSystem from 'expo-file-system/legacy';
 import {
   StyleSheet,
@@ -44,6 +43,7 @@ import {
 import * as Clipboard from 'expo-clipboard';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { db } from '@/services/db';
+import { emit } from '@/services/events';
 import { useCustomTypes } from '@/hooks/useCustomTypes';
 import { useVisibilitySettings } from '@/hooks/useVisibilitySettings';
 import { ONBOARDING_RESET_EVENT } from '@/app/_layout';
@@ -55,6 +55,7 @@ import {
   DOCUMENT_TYPE_LABELS,
 } from '@/types';
 import type { EntityType, DocumentType } from '@/types';
+type ModelWithCompat = LocalModelEntry & { incompatibilityReason: string | null };
 
 const ENTITY_LABELS: Record<EntityType, string> = {
   person: 'Persoană',
@@ -786,25 +787,71 @@ export default function SetariScreen() {
 
   // ── GDPR ─────────────────────────────────────────────────────────────────────
   const handleDeleteAllData = () => {
-    Alert.alert('Atenție', 'Vrei să ștergi TOATE datele? Aceasta este ireversibilă.', [
-      { text: 'Anulare', style: 'cancel' },
-      {
-        text: 'Șterge',
-        style: 'destructive',
-        onPress: () => {
-          try {
-            db.runAsync('DELETE FROM documents');
-            db.runAsync('DELETE FROM persons');
-            db.runAsync('DELETE FROM properties');
-            db.runAsync('DELETE FROM vehicles');
-            db.runAsync('DELETE FROM cards');
-            Alert.alert('Date șterse', 'Toate datele au fost șterse.');
-          } catch (e) {
-            Alert.alert('Eroare', e instanceof Error ? e.message : 'Nu s-au putut șterge datele');
-          }
+    Alert.alert(
+      'Atenție',
+      'Vrei să ștergi TOATE datele locale? Aceasta este ireversibilă.\n\nBackup-ul din cloud rămâne intact — îl poți folosi pentru restore.',
+      [
+        { text: 'Anulare', style: 'cancel' },
+        {
+          text: 'Șterge',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              // Pune pe pauză cloud backup ca să prevenim un upload de manifest gol
+              // care ar suprascrie backup-ul existent din iCloud (last-write-wins).
+              // Userul îl reactivează manual după restore.
+              await settings.setCloudBackupEnabled(false);
+
+              // Șterge toate datele într-o tranzacție.
+              // Păstrăm: app_settings (preferințe UI), cloud_state (device_id + hash
+              // pentru sync corect la reactivare), modelele AI descărcate.
+              await db.execAsync(`
+                BEGIN;
+                DELETE FROM document_pages;
+                DELETE FROM document_entities;
+                DELETE FROM documents;
+                DELETE FROM persons;
+                DELETE FROM properties;
+                DELETE FROM vehicles;
+                DELETE FROM cards;
+                DELETE FROM animals;
+                DELETE FROM companies;
+                DELETE FROM custom_document_types;
+                DELETE FROM fuel_records;
+                DELETE FROM vehicle_maintenance_tasks;
+                DELETE FROM chat_messages;
+                DELETE FROM chat_threads;
+                DELETE FROM entity_order;
+                DELETE FROM pending_uploads;
+                COMMIT;
+              `);
+
+              // Șterge fișierele atașate (poze/PDF-uri documente, foto vehicule).
+              const docDir = FileSystem.documentDirectory;
+              if (docDir) {
+                for (const sub of ['documents', 'vehicles']) {
+                  await FileSystem.deleteAsync(`${docDir}${sub}`, { idempotent: true });
+                }
+              }
+
+              // Notifică hook-urile (useDocuments, useEntities, ...) să dea refresh.
+              emit('documents:changed');
+              emit('entities:changed');
+              emit('customTypes:changed');
+              emit('links:changed');
+              emit('settings:changed');
+
+              Alert.alert(
+                'Date șterse',
+                'Toate datele locale au fost șterse. Backup-ul din cloud rămâne disponibil pentru restore.'
+              );
+            } catch (e) {
+              Alert.alert('Eroare', e instanceof Error ? e.message : 'Nu s-au putut șterge datele');
+            }
+          },
         },
-      },
-    ]);
+      ]
+    );
   };
 
   // ── Contact ──────────────────────────────────────────────────────────────────

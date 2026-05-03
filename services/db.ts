@@ -349,6 +349,23 @@ try {
   // coloana există deja
 }
 
+// Backfill: pozele vehiculelor existente nu au fost niciodată enqueue-uite în
+// `pending_uploads` (bug istoric — enqueueFileUpload era apelat doar pentru
+// documente). Marcăm tot ce există local ca pending pentru ca processQueue să
+// le urce la următoarea sincronizare cloud. INSERT OR IGNORE păstrează rândurile
+// existente (UNIQUE pe file_path) — nu resetează attempt_count pentru cele deja
+// procesate. Idempotent: re-rularea migrării n-are efect dacă rândurile există.
+try {
+  db.execSync(`
+    INSERT OR IGNORE INTO pending_uploads (file_path, attempt_count, created_at)
+    SELECT photo_uri, 0, CAST(strftime('%s','now') AS INTEGER) * 1000
+    FROM vehicles
+    WHERE photo_uri IS NOT NULL AND photo_uri != ''
+  `);
+} catch {
+  // best-effort — coloanele lipsă fac SELECT-ul să eșueze, sărim
+}
+
 // Migrare: adaugă fuel_type la vehicles
 try {
   db.execSync("ALTER TABLE vehicles ADD COLUMN fuel_type TEXT DEFAULT 'diesel'");

@@ -6,6 +6,7 @@ import { buildCanonicalManifest, hashManifestAsync } from './manifestHash';
 import * as entities from './entities';
 import * as docs from './documents';
 import * as fuel from './fuel';
+import * as maintenance from './maintenance';
 import { getCustomTypes } from './customTypes';
 import { toFileUri } from './fileUtils';
 import { getCloudEncryptionEnabled } from './settings';
@@ -32,6 +33,7 @@ import type {
   Property,
   SnapshotFrequency,
   Vehicle,
+  VehicleMaintenanceTask,
 } from '@/types';
 
 const CLOUD_ROOT = 'Dosar';
@@ -77,6 +79,7 @@ interface ManifestPayload {
   animals: Animal[];
   companies: Company[];
   fuelRecords: FuelRecord[];
+  maintenanceTasks: VehicleMaintenanceTask[];
   customTypes: CustomDocumentType[];
   documents: Document[];
   documentPages: DocumentPage[];
@@ -92,6 +95,7 @@ async function buildManifestPayload(): Promise<ManifestPayload> {
     animals,
     companies,
     fuelRecords,
+    maintenanceTasks,
     documents,
     allPages,
     customTypes,
@@ -104,6 +108,7 @@ async function buildManifestPayload(): Promise<ManifestPayload> {
     entities.getAnimals(),
     entities.getCompanies(),
     fuel.getAllFuelRecords(),
+    maintenance.getAllMaintenanceTasks(),
     docs.getDocuments(),
     docs.getAllDocumentPages(),
     getCustomTypes(),
@@ -122,6 +127,7 @@ async function buildManifestPayload(): Promise<ManifestPayload> {
     animals,
     companies,
     fuelRecords,
+    maintenanceTasks,
     customTypes,
     documents,
     documentPages: allPages,

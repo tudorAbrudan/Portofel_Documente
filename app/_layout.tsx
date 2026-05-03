@@ -5,8 +5,6 @@ import * as SplashScreen from 'expo-splash-screen';
 import * as Notifications from 'expo-notifications';
 import { useState, useEffect, useRef } from 'react';
 import { Linking, DeviceEventEmitter, useColorScheme as useColorSchemeNative } from 'react-native';
-
-export const ONBOARDING_RESET_EVENT = 'onboarding_reset';
 import 'react-native-reanimated';
 
 import AppLockScreen from '@/components/AppLockScreen';
@@ -24,6 +22,8 @@ import { useReviewPrompt } from '@/hooks/useReviewPrompt';
 import { useCloudBackup } from '@/hooks/useCloudBackup';
 import { db } from '@/services/db';
 import * as settings from '@/services/settings';
+
+export const ONBOARDING_RESET_EVENT = 'onboarding_reset';
 
 export { ErrorBoundary } from 'expo-router';
 

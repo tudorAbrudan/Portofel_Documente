@@ -50,7 +50,8 @@ export const LOCAL_MODEL_CATALOG: LocalModelEntry[] = [
   {
     id: 'ministral-3b',
     name: 'Ministral 3B IT',
-    description: 'Model Mistral compact, bun la urmarea instrucțiunilor. Context 8K tokeni. iPhone 14+.',
+    description:
+      'Model Mistral compact, bun la urmarea instrucțiunilor. Context 8K tokeni. iPhone 14+.',
     sizeBytes: 2000 * 1024 * 1024,
     sizeLabel: '~2GB',
     minRamBytes: 5 * 1024 * 1024 * 1024,
@@ -63,7 +64,8 @@ export const LOCAL_MODEL_CATALOG: LocalModelEntry[] = [
   {
     id: 'mistral-7b',
     name: 'Mistral 7B IT',
-    description: 'Calitate maximă disponibilă local. Context 8K tokeni. Necesită iPhone 15 Pro+ și ~4GB spațiu liber.',
+    description:
+      'Calitate maximă disponibilă local. Context 8K tokeni. Necesită iPhone 15 Pro+ și ~4GB spațiu liber.',
     sizeBytes: 4100 * 1024 * 1024,
     sizeLabel: '~4.1GB',
     minRamBytes: 7 * 1024 * 1024 * 1024,
@@ -120,7 +122,7 @@ export function getIncompatibilityReason(
 /**
  * Returnează toate modelele din catalog cu flag de compatibilitate.
  */
-export function getAllModels(): Array<LocalModelEntry & { incompatibilityReason: string | null }> {
+export function getAllModels(): (LocalModelEntry & { incompatibilityReason: string | null })[] {
   const ramBytes = Device.totalMemory;
   const iphoneGen = getIphoneGeneration(Device.modelName);
   return LOCAL_MODEL_CATALOG.map(m => ({
@@ -166,7 +168,6 @@ export async function setSelectedModelId(modelId: string): Promise<void> {
 export async function clearSelectedModelId(): Promise<void> {
   await AsyncStorage.removeItem(KEY_SELECTED);
 }
-
 
 // ─── Download ────────────────────────────────────────────────────────────────
 
@@ -235,7 +236,10 @@ export async function initLocalModel(modelId: string): Promise<void> {
 
   // Verifică că fișierul nu e gol/corupt (minim 100MB)
   const MIN_VALID_SIZE = 100 * 1024 * 1024;
-  if ((info as { size?: number }).size !== undefined && (info as { size: number }).size < MIN_VALID_SIZE) {
+  if (
+    (info as { size?: number }).size !== undefined &&
+    (info as { size: number }).size < MIN_VALID_SIZE
+  ) {
     throw new Error(
       'Fișierul modelului pare corupt sau incomplet. Șterge modelul din Setări → Asistent AI și descarcă-l din nou.'
     );
@@ -273,10 +277,7 @@ export async function initLocalModel(modelId: string): Promise<void> {
  * Rulează inferența cu modelul local activ.
  * Dacă modelul nu e inițializat, îl inițializează automat.
  */
-export async function runLocalInference(
-  messages: AiMessage[],
-  maxTokens = 500
-): Promise<string> {
+export async function runLocalInference(messages: AiMessage[], maxTokens = 500): Promise<string> {
   const selectedId = await getSelectedModelId();
   if (!selectedId) {
     throw new Error('Niciun model local selectat. Alege un model din Setări → Asistent AI.');

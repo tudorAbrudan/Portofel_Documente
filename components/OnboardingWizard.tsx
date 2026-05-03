@@ -899,7 +899,7 @@ export default function OnboardingWizard({ onComplete }: Props) {
                   title: 'Fără AI',
                   desc: 'Aplicația funcționează complet offline, fără asistent',
                 },
-              ] as Array<{ type: AiProviderType; title: string; desc: string }>
+              ] as { type: AiProviderType; title: string; desc: string }[]
             ).map(option => (
               <Pressable
                 key={option.type}

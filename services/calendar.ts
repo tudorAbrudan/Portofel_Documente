@@ -31,12 +31,12 @@ async function getDefaultCalendarId(): Promise<string | null> {
   const { status } = await CalendarModule.requestCalendarPermissionsAsync();
   if (status !== 'granted') return null;
 
-  const calendars: Array<{
+  const calendars: {
     id: string;
     allowsModifications: boolean;
     accessLevel?: string;
     source?: { name?: string; isLocalAccount?: boolean };
-  }> = await CalendarModule.getCalendarsAsync(CalendarModule.EntityTypes.EVENT);
+  }[] = await CalendarModule.getCalendarsAsync(CalendarModule.EntityTypes.EVENT);
 
   if (Platform.OS === 'ios') {
     const icloud = calendars.find(c => c.source?.name === 'iCloud' && c.allowsModifications);

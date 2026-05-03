@@ -319,24 +319,24 @@ function ConsentModal({ visible, colors, onAccept, onDecline }: ConsentModalProp
               Asistent AI – Informații despre confidențialitate
             </Text>
             <Text style={[styles.consentBody, { color: colors.text }]}>
-              Pentru a răspunde la întrebările tale, asistentul trimite date din aplicație
-              către{' '}
+              Pentru a răspunde la întrebările tale, asistentul trimite date din aplicație către{' '}
               <Text style={{ fontWeight: '700' }}>serviciul AI configurat</Text> (cloud extern).
             </Text>
             <Text style={[styles.consentBody, { color: colors.text }]}>
               <Text style={{ fontWeight: '700' }}>Ce date sunt trimise:</Text> numele entităților
               (persoane, vehicule, proprietăți, carduri, animale), tipurile documentelor, datele de
-              expirare și emitere, notele atașate documentelor, date de identificare ale documentelor
-              (serie acte, CNP, nr. înmatriculare, nr. înregistrare și alte câmpuri completate).
+              expirare și emitere, notele atașate documentelor, date de identificare ale
+              documentelor (serie acte, CNP, nr. înmatriculare, nr. înregistrare și alte câmpuri
+              completate).
             </Text>
             <Text style={[styles.consentBody, { color: colors.text }]}>
-              <Text style={{ fontWeight: '700' }}>Ce NU este trimis:</Text> fotografiile documentelor,
-              numărul CVV, PIN-ul aplicației.
+              <Text style={{ fontWeight: '700' }}>Ce NU este trimis:</Text> fotografiile
+              documentelor, numărul CVV, PIN-ul aplicației.
             </Text>
             <Text style={[styles.consentNote, { color: colors.textSecondary }]}>
-              Datele sunt procesate de providerul AI ales conform propriei politici de confidențialitate.
-              Consimțământul poate fi revocat oricând dezactivând providerul din Setări → Asistent AI.
-              Dacă nu dorești să partajezi aceste date, apasă „Nu accept".
+              Datele sunt procesate de providerul AI ales conform propriei politici de
+              confidențialitate. Consimțământul poate fi revocat oricând dezactivând providerul din
+              Setări → Asistent AI. Dacă nu dorești să partajezi aceste date, apasă „Nu accept".
             </Text>
           </ScrollView>
           <View style={styles.consentButtons}>
@@ -809,8 +809,7 @@ function ConversationView({
             styles.sendButton,
             {
               backgroundColor: colors.primary,
-              opacity:
-                pressed || !input.trim() || aiUnavailableReason ? 0.6 : 1,
+              opacity: pressed || !input.trim() || aiUnavailableReason ? 0.6 : 1,
             },
           ]}
           onPress={handleSend}
@@ -860,7 +859,9 @@ export default function ChatScreen() {
       const { ok, reason } = await isAiAvailable();
       setAiUnavailableReason(ok ? null : (reason ?? 'AI indisponibil.'));
     } catch {
-      setAiUnavailableReason('Nu s-a putut verifica configurația AI. Deschide Setări → Asistent AI.');
+      setAiUnavailableReason(
+        'Nu s-a putut verifica configurația AI. Deschide Setări → Asistent AI.'
+      );
     }
   }, []);
 

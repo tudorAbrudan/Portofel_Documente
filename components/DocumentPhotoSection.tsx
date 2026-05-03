@@ -82,7 +82,10 @@ export function DocumentPhotoSection({
         const isFirst = idx === 0;
         const isLast = idx === pages.length - 1;
         return (
-          <View key={`${page.id}_${page.uri}_${refreshKey ?? 0}`} style={[styles.imageWrap, { backgroundColor: C.surface }]}>
+          <View
+            key={`${page.id}_${page.uri}_${refreshKey ?? 0}`}
+            style={[styles.imageWrap, { backgroundColor: C.surface }]}
+          >
             {pages.length > 1 && (
               <Text style={styles.pageLabel}>
                 Pagina {idx + 1} / {pages.length}

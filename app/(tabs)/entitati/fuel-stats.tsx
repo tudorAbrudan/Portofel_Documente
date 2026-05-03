@@ -118,9 +118,7 @@ export default function FuelStatsScreen() {
                   pressed && styles.chipPressed,
                 ]}
               >
-                <Text
-                  style={[styles.chipText, { color: active ? '#fff' : palette.textSecondary }]}
-                >
+                <Text style={[styles.chipText, { color: active ? '#fff' : palette.textSecondary }]}>
                   {opt.label}
                 </Text>
               </Pressable>
@@ -138,16 +136,8 @@ export default function FuelStatsScreen() {
 
         {!loading && stats && stats.recordCount > 0 && (
           <View style={[styles.card, { backgroundColor: palette.card }]}>
-            <Row
-              label="Înregistrări"
-              value={`${stats.recordCount}`}
-              palette={palette}
-            />
-            <Row
-              label="Plinuri complete"
-              value={`${stats.fillupCount}`}
-              palette={palette}
-            />
+            <Row label="Înregistrări" value={`${stats.recordCount}`} palette={palette} />
+            <Row label="Plinuri complete" value={`${stats.fillupCount}`} palette={palette} />
             <Row
               label="Distanță parcursă"
               value={
@@ -157,16 +147,10 @@ export default function FuelStatsScreen() {
               }
               palette={palette}
             />
-            <Row
-              label="Cost total"
-              value={`${stats.totalCost.toFixed(2)} RON`}
-              palette={palette}
-            />
+            <Row label="Cost total" value={`${stats.totalCost.toFixed(2)} RON`} palette={palette} />
             <Row
               label="Cost / km"
-              value={
-                stats.costPerKm !== undefined ? `${stats.costPerKm.toFixed(2)} RON/km` : '—'
-              }
+              value={stats.costPerKm !== undefined ? `${stats.costPerKm.toFixed(2)} RON/km` : '—'}
               palette={palette}
             />
             <Row
@@ -232,7 +216,10 @@ function Row({ label, value, palette, isLast, highlight }: RowProps) {
     <View
       style={[
         styles.row,
-        !isLast && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: palette.border },
+        !isLast && {
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: palette.border,
+        },
       ]}
     >
       <Text style={[styles.rowLabel, { color: palette.textSecondary }]}>{label}</Text>

@@ -93,8 +93,10 @@ export interface FuelAiResult {
   liters?: number;
   km?: number;
   price?: number;
+  priceL?: number; // RON/litru (preț unitar din bon)
   date?: string; // YYYY-MM-DD
   station?: string;
+  pump?: number; // nr. pompă (1-20)
 }
 
 export function validateFuelAiResponse(parsed: unknown): FuelAiResult {
@@ -117,20 +119,51 @@ export function validateFuelAiResponse(parsed: unknown): FuelAiResult {
     r.km = p.km;
   }
 
-  // date: YYYY-MM-DD valid, în ultimii 2 ani și nu în viitor
+  // date: YYYY-MM-DD valid CALENDARISTIC, în ultimii 2 ani și nu în viitor.
+  // Reconstrucția prin Date+round-trip respinge "2026-85-82" sau "2026-02-30"
+  // (pattern-ul simplu le-ar trece, dar nu sunt date reale).
   if (typeof p.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(p.date)) {
-    const todayStr = new Date().toISOString().slice(0, 10);
-    const twoYearsAgoDate = new Date();
-    twoYearsAgoDate.setFullYear(twoYearsAgoDate.getFullYear() - 2);
-    const twoYearsAgoStr = twoYearsAgoDate.toISOString().slice(0, 10);
-    if (p.date <= todayStr && p.date >= twoYearsAgoStr) {
-      r.date = p.date;
+    const d = new Date(`${p.date}T00:00:00Z`);
+    const roundTrip = !isNaN(d.getTime()) ? d.toISOString().slice(0, 10) : null;
+    if (roundTrip === p.date) {
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const twoYearsAgoDate = new Date();
+      twoYearsAgoDate.setFullYear(twoYearsAgoDate.getFullYear() - 2);
+      const twoYearsAgoStr = twoYearsAgoDate.toISOString().slice(0, 10);
+      if (p.date <= todayStr && p.date >= twoYearsAgoStr) {
+        r.date = p.date;
+      }
     }
   }
 
   // station: string non-vid, max 100 chars
   if (typeof p.station === 'string' && p.station.trim()) {
     r.station = p.station.trim().slice(0, 100);
+  }
+
+  // pump: integer 1-20 (nr. pompă tipic la o stație)
+  if (typeof p.pump === 'number' && Number.isInteger(p.pump) && p.pump >= 1 && p.pump <= 20) {
+    r.pump = p.pump;
+  }
+
+  // priceL: preț unitar pe litru. Acceptăm orice valoare pozitivă rezonabilă
+  // (0 < x < 100) — nu restricționăm la range RO 4-15 pentru a permite și bonuri
+  // din străinătate (ex. EUR/L). UI-ul face cross-check matematic cu liters/price.
+  if (typeof p.priceL === 'number' && p.priceL > 0 && p.priceL < 100) {
+    r.priceL = p.priceL;
+  }
+
+  // Sanity check: dacă avem și liters și price, verifică plauzibilitatea
+  // prețului implicit per litru. Carburant RO 2024-2026: 4-15 RON/L.
+  // Pe bonurile MOL formatul "9,82 X 106,84 L" e (preț/litru × cantitate);
+  // AI confunda uneori 9,82 cu cantitatea. Dacă raportul e absurd, refuzăm
+  // valoarea AI pentru liters ca să lase regex-ul să folosească numărul
+  // corect (cel cu sufixul L).
+  if (r.liters !== undefined && r.price !== undefined) {
+    const pricePerLiter = r.price / r.liters;
+    if (pricePerLiter < 4 || pricePerLiter > 15) {
+      delete r.liters;
+    }
   }
 
   return r;
@@ -141,23 +174,40 @@ export interface FuelMergeRegexInput {
   liters?: number;
   km?: number;
   price?: number;
+  priceL?: number;
   date?: string;
   station?: string;
+  pump?: number;
+}
+
+/**
+ * Pentru `liters`: când AI și regex furnizează valori care diferă cu >10%,
+ * preferă regex — `extractFuelInfo` are cross-check matematic (total/priceL)
+ * care prinde confuziile de cifre OCR-style (1↔8, 0↔6 etc.) pe care AI vision
+ * le produce uneori. Sub 10% (variație normală de rounding), AI câștigă.
+ */
+function pickLiters(ai?: number, regex?: number): number | undefined {
+  if (ai === undefined) return regex;
+  if (regex === undefined) return ai;
+  const ratio = Math.max(ai, regex) / Math.min(ai, regex);
+  return ratio > 1.1 ? regex : ai;
 }
 
 export function mergeFuelResults(ai: FuelAiResult, regex: FuelMergeRegexInput): FuelAiResult {
   return {
-    liters: ai.liters ?? regex.liters,
+    liters: pickLiters(ai.liters, regex.liters),
     km: ai.km ?? regex.km,
     price: ai.price ?? regex.price,
+    priceL: ai.priceL ?? regex.priceL,
     date: ai.date ?? regex.date,
     station: ai.station ?? regex.station,
+    pump: ai.pump ?? regex.pump,
   };
 }
 
 export async function mapFuelReceiptWithAi(
   ocrText: string,
-  imageBase64: string
+  imageBase64?: string
 ): Promise<FuelAiResult> {
   const sanitizedOcr = sanitizeOcrText(ocrText);
 
@@ -170,24 +220,56 @@ ${sanitizedOcr}
 """
 
 Câmpuri de extras (toate opționale, omite ce nu e clar):
-- liters: cantitatea de carburant (număr cu zecimale, ex: 42.31)
-- price: TOTALUL de plată (NU preț/litru, NU subtotal). Caută "Total", "De plată", "Suma" — ia ULTIMA valoare dacă apar mai multe (număr, ex: 285.50)
-- km: kilometrajul total al vehiculului (5-7 cifre). Apare lângă "KM", "Odometru". NU confunda cu nr. bon, cod fiscal, ora, dată.
-- date: data bonului (YYYY-MM-DD). Convertește din ZZ.LL.AAAA.
+- liters: CANTITATEA de carburant alimentat, în litri (număr cu zecimale, ex: 42.31).
+  ATENȚIE — pe bonurile MOL/OMV/Petrom/Rompetrol formatul tipic e:
+    "PREȚ_PER_LITRU X CANTITATE L"  (ex: "9,82 X 106,84 L" → cantitate = 106,84)
+  sau:
+    "9,82 X 50,23 L  493,76"  (cantitate × preț/L = total)
+  Cantitatea este numărul DE LÂNGĂ litera "L" (sufix), NU numărul de la stânga lui "X". Numărul de la stânga lui "X" este preț/litru (mereu 4-15 RON/L pe piața RO 2024-2026). Numărul cu "L" e cantitatea (de obicei 5-100 L).
+  Dacă apare un singur număr cu sufix "L", "litri", "Cantitate", acela e cantitatea.
+
+  ━━━ VERIFICARE OBLIGATORIE A ARITMETICII ━━━
+  Înainte să returnezi cantitatea, calculează: PREȚ_PER_LITRU × CANTITATE și compară cu TOTAL.
+  Exemplu: dacă vezi "9,82 X 106,84 L" și TOTAL = 1049,17 → 9,82 × 106,84 = 1049,17 ✓ corect.
+  Dacă rezultatul nu se potrivește cu TOTAL în limita 1%, ai citit greșit o cifră — REVERIFICĂ.
+  Confuzii uzuale OCR pe bonuri termice slab printate: 0↔6, 0↔8, 1↔7, 1↔8, 6↔8, 3↔8, 5↔6.
+  Exemplu de eroare: "9,82 X 186,84 L" cu TOTAL 1049,17 → 9,82 × 186,84 = 1834,77 ≠ 1049,17. Reverifică prima cifră a cantității: probabil "1" citit ca "8" sau invers. Calculul corect: 1049,17 / 9,82 = 106,84 → cantitatea e 106,84, nu 186,84.
+  Returnează valoarea consistentă cu TOTAL, NU prima citire.
+- price: TOTALUL de plată (NU preț/litru, NU subtotal, NU "TOTAL TVA"). Caută linia "TOTAL:" exact (singură, fără cuvinte după). Ignoră "SUBTOTAL", "TOTAL TVA", "TOTAL TVA A". Format număr ex: 285.50, 1049.17.
+- km: ODOMETRUL VEHICULULUI (rulajul mașinii, 5-7 cifre). Returnează km DOAR DACĂ apare cu unul din label-urile EXACTE: "Odometru:", "Rulaj:", "Kilometraj:" sau "KM vehicul:". Bonurile de carburant din România de regulă NU conțin odometru — în acest caz întoarce null pentru km.
+  ATENȚIE — NU confunda cu:
+  • Adresa stației pe autostradă, ex: "AUTOSTRADA A1 KM 316+360" sau "DN1 KM 45+200" (acel KM e poziția stației pe drum, NU odometrul).
+  • Nr. bon fiscal, cod fiscal CUI/CIF, RC (registru comerț), ID tranzacție, ora, dată.
+  • Codul de identificare a stației ("SB:", "RC:").
+  Dacă ai vreun dubiu, returnează null pentru km.
+- date: data bonului (YYYY-MM-DD). Convertește din ZZ.LL.AAAA. Validează: ziua 1-31, luna 1-12, anul ultimii 2 ani. Dacă o cifră e ambiguă (OCR a confundat 0↔8, 1↔7), reverifică din contextul bonului — data trebuie să fie reală.
 - station: brand benzinărie + oraș/adresă scurtă (ex: "OMV Cluj-Napoca, Calea Turzii"). Branduri RO: OMV, MOL, Petrom, Lukoil, Rompetrol, Socar, Gazprom, Shell, BP, Avia, Eko.
+- pump: NUMĂRUL POMPEI la care s-a alimentat (integer 1-20). Pe bonurile MOL/OMV/Petrom apare ca prefix la linia produsului: "*2 MOTORINA EVO D" → pump = 2; "*1 BENZINA 95" → pump = 1; "*12 GPL" → pump = 12. Returnează null dacă nu apare prefixul "*N" sau alt indicator clar de pompă.
+- priceL: PREȚUL PE LITRU (RON/L sau valuta locală /L), număr cu zecimale. Pe bonurile MOL/OMV/Petrom e numărul DE LA STÂNGA lui "X" în formatul "PREȚ_PER_LITRU X CANTITATE L" (ex: "9,82 X 106,84 L" → priceL = 9.82). Pe alte bonuri poate fi etichetat "Preț unitar", "Pret/L", "RON/L". Pentru carburant RO 2024-2026 e tipic 4-15 RON/L. Returnează null dacă nu apare clar.
 
 Returnează EXCLUSIV JSON:
-{"liters": <număr|null>, "price": <număr|null>, "km": <int|null>, "date": "<YYYY-MM-DD|null>", "station": "<text|null>"}
+{"liters": <număr|null>, "price": <număr|null>, "priceL": <număr|null>, "km": <int|null>, "date": "<YYYY-MM-DD|null>", "station": "<text|null>", "pump": <int|null>}
 
 Răspunde DOAR cu JSON, fără text suplimentar.`;
 
-  const rawResponse = await sendAiRequestWithImage(
-    systemMessage,
-    prompt,
-    imageBase64,
-    'image/jpeg',
-    400
-  );
+  let rawResponse: string;
+  if (imageBase64) {
+    rawResponse = await sendAiRequestWithImage(
+      systemMessage,
+      prompt,
+      imageBase64,
+      'image/jpeg',
+      400
+    );
+  } else {
+    rawResponse = await sendAiRequest(
+      [
+        { role: 'system' as const, content: systemMessage },
+        { role: 'user' as const, content: prompt },
+      ],
+      400
+    );
+  }
 
   const parsed = extractFirstJsonObject(rawResponse);
   if (parsed === null) return {};

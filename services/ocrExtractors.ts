@@ -174,7 +174,7 @@ function extractTalonDoc(text: string): ExtractResult {
   } else {
     // ITP — prioritate 1/2: colectează MM/YYYY sau MM.YYYY și ia maximul.
     // Talonul conține: data fabricației (trecut), prima înmatriculare (trecut), ștampila RAR ITP (viitor).
-    const allMmYyyy: Array<{ mm: string; yyyy: string }> = [];
+    const allMmYyyy: { mm: string; yyyy: string }[] = [];
 
     // 1. Căutare lângă cuvinte cheie ITP/RAR
     const itpKwMatches = [
@@ -224,7 +224,10 @@ function extractVinFromText(text: string): string | null {
   const VIN17 = `(?:${VIN_CHAR}[\\s\\-]?){17}`;
 
   const labelPatterns: RegExp[] = [
-    new RegExp(`num[ăa]r(?:ul)?\\s*de\\s*identificare(?:\\s*al)?(?:\\s*vehiculului)?[\\s:.\\-]*(${VIN17})`, 'i'),
+    new RegExp(
+      `num[ăa]r(?:ul)?\\s*de\\s*identificare(?:\\s*al)?(?:\\s*vehiculului)?[\\s:.\\-]*(${VIN17})`,
+      'i'
+    ),
     new RegExp(`\\bNIV\\b[\\s:.\\-]*(${VIN17})`, 'i'),
     new RegExp(`(?:^|[\\s|])E[\\s.:]+(${VIN17})`, 'mi'),
     new RegExp(`\\bVIN\\b[\\s:.\\-]*(${VIN17})`, 'i'),
@@ -274,7 +277,7 @@ const ROMANIAN_INSURERS = [
 
 // Prefixe distincte din nr. de poliță → asigurator
 // Permite identificarea asiguratorului chiar când fontul e garbled
-const POLICY_PREFIX_TO_INSURER: Array<[RegExp, string]> = [
+const POLICY_PREFIX_TO_INSURER: [RegExp, string][] = [
   [/^RO\/?32V/i, 'Groupama'],
   [/^RO\/?0[17]/i, 'Allianz'],
   [/^RO\/?AA/i, 'Allianz'],
@@ -545,7 +548,9 @@ function detectUtilitySupplier(text: string): string | undefined {
 
 export function isKnownUtilitySupplier(supplier: string): boolean {
   const su = supplier.toUpperCase();
-  return ROMANIAN_UTILITY_SUPPLIERS.some(s => su.includes(s.toUpperCase()) || s.toUpperCase().includes(su));
+  return ROMANIAN_UTILITY_SUPPLIERS.some(
+    s => su.includes(s.toUpperCase()) || s.toUpperCase().includes(su)
+  );
 }
 
 function extractFactura(text: string): ExtractResult {
@@ -557,13 +562,14 @@ function extractFactura(text: string): ExtractResult {
   );
   if (invNr) {
     // OCR confundă adesea '0' cu 'o' (lowercase) în șiruri numerice
-    meta['invoice_number'] = invNr[1].trim().replace(/(\d)[oO](\d)/g, '$10$2').replace(/(\d)[oO]$/g, '$10');
+    meta['invoice_number'] = invNr[1]
+      .trim()
+      .replace(/(\d)[oO](\d)/g, '$10$2')
+      .replace(/(\d)[oO]$/g, '$10');
   }
 
   // Furnizor — keyword explicit (fără 'operator'/'prestat' care sunt prea generice)
-  const supplierKeyword = text.match(
-    /(?:furnizor|emitent|v[âa]nz[aă]tor)[:\s]+([^\n]{5,80})/i
-  );
+  const supplierKeyword = text.match(/(?:furnizor|emitent|v[âa]nz[aă]tor)[:\s]+([^\n]{5,80})/i);
   if (supplierKeyword) {
     meta['supplier'] = supplierKeyword[1].trim().slice(0, 60);
   }
@@ -603,7 +609,8 @@ function extractFactura(text: string): ExtractResult {
   const dueKeyword =
     /scadent|termen\s*(?:de\s*)?plat|data\s*limit|limit[aă]\s*(?:de\s*)?plat|pl[aă]tibil|data\s*scaden/i;
   let due = findDateNear(text, dueKeyword, 3);
-  if (due) meta['due_date'] = due.replace(/-/g, '.').replace(/(\d{4})\.(\d{2})\.(\d{2})/, '$3.$2.$1');
+  if (due)
+    meta['due_date'] = due.replace(/-/g, '.').replace(/(\d{4})\.(\d{2})\.(\d{2})/, '$3.$2.$1');
 
   // Perioadă de facturare — label-ul poate fi pe linie separată față de interval
   const periodLines = text.split('\n');
@@ -614,7 +621,10 @@ function extractFactura(text: string): ExtractResult {
       // Caută intervalul pe aceeași linie sau pe următoarele 2
       for (let pj = 0; pj <= 2; pj++) {
         const m = (periodLines[pi + pj] ?? '').match(rangePattern);
-        if (m) { meta['period'] = `${m[1]} - ${m[2]}`; break; }
+        if (m) {
+          meta['period'] = `${m[1]} - ${m[2]}`;
+          break;
+        }
       }
     }
   }
@@ -623,11 +633,17 @@ function extractFactura(text: string): ExtractResult {
     for (const line of periodLines) {
       if (/interval\s*de\s*timp/i.test(line)) continue;
       const m = line.match(rangePattern);
-      if (m) { meta['period'] = `${m[1]} - ${m[2]}`; break; }
+      if (m) {
+        meta['period'] = `${m[1]} - ${m[2]}`;
+        break;
+      }
     }
   }
 
-  const issue = findDateNear(text, /data\s*factur[ii]|data\s*emiter|data\s*document|din\s*data\s*de/i);
+  const issue = findDateNear(
+    text,
+    /data\s*factur[ii]|data\s*emiter|data\s*document|din\s*data\s*de/i
+  );
 
   return { metadata: meta, issue_date: issue, expiry_date: due };
 }
