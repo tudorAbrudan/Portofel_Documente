@@ -19,9 +19,15 @@
       "deploymentTarget": "16.0",
       "usesIcloudStorage": true,
       "entitlements": {
-        "com.apple.developer.icloud-services": ["CloudDocuments"],
-        "com.apple.developer.icloud-container-identifiers": ["iCloud.com.ax.documente"],
-        "com.apple.developer.ubiquity-container-identifiers": ["iCloud.com.ax.documente"]
+        "com.apple.developer.icloud-services": [
+          "CloudDocuments"
+        ],
+        "com.apple.developer.icloud-container-identifiers": [
+          "iCloud.com.ax.documente"
+        ],
+        "com.apple.developer.ubiquity-container-identifiers": [
+          "iCloud.com.ax.documente"
+        ]
       },
       "infoPlist": {
         "NSCalendarsUsageDescription": "Aplicația adaugă remindere de expirare documente în calendarul tău.",
@@ -64,6 +70,12 @@
       "expo-sharing",
       "expo-secure-store",
       "expo-sqlite",
+      [
+        "react-native-document-scanner-plugin",
+        {
+          "cameraPermission": "Aplicația folosește camera pentru a scana documente cu detecție automată a marginilor și corecție de perspectivă."
+        }
+      ],
       [
         "expo-image-picker",
         {
