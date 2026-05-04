@@ -103,7 +103,15 @@ export function buildAppKnowledge(): string {
 **Tipuri de documente:**
 ${buildDocTypesList()}
 
-**Funcții:** scanare + OCR on-device, notificări expirare, remindere în calendar iOS, backup automat în iCloud + export manual ZIP, blocare Face ID/PIN, detecție automată duplicate, câmp „Notă privată" per document pentru date sensibile (CVV/PIN/parole) care NU ajunge niciodată la AI, reminder mentenanță vehicule (km sau timp) cu sincronizare calendar, secțiune „De completat" pe Home cu sugestii pentru date incomplete.
+**Funcții:** scanner nativ multi-pagină + OCR on-device, notificări expirare, remindere în calendar iOS, backup automat în iCloud + export manual ZIP, blocare Face ID/PIN, detecție automată duplicate, câmp „Notă privată" per document pentru date sensibile (CVV/PIN/parole) care NU ajunge niciodată la AI, reminder mentenanță vehicule (km sau timp) cu sincronizare calendar, secțiune „De completat" pe Home cu sugestii pentru date incomplete.
+
+## Adăugare document
+
+La adăugarea unui document (Acte → buton „+" → ecranul Adaugă document), pentru atașarea fișierelor sunt 4 opțiuni:
+- **„Scanează document"** (recomandat) — scanner nativ cu detecție automată a marginilor, corecție de perspectivă, suport multi-pagină. Pe iOS folosește VisionKit (același scanner ca în Apple Notes); pe Android folosește ML Kit. Toate paginile scanate într-o sesiune se atașează automat documentului curent, fiecare ca pagină separată; OCR rulează pe fiecare.
+- **„Cameră (poză brută)"** — o singură poză din camera telefonului, fără crop sau corecție automată. Util pentru documente cu detalii fine, pagini cu fotografii sau holograme.
+- **„Galerie"** — importă o imagine existentă din galeria telefonului.
+- **„Adaugă PDF"** — atașează un PDF din file picker.
 
 ## Gestiune auto
 
