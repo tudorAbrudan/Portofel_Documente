@@ -1,5 +1,6 @@
 // Mock for react-native-document-scanner-plugin — Jest environment only.
-// __esModule: true is required so default and named imports both resolve via babel-jest ESM interop.
+// Mirror the real module shape: default export is an OBJECT with `scanDocument` as a method,
+// not a callable function. __esModule lets babel-jest interop resolve named + default imports.
 const ScanDocumentResponseStatus = {
   Success: 'success',
   Cancel: 'cancel',
@@ -19,8 +20,7 @@ const scanDocument = jest.fn(() =>
 
 module.exports = {
   __esModule: true,
-  default: scanDocument,
-  scanDocument,
+  default: { scanDocument },
   ScanDocumentResponseStatus,
   ResponseType,
 };

@@ -1,15 +1,19 @@
 import { scanDocumentPages } from '@/services/documentScanner';
-import scanDocument, { ScanDocumentResponseStatus } from 'react-native-document-scanner-plugin';
+import DocumentScanner, {
+  ScanDocumentResponseStatus,
+} from 'react-native-document-scanner-plugin';
 
 jest.mock('react-native-document-scanner-plugin');
 
+const mockScan = DocumentScanner.scanDocument as jest.Mock;
+
 describe('scanDocumentPages', () => {
   beforeEach(() => {
-    (scanDocument as jest.Mock).mockReset();
+    mockScan.mockReset();
   });
 
   it('returnează array de URI-uri pentru scanare reușită multi-pagină', async () => {
-    (scanDocument as jest.Mock).mockResolvedValueOnce({
+    mockScan.mockResolvedValueOnce({
       scannedImages: ['/tmp/p1.jpg', '/tmp/p2.jpg', '/tmp/p3.jpg'],
       status: ScanDocumentResponseStatus.Success,
     });
@@ -19,7 +23,7 @@ describe('scanDocumentPages', () => {
   });
 
   it('returnează null când userul anulează', async () => {
-    (scanDocument as jest.Mock).mockResolvedValueOnce({
+    mockScan.mockResolvedValueOnce({
       scannedImages: [],
       status: ScanDocumentResponseStatus.Cancel,
     });
@@ -29,7 +33,7 @@ describe('scanDocumentPages', () => {
   });
 
   it('returnează null când scannedImages lipsește (success fără pagini)', async () => {
-    (scanDocument as jest.Mock).mockResolvedValueOnce({
+    mockScan.mockResolvedValueOnce({
       scannedImages: [],
       status: ScanDocumentResponseStatus.Success,
     });
@@ -39,7 +43,7 @@ describe('scanDocumentPages', () => {
   });
 
   it('returnează null când scannedImages este undefined', async () => {
-    (scanDocument as jest.Mock).mockResolvedValueOnce({
+    mockScan.mockResolvedValueOnce({
       status: ScanDocumentResponseStatus.Success,
     });
 
@@ -48,18 +52,18 @@ describe('scanDocumentPages', () => {
   });
 
   it('aruncă eroare cu mesaj în română la eșec nativ', async () => {
-    (scanDocument as jest.Mock).mockRejectedValueOnce(new Error('camera unavailable'));
+    mockScan.mockRejectedValueOnce(new Error('camera unavailable'));
 
     await expect(scanDocumentPages()).rejects.toThrow(/scanare|cameră|nu s-a putut/i);
   });
 
   it('trimite croppedImageQuality=90 ca să mențină dimensiunea fișierului în control', async () => {
-    (scanDocument as jest.Mock).mockResolvedValueOnce({
+    mockScan.mockResolvedValueOnce({
       scannedImages: ['/tmp/p1.jpg'],
       status: ScanDocumentResponseStatus.Success,
     });
 
     await scanDocumentPages();
-    expect(scanDocument).toHaveBeenCalledWith(expect.objectContaining({ croppedImageQuality: 90 }));
+    expect(mockScan).toHaveBeenCalledWith(expect.objectContaining({ croppedImageQuality: 90 }));
   });
 });
