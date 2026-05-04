@@ -13,8 +13,8 @@ declare module 'react-native-document-scanner-plugin' {
     responseType?: ResponseType;
   }
   export interface ScanDocumentResponse {
-    scannedImages: string[];
-    status: ScanDocumentResponseStatus;
+    scannedImages?: string[];
+    status?: ScanDocumentResponseStatus;
   }
   export default function scanDocument(
     options?: ScanDocumentOptions

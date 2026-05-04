@@ -3,10 +3,12 @@ import scanDocument, {
   ScanDocumentResponseStatus,
 } from 'react-native-document-scanner-plugin';
 
+const SCAN_QUALITY = 90 as const;
+
 export async function scanDocumentPages(): Promise<string[] | null> {
   try {
     const result = await scanDocument({
-      croppedImageQuality: 90,
+      croppedImageQuality: SCAN_QUALITY,
       responseType: ResponseType.ImageFilePath,
     });
 

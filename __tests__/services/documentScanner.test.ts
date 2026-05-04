@@ -38,6 +38,15 @@ describe('scanDocumentPages', () => {
     expect(result).toBeNull();
   });
 
+  it('returnează null când scannedImages este undefined', async () => {
+    (scanDocument as jest.Mock).mockResolvedValueOnce({
+      status: ScanDocumentResponseStatus.Success,
+    });
+
+    const result = await scanDocumentPages();
+    expect(result).toBeNull();
+  });
+
   it('aruncă eroare cu mesaj în română la eșec nativ', async () => {
     (scanDocument as jest.Mock).mockRejectedValueOnce(new Error('camera unavailable'));
 
