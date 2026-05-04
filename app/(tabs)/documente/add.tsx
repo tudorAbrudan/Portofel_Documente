@@ -108,7 +108,6 @@ const ENTITY_CATEGORIES: { key: EntityType; label: string }[] = [
   { key: 'company', label: 'Firmă' },
 ];
 
-
 export default function AddDocumentScreen() {
   const scheme = (useColorScheme() ?? 'light') as 'light' | 'dark';
   const C = Colors[scheme];
@@ -857,9 +856,10 @@ export default function AddDocumentScreen() {
       const dir = `${FileSystem.documentDirectory}documents`;
       await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
 
+      const batchTs = Date.now();
       const newPages: { uri: string; localPath: string }[] = [];
       for (let i = 0; i < uris.length; i++) {
-        const filename = `doc_${Date.now()}_${i}.jpg`;
+        const filename = `doc_${batchTs}_${i}.jpg`;
         const dest = `${dir}/${filename}`;
         await FileSystem.copyAsync({ from: uris[i], to: dest });
         newPages.push({ uri: dest, localPath: dest });
